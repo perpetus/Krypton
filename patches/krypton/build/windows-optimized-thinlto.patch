@@ -1,0 +1,151 @@
+# Use the Windows equivalents of the requested optimized LLVM link flags.
+#
+# RobRich's LLVM project uses --lto-O3 and --lto-CGO3. For the supported
+# Chromium 157 Windows compiler, use LLD's /opt:lldlto=3 and /opt:lldltocgo=3
+# on the high-optimization official link targets. Preserve helper-target LTO
+# defaults and non-Windows behavior. Linker worker count is configurable and
+# defaults to one for memory use. The browser binaries that use
+# thinlto_optimize_max (chrome.dll, chrome.exe, ANGLE's DLLs) have their own
+# limit, krypton_browser_link_jobs, which defaults to automatic (all hardware
+# threads, as upstream). Changing it relinks only those binaries: a global
+# change would relink protoc and the other generators and regenerate their
+# sources. krypton_concurrent_links controls the ThinLTO
+# link pool independently of compilation's -j setting, with no hard upper bound.
+# Existing -O3, AVX2/FMA, PGO, whole-program vtables, section elimination and
+# ICF remain in place. Polly requires a different compiler and is not enabled.
+# Source: https://github.com/RobRich999/LLVM_Optimized_AVX2
+
+--- a/build/config/compiler_opt.gni
++++ b/build/config/compiler_opt.gni
+@@ -14,6 +14,30 @@
+   is_full_optimization_build = is_official_build
+ }
+ 
++# Windows equivalents of the optimized LLVM toolchain's --lto-O3/--lto-CGO3.
++# Keep the supported compiler and Rust bitcode format. The linker backend is
++# controlled separately because Ninja's -j does not limit linker worker threads.
++declare_args() {
++  krypton_thinlto_opt_level = 3
++  krypton_thinlto_codegen_opt_level = 3
++  krypton_thinlto_jobs = 1
++
++  # Linker job limit for the browser binaries that use thinlto_optimize_max
++  # (chrome.dll, chrome.exe and ANGLE's DLLs). Zero is automatic: all hardware
++  # threads, as upstream. It overrides krypton_thinlto_jobs only for these
++  # links, so changing it never relinks the build tools.
++  krypton_browser_link_jobs = 0
++}
++
++assert(krypton_thinlto_opt_level >= 0 && krypton_thinlto_opt_level <= 3,
++       "ThinLTO optimization level must be between zero and three.")
++assert(krypton_thinlto_codegen_opt_level >= 0 &&
++           krypton_thinlto_codegen_opt_level <= 3,
++       "ThinLTO code generation level must be between zero and three.")
++assert(krypton_thinlto_jobs >= 1, "Linker worker parallelism must be positive.")
++assert(krypton_browser_link_jobs >= 0,
++       "Browser linker jobs must be zero (automatic) or positive.")
++
+ declare_args() {
+   # Extra LLVM optimization passes, applied to Windows clang-cl builds only.
+   #
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -821,7 +821,7 @@
+ 
+     if (is_win) {
+       ldflags += [
+-        "/opt:lldltojobs=all",
++        "/opt:lldltojobs=$krypton_thinlto_jobs",
+         "-mllvm:-import-instr-limit=$import_instr_limit",
+         "-mllvm:-disable-auto-upgrade-debug-info",
+       ]
+@@ -1058,6 +1058,12 @@
+ config("linker") {
+   ldflags = []
+ 
++  # Krypton: bound worker memory in all Windows LLD links, including helpers.
++  if (is_win && use_lld) {
++    ldflags += [ "/threads:$krypton_thinlto_jobs" ]
++  }
++
++
+   if (!is_win) {
+     if (linker_path != "") {
+       inputs = [ linker_path ]
+@@ -1314,12 +1320,21 @@
+   if (!is_debug && use_thin_lto && is_a_target_toolchain) {
+     if (thin_lto_enable_optimizations) {
+       lto_opt_level = 2
++      if (is_win && is_full_optimization_build) {
++        lto_opt_level = krypton_thinlto_opt_level
++      }
+     } else {
+       lto_opt_level = 0
+     }
+ 
+     if (is_win) {
+       ldflags = [ "/opt:lldlto=" + lto_opt_level ]
++      if (thin_lto_enable_optimizations && is_full_optimization_build) {
++        ldflags += [ "/opt:lldltocgo=$krypton_thinlto_codegen_opt_level" ]
++      }
++
++      # Krypton: the browser binaries' own linker job limit.
++      configs = [ "//build/config/win:krypton_browser_link_jobs" ]
+     } else {
+       ldflags = [ "-Wl,--lto-O" + lto_opt_level ]
+     }
+--- a/build/toolchain/concurrent_links.gni
++++ b/build/toolchain/concurrent_links.gni
+@@ -19,6 +19,10 @@
+   # The default to use varies by platform and by the amount of memory
+   # available, so we call out to a script to get the right value.
+   concurrent_links = -1
++
++  # Chromium's concurrent_links override rejects ThinLTO. Keep a separate
++  # explicit process limit for the Windows browser's optimized link pool.
++  krypton_concurrent_links = 1
+ }
+ 
+ if (concurrent_links == -1) {
+@@ -176,3 +180,9 @@
+   concurrent_links_logs =
+       [ "concurrent_links set by GN arg (value=$concurrent_links)" ]
+ }
++
++if (is_win && use_thin_lto) {
++  assert(krypton_concurrent_links >= 1,
++         "Concurrent linker processes must be positive.")
++  concurrent_links = krypton_concurrent_links
++}
+--- a/build/config/win/BUILD.gn
++++ b/build/config/win/BUILD.gn
+@@ -6,6 +6,7 @@
+ import("//build/config/chrome_build.gni")
+ import("//build/config/clang/clang.gni")
+ import("//build/config/compiler/compiler.gni")
++import("//build/config/compiler_opt.gni")
+ import("//build/config/rust.gni")
+ import("//build/config/sanitizers/sanitizers.gni")
+ import("//build/config/win/control_flow_guard.gni")
+@@ -722,3 +723,21 @@
+ config("wincrypt_use_symbol_prefix") {
+   defines = [ "WINCRYPT_USE_SYMBOL_PREFIX" ]
+ }
++
++# Krypton: linker job limit for the browser binaries (compiler_opt.gni).
++# thinlto_optimize_max applies it after the global /opt:lldltojobs and
++# /threads values, and LLD uses the last of each.
++config("krypton_browser_link_jobs") {
++  if (krypton_browser_link_jobs == 0) {
++    _cpu_count = exec_script("//build/toolchain/get_cpu_count.py", [], "value")
++    ldflags = [
++      "/opt:lldltojobs=all",
++      "/threads:$_cpu_count",
++    ]
++  } else {
++    ldflags = [
++      "/opt:lldltojobs=$krypton_browser_link_jobs",
++      "/threads:$krypton_browser_link_jobs",
++    ]
++  }
++}

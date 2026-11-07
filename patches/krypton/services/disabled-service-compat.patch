@@ -1,0 +1,35 @@
+# Complete Windows sandbox switches for the disabled ScreenAI service.
+#
+# The enum remains available when the service is disabled. Keep SID
+# lookup unreachable and retain the existing no-CIG branch without
+# enabling or registering the service. Also remove an unused profile
+# local left after the upstream sign-in flow is stripped.
+
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -5431,6 +5431,7 @@
+     case sandbox::mojom::Sandbox::kPrintCompositor:
+     case sandbox::mojom::Sandbox::kAudio:
+     case sandbox::mojom::Sandbox::kPlatformRuntime:
++    case sandbox::mojom::Sandbox::kScreenAI:
+     case sandbox::mojom::Sandbox::kSpeechRecognition:
+     case sandbox::mojom::Sandbox::kPdfConversion:
+     case sandbox::mojom::Sandbox::kService:
+@@ -5545,6 +5546,7 @@
+     case sandbox::mojom::Sandbox::kPdfConversion:
+     case sandbox::mojom::Sandbox::kService:
+     case sandbox::mojom::Sandbox::kPlatformRuntime:
++    case sandbox::mojom::Sandbox::kScreenAI:
+     case sandbox::mojom::Sandbox::kIconReader:
+     case sandbox::mojom::Sandbox::kMediaFoundationCdm:
+     case sandbox::mojom::Sandbox::kProxyResolver:
+--- a/chrome/browser/ui/webui/signin/inline_login_handler.cc
++++ b/chrome/browser/ui/webui/signin/inline_login_handler.cc
+@@ -134,7 +134,6 @@
+     params.Set("isLoginPrimaryAccount", true);
+   }
+ 
+-  Profile* profile = Profile::FromWebUI(web_ui());
+   std::string default_email;
+   if (reason == signin_metrics::Reason::kSigninPrimaryAccount) {
+   } else {

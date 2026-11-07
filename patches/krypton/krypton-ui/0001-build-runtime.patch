@@ -1,0 +1,18 @@
+Subject: [Krypton] Wire the KryptonUI runtime contract and build flag
+
+Declare the Windows x64 shell flag and link the process-lifetime runtime
+loader without changing Chromium compiler settings. The separate host
+adapter will consume this contract; runtime failures must not select
+the original browser chrome. Keep generated headers in Chromium's
+existing browser-generated dependency group.
+
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -5455,6 +5455,7 @@
+ # units are compiled.
+ group("browser_generated_files") {
+   public_deps = [
++    "//chrome/browser/ui/krypton_ui:buildflags",
+     ":buildflags",
+     "//chrome/browser/media:media_engagement_preload_proto",
+     "//chrome/browser/media:mojo_bindings",

@@ -1,0 +1,33 @@
+Subject: [Krypton] Complete the direct Chrome Web Store download protocol
+
+Krypton downloads from the store directly rather than Helium's proxy. Keep
+Helium's fixed platform query and disabled usage pings, but send the actual
+browser version: without prodversion the store returns HTTP 204 instead of
+a CRX, which surfaces as "Download interrupted". Restore the canonical
+store update URL so download trust checks and gallery/update classification
+recognize the direct endpoint. Do not broaden off-store installation rules.
+
+--- a/components/update_client/update_query_params.cc
++++ b/components/update_client/update_query_params.cc
+@@ -87,7 +87,9 @@
+ // static
+ std::string UpdateQueryParams::Get(ProdId prod) {
+   if (prod == CRX_DUMMY) {
+-    return "os=win&arch=x64&prod=chromecrx&acceptformat=crx3,puff";
++    return absl::StrFormat(
++        "os=win&arch=x64&prod=chromecrx&prodversion=%s&acceptformat=crx3,puff",
++        GetProdVersion());
+   }
+ 
+   return absl::StrFormat("os=%s&arch=%s&prod=%s%s&acceptformat=crx3,puff", kOs,
+--- a/extensions/common/extension_urls.cc
++++ b/extensions/common/extension_urls.cc
+@@ -44,7 +44,7 @@
+     "https://developer.chrome.com/docs/extensions/ai/"
+     "build-with-ai#modern_web_guidance";
+ const char kChromeWebstoreUpdateURL[] =
+-    "https://update-url-to-be-replaced.qjz9zk";
++    "https://clients2.google.com/service/update2/crx";
+ const char kChromeWebstoreApiURL[] = "https://chromewebstore.googleapis.com/";
+ 
+ const char kAppMenuUtmSource[] = "ext_app_menu";

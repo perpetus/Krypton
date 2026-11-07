@@ -1,0 +1,15 @@
+source_set("krypton_privacy_features") {
+  sources = [
+    "registry.cc",
+    "registry.h",
+  ]
+  public_deps = [
+    "//base",
+    "//components/krypton_privacy_features",
+    "//components/prefs",
+  ]
+  deps = [
+    "//chrome:strings",
+    "//third_party/widevine/cdm:buildflags",
+  ]
+}

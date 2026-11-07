@@ -1,0 +1,237 @@
+# Krypton: present renderer context menus through KryptonUI.
+# Keep Chromium's context-specific menu model, permissions and commands;
+# replace its Views toolkit delegate only in KryptonUI browser windows.
+# Observers still hear that the menu was shown; Windows spelling finishes
+# its asynchronous suggestion rows from that notification.
+# Notify structural row edits so queued commands cannot bind to rebuilt
+# rows; cosmetic favicon updates must not dismiss an open snapshot.
+# Reuse ReloadButton's menu factory instead of duplicating its options.
+
+--- a/chrome/browser/ui/views/renderer_context_menu/BUILD.gn
++++ b/chrome/browser/ui/views/renderer_context_menu/BUILD.gn
+@@ -13,6 +13,7 @@
+ 
+   public_deps = [
+     "//chrome/browser/renderer_context_menu",
++    "//chrome/browser/ui/krypton_ui:buildflags",
+     "//ui/base/mojom:ui_base_types",
+   ]
+ }
+@@ -23,6 +24,7 @@
+   deps = [
+     ":renderer_context_menu",
+     "//chrome/app:command_ids",
++    "//chrome/browser/ui/krypton_ui:abi",
+     "//chrome/browser/ui/views/frame:browser_view_header",
+     "//chrome/browser/ui/views/side_panel",
+     "//chrome/common:non_code_constants",
+--- a/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
++++ b/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
+@@ -15,6 +15,7 @@
+ #include "build/build_config.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/side_panel/side_panel_coordinator.h"
+ #include "chrome/common/chrome_switches.h"
+@@ -42,6 +43,12 @@
+ #include "ui/views/view_observer.h"
+ #include "ui/views/widget/widget.h"
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#include "chrome/browser/ui/krypton_ui/native_menus.h"
++#include "ui/gfx/geometry/rect.h"
++#endif
++
+ using content::WebContents;
+ 
+ class RenderViewContextMenuViews::SubmenuViewObserver
+@@ -128,6 +135,18 @@
+                             is_paste_enabled,
+                             is_paste_and_match_style_enabled),
+       bidi_submenu_model_(this) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* browser = GetBrowser()) {
++    if (auto* view = BrowserView::GetBrowserViewForBrowser(browser);
++        view && view->krypton_ui()) {
++      auto delegate = std::make_unique<krypton_ui::NativeContextMenu>(
++          view->krypton_ui()->GetWeakPtr());
++      native_context_menu_ = delegate.get();
++      set_toolkit_delegate(std::move(delegate));
++      return;
++    }
++  }
++#endif
+   set_toolkit_delegate(std::make_unique<ToolkitDelegateViews>());
+ }
+ 
+@@ -148,6 +167,12 @@
+ void RenderViewContextMenuViews::RunMenuAt(views::Widget* parent,
+                                            const gfx::Point& point,
+                                            ui::mojom::MenuSourceType type) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (native_context_menu_) {
++    native_context_menu_->Show(point);
++    return;
++  }
++#endif
+   static_cast<ToolkitDelegateViews*>(toolkit_delegate())
+       ->RunMenuAt(parent, point, type);
+ }
+@@ -432,6 +457,18 @@
+   // the context menu is being displayed.
+   base::CurrentThread::ScopedAllowApplicationTasksInNativeNestedLoop allow;
+   RunMenuAt(top_level_widget, screen_point, params().source_type);
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (native_context_menu_) {
++    // Observers finish preparing the menu once it is shown; Windows spelling
++    // hides its unused suggestion placeholders here. KryptonUI places the
++    // menu at the point, so that is the only bounds this toolkit knows.
++    for (auto& observer : observers_) {
++      observer.OnContextMenuShown(params_,
++                                  gfx::Rect(screen_point, gfx::Size()));
++    }
++    return;
++  }
++#endif
+ 
+   auto* submenu_view = static_cast<ToolkitDelegateViews*>(toolkit_delegate())
+                            ->menu_view()
+--- a/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.h
++++ b/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.h
+@@ -8,6 +8,7 @@
+ #include <memory>
+ 
+ #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #include "ui/base/mojom/menu_source_type.mojom-forward.h"
+ 
+ namespace aura {
+@@ -24,6 +25,9 @@
+ 
+ namespace ui {
+ class AcceleratorProvider;
++}
++namespace krypton_ui {
++class NativeContextMenu;
+ }
+ 
+ class RenderViewContextMenuViews : public RenderViewContextMenu {
+@@ -81,6 +85,10 @@
+   // View observer of the submenu view and widget. SubmenuViewObserver is used
+   // to observe bounds changes.
+   std::unique_ptr<SubmenuViewObserver> submenu_view_observer_;
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Owned by RenderViewContextMenuBase's toolkit delegate.
++  raw_ptr<krypton_ui::NativeContextMenu> native_context_menu_ = nullptr;
++#endif
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_VIEWS_RENDERER_CONTEXT_MENU_RENDER_VIEW_CONTEXT_MENU_VIEWS_H_
+--- a/chrome/browser/ui/views/toolbar/reload_button.cc
++++ b/chrome/browser/ui/views/toolbar/reload_button.cc
+@@ -61,7 +61,7 @@
+     InitialWebUIWindowMetricsManager* window_metrics_manager)
+     : ToolbarButton(base::BindRepeating(&ReloadButton::ButtonPressed,
+                                         base::Unretained(this)),
+-                    CreateMenuModel(),
++                    CreateMenuModel(this),
+                     nullptr),
+       metrics_recorder_(
+           profile ? std::make_unique<WaapUIMetricsRecorder>(profile) : nullptr),
+@@ -194,8 +194,9 @@
+   ExecuteBrowserCommand(command_id, event_flags);
+ }
+ 
+-std::unique_ptr<ui::SimpleMenuModel> ReloadButton::CreateMenuModel() {
+-  auto menu_model = std::make_unique<ui::SimpleMenuModel>(this);
++std::unique_ptr<ui::SimpleMenuModel> ReloadButton::CreateMenuModel(
++    ui::SimpleMenuModel::Delegate* delegate) {
++  auto menu_model = std::make_unique<ui::SimpleMenuModel>(delegate);
+   menu_model->AddItemWithStringId(IDC_RELOAD,
+                                   IDS_RELOAD_MENU_NORMAL_RELOAD_ITEM);
+   menu_model->AddItemWithStringId(IDC_RELOAD_BYPASSING_CACHE,
+--- a/chrome/browser/ui/views/toolbar/reload_button.h
++++ b/chrome/browser/ui/views/toolbar/reload_button.h
+@@ -79,6 +79,10 @@
+ 
+   void ExecuteCommand(int command_id, int event_flags) override;
+ 
++  // Shared with native toolbar presentations; the source options live here.
++  static std::unique_ptr<ui::SimpleMenuModel> CreateMenuModel(
++      ui::SimpleMenuModel::Delegate* delegate);
++
+   // Overrides the timer interval delays for testing.
+   void set_double_click_timer_delay_for_testing(
+       base::TimeDelta double_click_timer_delay) {
+@@ -94,8 +98,6 @@
+   friend class ReloadButtonTestBase;
+   FRIEND_TEST_ALL_PREFIXES(ReloadButtonTest, TooltipText);
+   FRIEND_TEST_ALL_PREFIXES(ReloadButtonTest, TooltipTextAccessibility);
+-
+-  std::unique_ptr<ui::SimpleMenuModel> CreateMenuModel();
+ 
+   void SetVisibleMode(Mode mode);
+ 
+--- a/ui/menus/simple_menu_model.cc
++++ b/ui/menus/simple_menu_model.cc
+@@ -20,6 +20,14 @@
+ #include "ui/gfx/vector_icon_types.h"
+ 
+ namespace ui {
++
++namespace {
++void NotifyStructureChanged(const base::WeakPtr<MenuModel>& model) {
++  if (model && model->menu_model_delegate()) {
++    model->menu_model_delegate()->OnMenuStructureChanged();
++  }
++}
++}  // namespace
+ 
+ const int kSeparatorId = -1;
+ 
+@@ -331,7 +339,9 @@
+ void SimpleMenuModel::RemoveItemAt(size_t index) {
+   items_.erase(items_.begin() +
+                static_cast<ptrdiff_t>(ValidateItemIndex(index)));
+-  MenuItemsChanged();
++  const auto weak = AsWeakPtr();
++  MenuItemsChanged();
++  NotifyStructureChanged(weak);
+ }
+ 
+ void SimpleMenuModel::SetIcon(size_t index, const ui::ImageModel& icon) {
+@@ -431,7 +441,9 @@
+ 
+ void SimpleMenuModel::Clear() {
+   items_.clear();
+-  MenuItemsChanged();
++  const auto weak = AsWeakPtr();
++  MenuItemsChanged();
++  NotifyStructureChanged(weak);
+ }
+ 
+ std::optional<size_t> SimpleMenuModel::GetIndexOfCommandId(
+@@ -688,14 +700,18 @@
+ void SimpleMenuModel::AppendItem(Item item) {
+   ValidateItem(item);
+   items_.push_back(std::move(item));
+-  MenuItemsChanged();
++  const auto weak = AsWeakPtr();
++  MenuItemsChanged();
++  NotifyStructureChanged(weak);
+ }
+ 
+ void SimpleMenuModel::InsertItemAtIndex(Item item, size_t index) {
+   ValidateItem(item);
+   items_.insert(items_.begin() + static_cast<ptrdiff_t>(index),
+                 std::move(item));
+-  MenuItemsChanged();
++  const auto weak = AsWeakPtr();
++  MenuItemsChanged();
++  NotifyStructureChanged(weak);
+ }
+ 
+ void SimpleMenuModel::ValidateItem(const Item& item) {

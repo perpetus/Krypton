@@ -1,0 +1,110 @@
+# Helium patches Krypton does not apply.
+#
+# These restyle or restructure the browser window itself: toolbar, tab strip,
+# location bar and omnibox views, app menu, frame and caption buttons, side
+# panel, split view, bars and bubbles, and Helium's layouts. KryptonUI
+# replaces that layer, and its host hooks patch Chromium's own code directly,
+# so Krypton carries none of Helium's version of it and is not held back
+# when Helium has to re-port it to a new Chromium.
+#
+# Everything else Helium does (privacy, services, settings and other WebUI
+# pages, new tab page, importers, search, network, noise) is still applied.
+# When the module is not active, the window is Chromium's own Views UI.
+#
+# Paths are relative to Helium's patches/ directory. build.py and
+# tools/validate_series.py refuse an entry Helium no longer has.
+
+# Layout metrics and colours of the browser window
+helium/ui/layout-constants.patch
+helium/ui/layout-provider.patch
+helium/ui/helium-color-mixers.patch
+helium/ui/reduce-text-button-height.patch
+helium/ui/disable-ink-ripple-effect.patch
+helium/ui/dont-antialias-rects.patch
+
+# Toolbar
+helium/ui/remove-toolbar-corners.patch
+helium/ui/toolbar.patch
+helium/ui/remove-toolbar-dividers.patch
+helium/ui/toolbar-window-frame-hit-test.patch
+helium/ui/toolbar-button-prefs.patch
+helium/ui/tab-search-in-toolbar.patch
+helium/ui/pwa-toolbar.patch
+
+# Location bar and omnibox views
+helium/ui/location-bar.patch
+helium/ui/location-bar-page-action.patch
+helium/ui/omnibox.patch
+helium/ui/selected-keyword-view.patch
+helium/ui/page-zoom-indicator.patch
+helium/ui/hide-page-actions-flag.patch
+helium/ui/progress-bar.patch
+helium/ui/compact-debugger-warning.patch
+
+# Tab strip
+helium/ui/tabs.patch
+helium/ui/tab-icon.patch
+helium/ui/tab-strip-controls.patch
+helium/ui/disable-tab-group-editor-footer.patch
+
+# App menu
+helium/ui/app-menu-style.patch
+helium/ui/app-menu-model.patch
+helium/ui/app-menu-button.patch
+helium/ui/remove-reading-list-from-app-menu.patch
+
+# Frame and caption buttons
+ungoogled-chromium/add-flag-to-hide-window-buttons.patch
+helium/ui/frame-radius-helper.patch
+helium/ui/rounded-frame-corners.patch
+helium/ui/frame-background.patch
+helium/ui/native-frame-materials.patch
+helium/ui/fix-caption-button-bounds.patch
+helium/ui/fix-windows-ui-position.patch
+
+# Split view and the contents area around it
+helium/ui/remove-split-view-mini-toolbar.patch
+helium/ui/split-view.patch
+helium/ui/multi-contents-view.patch
+helium/ui/fix-layout-separators.patch
+helium/ui/multi-contents-drop-target.patch
+
+# Side panel
+helium/ui/fix-customize-side-panel.patch
+helium/ui/side-panel.patch
+helium/ui/side-panel-webui-general.patch
+helium/ui/side-panel-webui-customize.patch
+
+# Bars and bubbles drawn over the window
+helium/ui/bookmark-button-bg-fix.patch
+helium/ui/bookmarks-bar-padding.patch
+helium/ui/infobar.patch
+helium/ui/status-bubble.patch
+helium/ui/find-bar.patch
+helium/ui/toast.patch
+helium/ui/exclusive-access-bubble.patch
+helium/ui/clean-up-installed-extension-bubble.patch
+
+# Extension-download error for Helium's proxy, which Krypton does not use
+# (patches/krypton/services/use-original-web-store.patch)
+helium/ui/add-specific-error-for-disabled-extension-downloads.patch
+
+# Helium's browser layouts
+helium/ui/layout/core.patch
+helium/ui/layout/settings.patch
+helium/ui/layout/context-menu.patch
+helium/ui/layout/shortcuts.patch
+helium/ui/layout/centered-address-bar.patch
+helium/ui/layout/frame-grab-handle.patch
+helium/ui/layout/horizontal-tabs.patch
+helium/ui/layout/toolbar-layout.patch
+helium/ui/layout/minimal-location-bar.patch
+helium/ui/layout/dynamic.patch
+helium/ui/layout/compact.patch
+helium/ui/layout/vertical.patch
+helium/ui/layout/toolbar-overflow.patch
+helium/ui/layout/toolbar-actions.patch
+helium/ui/layout/zen-mode-wiring.patch
+helium/ui/layout/zen-caption-buttons.patch
+helium/ui/layout/zen-mode.patch
+helium/ui/layout/min-window-width.patch

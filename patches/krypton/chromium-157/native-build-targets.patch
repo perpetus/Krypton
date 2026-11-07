@@ -1,0 +1,450 @@
+# Port native integration to Chromium 157's granular UI targets.
+#
+# Chromium removed the monolithic chrome/browser/ui target. Keep runtime,
+# session/pref models and native headers below the window implementation, and
+# declare each patched target's direct dependency on the interface it consumes.
+# GN-only feature patches are folded into this wiring; behavior is unchanged.
+
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -2227,6 +2227,16 @@
+   if (enable_webui_tabstrip_ntb) {
+     deps += [ "//chrome/browser/ui/webui/tabstrip_ntb" ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:multi_page_features",
++    "//chrome/browser/ui/krypton_ui:runtime",
++  ]
+ }
+ 
+ # This target no longer has any sources of its own; it only aggregates
+--- a/chrome/browser/prefs/BUILD.gn
++++ b/chrome/browser/prefs/BUILD.gn
+@@ -505,6 +505,15 @@
+   if (!is_android) {
+     deps += [ "//chrome/browser/ui:browser_view_prefs" ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:workspace_models",
++  ]
+ }
+ 
+ # There are users of this util such as //c/b/ash/app_restore. If it's part of
+--- a/chrome/browser/renderer_context_menu/BUILD.gn
++++ b/chrome/browser/renderer_context_menu/BUILD.gn
+@@ -254,6 +254,16 @@
+       "//extensions/common",
+     ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++    "//chrome/browser/ui/krypton_ui:workspace_session",
++  ]
+ }
+ 
+ static_library("test_support") {
+--- a/chrome/browser/sessions/BUILD.gn
++++ b/chrome/browser/sessions/BUILD.gn
+@@ -194,6 +194,15 @@
+       sources += [ "profile_diff_after_restart_recorder.cc" ]
+     }
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:workspace_session",
++  ]
+ }
+ 
+ if (!is_android) {
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -519,7 +519,16 @@
+       "//ui/gfx/geometry",
+       "//ui/gfx/range",
+     ]
+-  }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:workspace_session",
++  ]
++}
+ 
+   source_set("scoped_tabbed_browser_displayer") {
+     public = [ "scoped_tabbed_browser_displayer.h" ]
+@@ -583,7 +592,16 @@
+       "//ui/base",
+       "//ui/base/mojom:ui_base_types",
+     ]
+-  }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:workspace_session",
++  ]
++}
+ 
+   source_set("browser_tab_restorer") {
+     sources = [ "browser_tab_restorer.cc" ]
+@@ -979,7 +997,16 @@
+       "//ui/gfx",
+       "//ui/gfx/geometry",
+     ]
+-  }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++  ]
++}
+ }
+ if (is_mac) {
+   source_set("browser_commands_mac") {
+@@ -1878,7 +1905,16 @@
+         "//chrome/common:chrome_features",
+       ]
+     }
+-  }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++  ]
++}
+ 
+   source_set("incognito_clear_browsing_data_dialog_interface") {
+     public = [ "incognito_clear_browsing_data_dialog_interface.h" ]
+@@ -1967,7 +2003,16 @@
+     } else {
+       deps += [ "//chrome/browser/download/bubble" ]
+     }
+-  }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:privacy_features_bridge",
++  ]
++}
+ 
+   source_set("browser_tests") {
+     testonly = true
+--- a/chrome/browser/ui/bookmarks/BUILD.gn
++++ b/chrome/browser/ui/bookmarks/BUILD.gn
+@@ -116,6 +116,15 @@
+   if (is_mac) {
+     deps += [ "//chrome/browser/web_applications" ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++  ]
+ }
+ 
+ source_set("browser_tests") {
+--- a/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
++++ b/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
+@@ -53,5 +53,14 @@
+     if (is_chromeos) {
+       deps += [ "//chrome/browser/ui:settings_window_manager_chromeos" ]
+     }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
+   }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++  ]
+ }
++}
+--- a/chrome/browser/ui/navigator/BUILD.gn
++++ b/chrome/browser/ui/navigator/BUILD.gn
+@@ -102,6 +102,16 @@
+       "//chrome/browser/ui/window_feature_controller",
+     ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++    "//chrome/browser/ui/krypton_ui:workspace_session",
++  ]
+ }
+ 
+ source_set("unit_tests") {
+--- a/chrome/browser/ui/sessions/BUILD.gn
++++ b/chrome/browser/ui/sessions/BUILD.gn
+@@ -33,4 +33,13 @@
+   if (use_ozone) {
+     deps += [ "//ui/ozone" ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:workspace_session",
++  ]
+ }
+--- a/chrome/browser/ui/startup/BUILD.gn
++++ b/chrome/browser/ui/startup/BUILD.gn
+@@ -380,6 +380,14 @@
+   if (!is_android) {
+     deps += [ "//chrome/browser/ui:browser_tab_strip_tracker" ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++  ]
+ }
+ 
+ if (is_win) {
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -425,7 +425,17 @@
+       "//components/web_modal",
+       "//components/webapps/common",
+     ]
+-  }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++    "//chrome/browser/ui/krypton_ui:workspace_session",
++  ]
++}
+ 
+   source_set("tabs") {
+     sources = [
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -759,6 +759,14 @@
+     "//ui/gfx",
+     "//ui/views",
+     "//ui/views/controls/webview",
++  ]
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(public_deps)) {
++    public_deps = []
++  }
++  public_deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
+   ]
+ }
+ 
+@@ -1036,6 +1044,15 @@
+       "//ui/native_theme",
+     ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:native_headers",
++    "//chrome/browser/ui/krypton_ui:native_windows",
++  ]
+ }
+ 
+ source_set("browser_view_layout_params") {
+@@ -1357,7 +1374,15 @@
+       "//ui/gfx/geometry",
+       "//ui/views",
+     ]
+-  }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:native_headers",
++  ]
++}
+ 
+   source_set("minimize_button_metrics_win") {
+     public = [ "minimize_button_metrics_win.h" ]
+@@ -1527,6 +1552,15 @@
+     "//content/public/common",
+     "//ui/base",
+     "//url",
++  ]
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
+   ]
+ }
+ 
+@@ -2462,6 +2496,22 @@
+   if (is_chromeos) {
+     deps += [ "//chrome/browser/ui/ash/login" ]
+   }
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:abi",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++    "//components/javascript_dialogs",
++  ]
++  if (!defined(sources)) {
++    sources = []
++  }
++  sources += [
++    "//chrome/browser/ui/krypton_ui/multi_page_browsertest.cc",
++  ]
+ }
+ 
+ source_set("interactive_ui_tests") {
+@@ -2953,7 +3003,15 @@
+         "//chrome/browser/ui/krypton_ui:workspace_models",
+       ]
+     }
+-  }
++  
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:native_headers",
++  ]
++}
+ }
+ 
+ source_set("browser_view_layout") {
+@@ -3303,6 +3361,14 @@
+     "//ui/gfx/geometry",
+     "//ui/views",
+   ]
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(public_deps)) {
++    public_deps = []
++  }
++  public_deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++  ]
+ }
+ 
+ source_set("multi_contents_view_impl") {
+@@ -3351,6 +3417,14 @@
+     "//ui/gfx/geometry",
+     "//ui/views",
+   ]
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:native_headers",
++  ]
+ }
+ 
+ source_set("top_container_view") {
+--- a/chrome/browser/ui/views/renderer_context_menu/BUILD.gn
++++ b/chrome/browser/ui/views/renderer_context_menu/BUILD.gn
+@@ -15,6 +15,14 @@
+     "//chrome/browser/renderer_context_menu",
+     "//chrome/browser/ui/krypton_ui:buildflags",
+     "//ui/base/mojom:ui_base_types",
++  ]
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(public_deps)) {
++    public_deps = []
++  }
++  public_deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
+   ]
+ }
+ 
+@@ -38,6 +46,15 @@
+     "//ui/strings",
+     "//ui/views",
+   ]
++
++  # Krypton: explicit dependencies after Chromium 157 UI modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:native_headers",
++  ]
+ }
+ 
+ source_set("browser_tests") {

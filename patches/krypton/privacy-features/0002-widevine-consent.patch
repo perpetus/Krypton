@@ -1,0 +1,199 @@
+Subject: [Krypton] Require explicit Widevine consent before loading or updating
+
+Helium allows CRLSet and Widevine components. Krypton's older fallback used
+general services consent for the upstream component server. Require the new
+default-off Widevine startup choice for its component registration and every
+CDM publication path, including a previously downloaded copy. Enabling it also
+authorizes upstream component requests without enabling other services.
+CRLSet and the existing services-consent path remain unchanged. This is the
+brief's intentional exception to the old default: existing installs must opt
+in again for Widevine playback; all other off-state decisions remain Helium's.
+
+--- a/chrome/browser/component_updater/BUILD.gn
++++ b/chrome/browser/component_updater/BUILD.gn
+@@ -167,6 +167,7 @@
+     "//components/commerce/core:commerce_heuristics_data",
+     "//components/commerce/core:feature_list",
+     "//components/embedder_support/origin_trials",
++    "//components/krypton_privacy_features",
+     "//components/on_device_translation/buildflags",
+     "//components/optimization_guide/core",
+     "//components/optimization_guide/proto:optimization_guide_proto",
+@@ -234,7 +235,6 @@
+     ]
+   }
+ 
+-
+   if (use_minikin_hyphenation) {
+     sources += [ "hyphenation_component_installer.cc" ]
+   }
+--- a/chrome/browser/component_updater/widevine_cdm_component_installer.cc
++++ b/chrome/browser/component_updater/widevine_cdm_component_installer.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/component_updater/widevine_cdm_component_installer.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <stdint.h>
+ 
+@@ -79,6 +80,8 @@
+ void RegisterWidevineCdmWithChrome(const base::Version& cdm_version,
+                                    const base::FilePath& cdm_path,
+                                    base::DictValue manifest) {
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kWidevine))
++    return;
+   CHECK_CURRENTLY_ON(content::BrowserThread::UI, base::NotFatalUntil::M161);
+ 
+   // This check must be a subset of the check in VerifyInstallation() to
+@@ -436,6 +439,8 @@
+ }
+ 
+ void RegisterWidevineCdmComponent(ComponentUpdateService* cus) {
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kWidevine))
++    return;
+   auto installer = base::MakeRefCounted<ComponentInstaller>(
+       std::make_unique<WidevineCdmComponentInstallerPolicy>());
+   installer->Register(cus, base::OnceClosure());
+--- a/chrome/common/BUILD.gn
++++ b/chrome/common/BUILD.gn
+@@ -130,9 +130,7 @@
+ # Use a static library here because many test binaries depend on this but don't
+ # require many files from it. This makes linking more efficient.
+ static_library("common_lib") {
+-  visibility = [
+-    ":*",
+-  ]
++  visibility = [ ":*" ]
+   sources = [
+     "actor/action_result.cc",
+     "actor/action_result.h",
+@@ -209,6 +207,7 @@
+     "//components/error_page/common",
+     "//components/favicon_base",
+     "//components/gcm_driver/common",
++    "//components/krypton_privacy_features",
+     "//components/language_detection/content/common",
+     "//components/metrics",
+     "//components/metrics:net",
+@@ -376,9 +375,7 @@
+       "conflicts/remote_module_watcher_win.cc",
+       "conflicts/remote_module_watcher_win.h",
+     ]
+-    deps += [
+-      "//chrome/installer/util:isolation_support",
+-    ]
++    deps += [ "//chrome/installer/util:isolation_support" ]
+ 
+     public_deps += [
+       "//components/dom_distiller/core",  # Needed by chrome_content_client.cc.
+--- a/chrome/common/media/cdm_registration.cc
++++ b/chrome/common/media/cdm_registration.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/common/media/cdm_registration.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <memory>
+ #include <optional>
+@@ -302,6 +303,8 @@
+ }
+ 
+ void AddWidevine(std::vector<content::CdmInfo>* cdms) {
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kWidevine))
++    return;
+   AddSoftwareSecureWidevine(cdms);
+   AddHardwareSecureWidevine(cdms);
+ }
+--- a/components/component_updater/BUILD.gn
++++ b/components/component_updater/BUILD.gn
+@@ -54,6 +54,7 @@
+     "//base",
+     "//build:branding_buildflags",
+     "//components/crx_file",
++    "//components/krypton_privacy_features",
+     "//components/prefs",
+     "//components/update_client",
+     "//components/version_info",
+--- a/components/component_updater/component_installer.cc
++++ b/components/component_updater/component_installer.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/component_updater/component_installer.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <algorithm>
+ #include <optional>
+@@ -120,7 +121,9 @@
+   registration_info->crx_id = update_client::GetCrxIdFromPublicKeyHash(
+       registration_info->public_key_hash);
+ 
+-  if (!kAllowedComponents.contains(registration_info->crx_id)) {
++  if (!krypton::privacy::ComponentAllowed(
++          registration_info->crx_id,
++          kAllowedComponents.contains(registration_info->crx_id))) {
+     return;
+   }
+ 
+--- a/components/helium_services/BUILD.gn
++++ b/components/helium_services/BUILD.gn
+@@ -13,9 +13,10 @@
+ 
+   public_deps = [
+     "//base",
++    "//components/krypton_privacy_features",
+     "//components/prefs",
++    "//net",
+     "//url",
+-    "//net",
+   ]
+ 
+   defines = [ "IS_HELIUM_IMPL" ]
+--- a/components/helium_services/helium_services_helpers.cc
++++ b/components/helium_services/helium_services_helpers.cc
+@@ -3,6 +3,7 @@
+ // the terms of the GPL-3.0 license that can be found in the LICENSE file.
+ 
+ #include "components/helium_services/helium_services_helpers.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <optional>
+ 
+@@ -156,22 +157,25 @@
+         return GetDummyURL();
+     }
+ 
+-    // Helium's component service, once the user has authorised it.
+-    if (ShouldAccessComponentUpdateService(*prefs)) {
+-        return GetServicesBaseURL(*prefs).Resolve("/com");
++    // Named optional-component consent selects its disclosed upstream server.
++    // Otherwise preserve the existing services-consent routing.
++    if (ShouldAccessComponentUpdateService(*prefs) &&
++        !krypton::privacy::UsesUpstreamComponentServer(false)) {
++      return GetServicesBaseURL(*prefs).Resolve("/com");
+     }
+ 
+     // Otherwise fall back to Chromium's upstream component endpoint. Widevine
+     // ships as a component rather than in the binary, so with no reachable
+     // service it never arrives and DRM playback fails with "Update error".
+     // Fetching it from upstream is how other Chromium forks deliver it without
+-    // redistributing the proprietary CDM themselves. Access remains gated on
+-    // service consent and the update-fetching preference.
+-    if (ShouldAccessServices(*prefs) &&
+-        prefs->GetBoolean(prefs::kHeliumUpdateFetchingEnabled)) {
+-        constexpr char kUpstreamComponentUpdateUrl[] =
+-            "https://update.googleapis.com/service/update2/json";
+-        return GURL(kUpstreamComponentUpdateUrl);
++    // redistributing the proprietary CDM themselves. Access requires either
++    // named startup consent or the existing service/update-fetching consent.
++    if (krypton::privacy::UsesUpstreamComponentServer(
++            ShouldAccessServices(*prefs) &&
++            prefs->GetBoolean(prefs::kHeliumUpdateFetchingEnabled))) {
++      constexpr char kUpstreamComponentUpdateUrl[] =
++          "https://update.googleapis.com/service/update2/json";
++      return GURL(kUpstreamComponentUpdateUrl);
+     }
+ 
+     return GetDummyURL();

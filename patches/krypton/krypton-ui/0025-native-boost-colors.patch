@@ -1,0 +1,1311 @@
+Apply document-scoped Oklab duotone coloring during Blink painting. Preserve original style/inheritance values, alpha, image pixels and input behavior; invalidate paint on palette changes and avoid cross-palette gradient caches.
+
+--- a/third_party/blink/renderer/core/css/css_gradient_value.cc
++++ b/third_party/blink/renderer/core/css/css_gradient_value.cc
+@@ -50,6 +50,7 @@
+ #include "third_party/blink/renderer/core/css/resolver/style_builder_converter.h"
+ #include "third_party/blink/renderer/core/css_value_keywords.h"
+ #include "third_party/blink/renderer/core/dom/text_link_colors.h"
++#include "third_party/blink/renderer/core/style/krypton_boost_colors.h"
+ #include "third_party/blink/renderer/platform/geometry/calculation_expression_node.h"
+ #include "third_party/blink/renderer/platform/geometry/evaluation_input.h"
+ #include "third_party/blink/renderer/platform/geometry/skia_geometry_utils.h"
+@@ -156,11 +157,14 @@
+     const ComputedStyle& style,
+     const ContainerSizes& container_sizes,
+     const gfx::SizeF& size) const {
++  const bool cacheable =
++      is_cacheable_ && !style.GetVariableData(krypton_boost::PropertyName());
++
+   if (size.IsEmpty()) {
+     return nullptr;
+   }
+ 
+-  if (is_cacheable_) {
++  if (cacheable) {
+     if (!Clients().Contains(&client)) {
+       return nullptr;
+     }
+@@ -216,7 +220,7 @@
+ 
+   scoped_refptr<Image> new_image =
+       GradientGeneratedImage::Create(std::move(gradient), size);
+-  if (is_cacheable_) {
++  if (cacheable) {
+     PutImage(size, new_image);
+   }
+ 
+@@ -396,17 +400,19 @@
+                               const CSSValue& stop_color,
+                               const Document& document,
+                               const ComputedStyle& style) {
+-  mojom::blink::ColorScheme color_scheme = style.UsedColorScheme();
+-  const ResolveColorValueContext context{
+-      .length_resolver = conversion_data,
+-      .text_link_colors = document.GetTextLinkColors(),
+-      .used_color_scheme = color_scheme,
+-      .color_provider = document.GetColorProviderForPainting(color_scheme),
+-      .can_expose_accent_color =
+-          document.IsInWebAppScope() && document.IsInitialProfile()};
+-  const StyleColor style_stop_color = ResolveColorValue(stop_color, context);
+-  return style_stop_color.Resolve(
+-      style.VisitedDependentColor(GetCSSPropertyColor()), color_scheme);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    mojom::blink::ColorScheme color_scheme = style.UsedColorScheme();
++    const ResolveColorValueContext context{
++        .length_resolver = conversion_data,
++        .text_link_colors = document.GetTextLinkColors(),
++        .used_color_scheme = color_scheme,
++        .color_provider = document.GetColorProviderForPainting(color_scheme),
++        .can_expose_accent_color =
++            document.IsInWebAppScope() && document.IsInitialProfile()};
++    const StyleColor style_stop_color = ResolveColorValue(stop_color, context);
++    return style_stop_color.Resolve(
++        style.VisitedDependentColor(GetCSSPropertyColor()), color_scheme);
++  });
+ }
+ 
+ void CSSGradientValue::AddDeprecatedStops(
+--- a/third_party/blink/renderer/core/css/properties/longhands/longhands_custom.cc
++++ b/third_party/blink/renderer/core/css/properties/longhands/longhands_custom.cc
+@@ -77,6 +77,7 @@
+ #include "third_party/blink/renderer/core/style/coord_box_offset_path_operation.h"
+ #include "third_party/blink/renderer/core/style/geometry_box_clip_path_operation.h"
+ #include "third_party/blink/renderer/core/style/grid_area.h"
++#include "third_party/blink/renderer/core/style/krypton_boost_colors.h"
+ #include "third_party/blink/renderer/core/style/link_parameter_list.h"
+ #include "third_party/blink/renderer/core/style/paint_order_array.h"
+ #include "third_party/blink/renderer/core/style/reference_clip_path_operation.h"
+@@ -1140,23 +1141,25 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& background_color = style.BackgroundColor();
+-  if (!style.InForcedColorsMode() && !background_color.HasColorKeyword() &&
+-      !background_color.IsUnresolvedColorFunction()) {
+-    // Fast path.
+-    if (is_current_color) {
+-      *is_current_color = false;
+-    }
+-    return background_color.GetColor();
+-  } else {
+-    if (style.ShouldForceColor(background_color)) {
+-      return GetCSSPropertyInternalForcedBackgroundColor()
+-          .ColorIncludingFallback(false, style, is_current_color);
+-    }
+-    return background_color.Resolve(style.GetCurrentColor(),
+-                                    style.UsedColorScheme(), is_current_color);
+-  }
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& background_color = style.BackgroundColor();
++    if (!style.InForcedColorsMode() && !background_color.HasColorKeyword() &&
++        !background_color.IsUnresolvedColorFunction()) {
++      // Fast path.
++      if (is_current_color) {
++        *is_current_color = false;
++      }
++      return background_color.GetColor();
++    } else {
++      if (style.ShouldForceColor(background_color)) {
++        return GetCSSPropertyInternalForcedBackgroundColor()
++            .ColorIncludingFallback(false, style, is_current_color);
++      }
++      return background_color.Resolve(
++          style.GetCurrentColor(), style.UsedColorScheme(), is_current_color);
++    }
++  });
+ }
+ 
+ const CSSValue* BackgroundColor::CSSValueFromComputedStyleInternal(
+@@ -1403,15 +1406,17 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& border_bottom_color = style.BorderBottomColor();
+-  if (style.ShouldForceColor(border_bottom_color)) {
+-    return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
+-        false, style, is_current_color);
+-  }
+-  return ComputedStyleUtils::BorderSideColor(style, border_bottom_color,
+-                                             style.BorderBottomStyle(),
+-                                             visited_link, is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& border_bottom_color = style.BorderBottomColor();
++    if (style.ShouldForceColor(border_bottom_color)) {
++      return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
++          false, style, is_current_color);
++    }
++    return ComputedStyleUtils::BorderSideColor(style, border_bottom_color,
++                                               style.BorderBottomStyle(),
++                                               visited_link, is_current_color);
++  });
+ }
+ 
+ const CSSValue* BorderBottomColor::CSSValueFromComputedStyleInternal(
+@@ -1655,15 +1660,17 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& border_left_color = style.BorderLeftColor();
+-  if (style.ShouldForceColor(border_left_color)) {
+-    return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
+-        false, style, is_current_color);
+-  }
+-  return ComputedStyleUtils::BorderSideColor(style, border_left_color,
+-                                             style.BorderLeftStyle(),
+-                                             visited_link, is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& border_left_color = style.BorderLeftColor();
++    if (style.ShouldForceColor(border_left_color)) {
++      return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
++          false, style, is_current_color);
++    }
++    return ComputedStyleUtils::BorderSideColor(style, border_left_color,
++                                               style.BorderLeftStyle(),
++                                               visited_link, is_current_color);
++  });
+ }
+ 
+ const CSSValue* BorderLeftColor::CSSValueFromComputedStyleInternal(
+@@ -1742,15 +1749,17 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& border_right_color = style.BorderRightColor();
+-  if (style.ShouldForceColor(border_right_color)) {
+-    return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
+-        false, style, is_current_color);
+-  }
+-  return ComputedStyleUtils::BorderSideColor(style, border_right_color,
+-                                             style.BorderRightStyle(), false,
+-                                             is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& border_right_color = style.BorderRightColor();
++    if (style.ShouldForceColor(border_right_color)) {
++      return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
++          false, style, is_current_color);
++    }
++    return ComputedStyleUtils::BorderSideColor(style, border_right_color,
++                                               style.BorderRightStyle(), false,
++                                               is_current_color);
++  });
+ }
+ 
+ const CSSValue* BorderRightColor::CSSValueFromComputedStyleInternal(
+@@ -1829,15 +1838,17 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& border_top_color = style.BorderTopColor();
+-  if (style.ShouldForceColor(border_top_color)) {
+-    return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
+-        false, style, is_current_color);
+-  }
+-  return ComputedStyleUtils::BorderSideColor(style, border_top_color,
+-                                             style.BorderTopStyle(),
+-                                             visited_link, is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& border_top_color = style.BorderTopColor();
++    if (style.ShouldForceColor(border_top_color)) {
++      return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
++          false, style, is_current_color);
++    }
++    return ComputedStyleUtils::BorderSideColor(style, border_top_color,
++                                               style.BorderTopStyle(),
++                                               visited_link, is_current_color);
++  });
+ }
+ 
+ const CSSValue* BorderTopColor::CSSValueFromComputedStyleInternal(
+@@ -2200,18 +2211,20 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleAutoColor& auto_color = style.CaretColor().FillColor();
+-  // TODO(rego): We may want to adjust the caret color if it's the same as
+-  // the background to ensure good visibility and contrast.
+-  const StyleColor result = auto_color.IsAutoColor()
+-                                ? StyleColor::CurrentColor()
+-                                : auto_color.ToStyleColor();
+-  if (style.ShouldForceColor(result)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return result.Resolve(style.GetCurrentColor(), style.UsedColorScheme(),
+-                        is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleAutoColor& auto_color = style.CaretColor().FillColor();
++    // TODO(rego): We may want to adjust the caret color if it's the same as
++    // the background to ensure good visibility and contrast.
++    const StyleColor result = auto_color.IsAutoColor()
++                                  ? StyleColor::CurrentColor()
++                                  : auto_color.ToStyleColor();
++    if (style.ShouldForceColor(result)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return result.Resolve(style.GetCurrentColor(), style.UsedColorScheme(),
++                          is_current_color);
++  });
+ }
+ 
+ const CSSValue* CaretColor::CSSValueFromComputedStyleInternal(
+@@ -2417,12 +2430,14 @@
+ const blink::Color Color::ColorIncludingFallback(bool visited_link,
+                                                  const ComputedStyle& style,
+                                                  bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  if (style.ShouldForceColor(style.Color())) {
+-    return GetCSSPropertyInternalForcedColor().ColorIncludingFallback(
+-        false, style, is_current_color);
+-  }
+-  return style.GetCurrentColor(is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    if (style.ShouldForceColor(style.Color())) {
++      return GetCSSPropertyInternalForcedColor().ColorIncludingFallback(
++          false, style, is_current_color);
++    }
++    return style.GetCurrentColor(is_current_color);
++  });
+ }
+ 
+ const CSSValue* Color::CSSValueFromComputedStyleInternal(
+@@ -2711,14 +2726,16 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& column_rule_color =
+-      style.ColumnRuleColor().GetSingleValue();
+-  if (style.ShouldForceColor(column_rule_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return column_rule_color.Resolve(style.GetCurrentColor(),
+-                                   style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& column_rule_color =
++        style.ColumnRuleColor().GetSingleValue();
++    if (style.ShouldForceColor(column_rule_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return column_rule_color.Resolve(style.GetCurrentColor(),
++                                     style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* ColumnRuleColor::CSSValueFromComputedStyleInternal(
+@@ -4193,14 +4210,16 @@
+ const blink::Color Fill::ColorIncludingFallback(bool visited_link,
+                                                 const ComputedStyle& style,
+                                                 bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  DCHECK(style.FillPaint().HasColor());
+-  const StyleColor& fill_color = style.FillPaint().GetColor();
+-  if (style.ShouldForceColor(fill_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return fill_color.Resolve(style.GetCurrentColor(), style.UsedColorScheme(),
+-                            is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    DCHECK(style.FillPaint().HasColor());
++    const StyleColor& fill_color = style.FillPaint().GetColor();
++    if (style.ShouldForceColor(fill_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return fill_color.Resolve(style.GetCurrentColor(), style.UsedColorScheme(),
++                              is_current_color);
++  });
+ }
+ 
+ void Fill::ApplyValue(StyleResolverState& state,
+@@ -4440,15 +4459,17 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  const StyleColor& flood_color = style.FloodColor();
+-  if (style.ShouldForceColor(flood_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  blink::Color current_color = visited_link
+-                                   ? style.GetInternalVisitedCurrentColor()
+-                                   : style.GetCurrentColor();
+-  return flood_color.Resolve(current_color, style.UsedColorScheme(),
+-                             is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    const StyleColor& flood_color = style.FloodColor();
++    if (style.ShouldForceColor(flood_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    blink::Color current_color = visited_link
++                                     ? style.GetInternalVisitedCurrentColor()
++                                     : style.GetCurrentColor();
++    return flood_color.Resolve(current_color, style.UsedColorScheme(),
++                               is_current_color);
++  });
+ }
+ 
+ const CSSValue* FloodColor::CSSValueFromComputedStyleInternal(
+@@ -4988,12 +5009,14 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  if (style.ShouldForceColor(style.InternalVisitedColor())) {
+-    return GetCSSPropertyInternalForcedVisitedColor().ColorIncludingFallback(
+-        true, style, is_current_color);
+-  }
+-  return style.GetInternalVisitedCurrentColor(is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    if (style.ShouldForceColor(style.InternalVisitedColor())) {
++      return GetCSSPropertyInternalForcedVisitedColor().ColorIncludingFallback(
++          true, style, is_current_color);
++    }
++    return style.GetInternalVisitedCurrentColor(is_current_color);
++  });
+ }
+ 
+ const CSSValue* GridAutoColumns::ParseSingleValue(
+@@ -5557,81 +5580,89 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-
+-  const StyleColor& visited_background_color =
+-      style.InternalVisitedBackgroundColor();
+-  if (style.ShouldForceColor(visited_background_color)) {
+-    return GetCSSPropertyInternalForcedBackgroundColor().ColorIncludingFallback(
+-        true, style, is_current_color);
+-  }
+-  blink::Color color = visited_background_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
+-
+-  // TODO: Technically someone could explicitly specify the color
+-  // transparent, but for now we'll just assume that if the background color
+-  // is transparent that it wasn't set. Note that it's weird that we're
+-  // returning unvisited info for a visited link, but given our restriction
+-  // that the alpha values have to match, it makes more sense to return the
+-  // unvisited background color if specified than it does to return black.
+-  // This behavior matches what Firefox 4 does as well.
+-  if (color == blink::Color::kTransparent) {
+-    // Overwrite is_current_color based on the unvisited background color.
+-    return style.BackgroundColor().Resolve(
+-        style.GetCurrentColor(), style.UsedColorScheme(), is_current_color);
+-  }
+-
+-  return color;
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++
++    const StyleColor& visited_background_color =
++        style.InternalVisitedBackgroundColor();
++    if (style.ShouldForceColor(visited_background_color)) {
++      return GetCSSPropertyInternalForcedBackgroundColor()
++          .ColorIncludingFallback(true, style, is_current_color);
++    }
++    blink::Color color = visited_background_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++
++    // TODO: Technically someone could explicitly specify the color
++    // transparent, but for now we'll just assume that if the background color
++    // is transparent that it wasn't set. Note that it's weird that we're
++    // returning unvisited info for a visited link, but given our restriction
++    // that the alpha values have to match, it makes more sense to return the
++    // unvisited background color if specified than it does to return black.
++    // This behavior matches what Firefox 4 does as well.
++    if (color == blink::Color::kTransparent) {
++      // Overwrite is_current_color based on the unvisited background color.
++      return style.BackgroundColor().Resolve(
++          style.GetCurrentColor(), style.UsedColorScheme(), is_current_color);
++    }
++
++    return color;
++  });
+ }
+ 
+ const blink::Color InternalVisitedBorderLeftColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_border_left_color =
+-      style.InternalVisitedBorderLeftColor();
+-  if (style.ShouldForceColor(visited_border_left_color)) {
+-    return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
+-        true, style, is_current_color);
+-  }
+-  return visited_border_left_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_border_left_color =
++        style.InternalVisitedBorderLeftColor();
++    if (style.ShouldForceColor(visited_border_left_color)) {
++      return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
++          true, style, is_current_color);
++    }
++    return visited_border_left_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedBorderTopColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_border_top_color =
+-      style.InternalVisitedBorderTopColor();
+-  if (style.ShouldForceColor(visited_border_top_color)) {
+-    return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
+-        true, style, is_current_color);
+-  }
+-  return visited_border_top_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_border_top_color =
++        style.InternalVisitedBorderTopColor();
++    if (style.ShouldForceColor(visited_border_top_color)) {
++      return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
++          true, style, is_current_color);
++    }
++    return visited_border_top_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedCaretColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleAutoColor& auto_color =
+-      style.InternalVisitedCaretColor().FillColor();
+-  const StyleColor result = auto_color.IsAutoColor()
+-                                ? StyleColor::CurrentColor()
+-                                : auto_color.ToStyleColor();
+-  if (style.ShouldForceColor(result)) {
+-    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
+-  }
+-  return result.Resolve(style.GetInternalVisitedCurrentColor(),
+-                        style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleAutoColor& auto_color =
++        style.InternalVisitedCaretColor().FillColor();
++    const StyleColor result = auto_color.IsAutoColor()
++                                  ? StyleColor::CurrentColor()
++                                  : auto_color.ToStyleColor();
++    if (style.ShouldForceColor(result)) {
++      return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++    }
++    return result.Resolve(style.GetInternalVisitedCurrentColor(),
++                          style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* InternalVisitedCaretColor::ParseSingleValue(
+@@ -5646,92 +5677,105 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_border_right_color =
+-      style.InternalVisitedBorderRightColor();
+-  if (style.ShouldForceColor(visited_border_right_color)) {
+-    return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
+-        true, style, is_current_color);
+-  }
+-  return visited_border_right_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_border_right_color =
++        style.InternalVisitedBorderRightColor();
++    if (style.ShouldForceColor(visited_border_right_color)) {
++      return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
++          true, style, is_current_color);
++    }
++    return visited_border_right_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedBorderBottomColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_border_bottom_color =
+-      style.InternalVisitedBorderBottomColor();
+-  if (style.ShouldForceColor(visited_border_bottom_color)) {
+-    return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
+-        true, style, is_current_color);
+-  }
+-  return visited_border_bottom_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_border_bottom_color =
++        style.InternalVisitedBorderBottomColor();
++    if (style.ShouldForceColor(visited_border_bottom_color)) {
++      return GetCSSPropertyInternalForcedBorderColor().ColorIncludingFallback(
++          true, style, is_current_color);
++    }
++    return visited_border_bottom_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedFill::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const SVGPaint& paint = style.InternalVisitedFillPaint();
+-
+-  // FIXME: This code doesn't support the uri component of the visited link
+-  // paint, https://bugs.webkit.org/show_bug.cgi?id=70006
+-  if (!paint.HasColor()) {
+-    return GetCSSPropertyFill().ColorIncludingFallback(false, style,
+-                                                       is_current_color);
+-  }
+-  const StyleColor& visited_fill_color = paint.GetColor();
+-  if (style.ShouldForceColor(visited_fill_color)) {
+-    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
+-  }
+-  return visited_fill_color.Resolve(style.GetInternalVisitedCurrentColor(),
+-                                    style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const SVGPaint& paint = style.InternalVisitedFillPaint();
++
++    // FIXME: This code doesn't support the uri component of the visited link
++    // paint, https://bugs.webkit.org/show_bug.cgi?id=70006
++    if (!paint.HasColor()) {
++      return GetCSSPropertyFill().ColorIncludingFallback(false, style,
++                                                         is_current_color);
++    }
++    const StyleColor& visited_fill_color = paint.GetColor();
++    if (style.ShouldForceColor(visited_fill_color)) {
++      return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++    }
++    return visited_fill_color.Resolve(style.GetInternalVisitedCurrentColor(),
++                                      style.UsedColorScheme(),
++                                      is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedFloodColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& flood_color = style.InternalVisitedFloodColor();
+-  if (style.ShouldForceColor(flood_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return flood_color.Resolve(style.GetInternalVisitedCurrentColor(),
+-                             style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& flood_color = style.InternalVisitedFloodColor();
++    if (style.ShouldForceColor(flood_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return flood_color.Resolve(style.GetInternalVisitedCurrentColor(),
++                               style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedLightingColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& lighting_color = style.InternalVisitedLightingColor();
+-  if (style.ShouldForceColor(lighting_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return lighting_color.Resolve(style.GetInternalVisitedCurrentColor(),
+-                                style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& lighting_color = style.InternalVisitedLightingColor();
++    if (style.ShouldForceColor(lighting_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return lighting_color.Resolve(style.GetInternalVisitedCurrentColor(),
++                                  style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedStopColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& stop_color = style.InternalVisitedStopColor();
+-  if (style.ShouldForceColor(stop_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return stop_color.Resolve(style.GetInternalVisitedCurrentColor(),
+-                            style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& stop_color = style.InternalVisitedStopColor();
++    if (style.ShouldForceColor(stop_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return stop_color.Resolve(style.GetInternalVisitedCurrentColor(),
++                              style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* ColumnRuleBreak::CSSValueFromComputedStyleInternal(
+@@ -5954,34 +5998,39 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  // Visited column rule colors only support a single value. For multi-value
+-  // lists inside links, style resolution uses the default color instead.
+-  // TODO(crbug.com/411367099): Remove this restriction once visited styles
+-  // support multiple values.
+-  const StyleColor& visited_column_rule_color =
+-      style.InternalVisitedColumnRuleColor().GetSingleValue();
+-  if (style.ShouldForceColor(visited_column_rule_color)) {
+-    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
+-  }
+-  return visited_column_rule_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    // Visited column rule colors only support a single value. For multi-value
++    // lists inside links, style resolution uses the default color instead.
++    // TODO(crbug.com/411367099): Remove this restriction once visited styles
++    // support multiple values.
++    const StyleColor& visited_column_rule_color =
++        style.InternalVisitedColumnRuleColor().GetSingleValue();
++    if (style.ShouldForceColor(visited_column_rule_color)) {
++      return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++    }
++    return visited_column_rule_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedOutlineColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_outline_color = style.InternalVisitedOutlineColor();
+-  if (style.ShouldForceColor(visited_outline_color)) {
+-    return GetCSSPropertyInternalForcedOutlineColor().ColorIncludingFallback(
+-        true, style, is_current_color);
+-  }
+-  return visited_outline_color.Resolve(style.GetInternalVisitedCurrentColor(),
+-                                       style.UsedColorScheme(),
+-                                       is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_outline_color =
++        style.InternalVisitedOutlineColor();
++    if (style.ShouldForceColor(visited_outline_color)) {
++      return GetCSSPropertyInternalForcedOutlineColor().ColorIncludingFallback(
++          true, style, is_current_color);
++    }
++    return visited_outline_color.Resolve(style.GetInternalVisitedCurrentColor(),
++                                         style.UsedColorScheme(),
++                                         is_current_color);
++  });
+ }
+ 
+ const CSSValue* InternalVisitedOutlineColor::ParseSingleValue(
+@@ -5996,116 +6045,129 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const SVGPaint& paint = style.InternalVisitedStrokePaint();
+-
+-  // FIXME: This code doesn't support the uri component of the visited link
+-  // paint, https://bugs.webkit.org/show_bug.cgi?id=70006
+-  if (!paint.HasColor()) {
+-    return GetCSSPropertyStroke().ColorIncludingFallback(false, style,
+-                                                         is_current_color);
+-  }
+-  const StyleColor& visited_stroke_color = paint.GetColor();
+-  if (style.ShouldForceColor(visited_stroke_color)) {
+-    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
+-  }
+-  return visited_stroke_color.Resolve(style.GetInternalVisitedCurrentColor(),
+-                                      style.UsedColorScheme(),
+-                                      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const SVGPaint& paint = style.InternalVisitedStrokePaint();
++
++    // FIXME: This code doesn't support the uri component of the visited link
++    // paint, https://bugs.webkit.org/show_bug.cgi?id=70006
++    if (!paint.HasColor()) {
++      return GetCSSPropertyStroke().ColorIncludingFallback(false, style,
++                                                           is_current_color);
++    }
++    const StyleColor& visited_stroke_color = paint.GetColor();
++    if (style.ShouldForceColor(visited_stroke_color)) {
++      return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++    }
++    return visited_stroke_color.Resolve(style.GetInternalVisitedCurrentColor(),
++                                        style.UsedColorScheme(),
++                                        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedTextDecorationColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_decoration_color =
+-      style.DecorationColorIncludingFallback(visited_link);
+-  if (style.ShouldForceColor(visited_decoration_color)) {
+-    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
+-  }
+-  return visited_decoration_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_decoration_color =
++        style.DecorationColorIncludingFallback(visited_link);
++    if (style.ShouldForceColor(visited_decoration_color)) {
++      return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++    }
++    return visited_decoration_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedTextEmphasisColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_text_emphasis_color =
+-      style.InternalVisitedTextEmphasisColor();
+-  if (style.ShouldForceColor(visited_text_emphasis_color)) {
+-    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
+-  }
+-  return visited_text_emphasis_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_text_emphasis_color =
++        style.InternalVisitedTextEmphasisColor();
++    if (style.ShouldForceColor(visited_text_emphasis_color)) {
++      return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++    }
++    return visited_text_emphasis_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedTextFillColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_text_fill_color =
+-      style.InternalVisitedTextFillColor();
+-  if (style.ShouldForceColor(visited_text_fill_color)) {
+-    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
+-  }
+-  return visited_text_fill_color.Resolve(style.GetInternalVisitedCurrentColor(),
+-                                         style.UsedColorScheme(),
+-                                         is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_text_fill_color =
++        style.InternalVisitedTextFillColor();
++    if (style.ShouldForceColor(visited_text_fill_color)) {
++      return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++    }
++    return visited_text_fill_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalVisitedTextStrokeColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  const StyleColor& visited_text_stroke_color =
+-      style.InternalVisitedTextStrokeColor();
+-  if (style.ShouldForceColor(visited_text_stroke_color)) {
+-    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
+-  }
+-  return visited_text_stroke_color.Resolve(
+-      style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
+-      is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    const StyleColor& visited_text_stroke_color =
++        style.InternalVisitedTextStrokeColor();
++    if (style.ShouldForceColor(visited_text_stroke_color)) {
++      return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++    }
++    return visited_text_stroke_color.Resolve(
++        style.GetInternalVisitedCurrentColor(), style.UsedColorScheme(),
++        is_current_color);
++  });
+ }
+ 
+ const blink::Color InternalForcedBackgroundColor::ColorIncludingFallback(
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  blink::Color forced_current_color;
+-  float alpha;
+-  bool alpha_is_current_color;
+-  if (visited_link) {
+-    forced_current_color = style.GetInternalForcedVisitedCurrentColor(
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    blink::Color forced_current_color;
++    float alpha;
++    bool alpha_is_current_color;
++    if (visited_link) {
++      forced_current_color = style.GetInternalForcedVisitedCurrentColor(
+         /* No is_current_color because we might not be forced_current_color */);
+-    alpha = style.InternalVisitedBackgroundColor()
+-                .Resolve(style.GetInternalVisitedCurrentColor(),
+-                         style.UsedColorScheme(), &alpha_is_current_color)
+-                .Alpha();
+-  } else {
+-    forced_current_color = style.GetInternalForcedCurrentColor(
++      alpha = style.InternalVisitedBackgroundColor()
++                  .Resolve(style.GetInternalVisitedCurrentColor(),
++                           style.UsedColorScheme(), &alpha_is_current_color)
++                  .Alpha();
++    } else {
++      forced_current_color = style.GetInternalForcedCurrentColor(
+         /* No is_current_color because we might not be forced_current_color */);
+-    alpha = style.BackgroundColor()
+-                .Resolve(style.GetCurrentColor(), style.UsedColorScheme(),
+-                         &alpha_is_current_color)
+-                .Alpha();
+-  }
+-
+-  bool result_is_current_color;
+-  blink::Color result = style.InternalForcedBackgroundColor().Resolve(
+-      forced_current_color, style.UsedColorScheme(), &result_is_current_color);
+-  result.SetAlpha(alpha);
+-
+-  if (is_current_color) {
+-    *is_current_color = alpha_is_current_color || result_is_current_color;
+-  }
+-  return result;
++      alpha = style.BackgroundColor()
++                  .Resolve(style.GetCurrentColor(), style.UsedColorScheme(),
++                           &alpha_is_current_color)
++                  .Alpha();
++    }
++
++    bool result_is_current_color;
++    blink::Color result = style.InternalForcedBackgroundColor().Resolve(
++        forced_current_color, style.UsedColorScheme(),
++        &result_is_current_color);
++    result.SetAlpha(alpha);
++
++    if (is_current_color) {
++      *is_current_color = alpha_is_current_color || result_is_current_color;
++    }
++    return result;
++  });
+ }
+ 
+ const CSSValue*
+@@ -6124,13 +6186,15 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  // Don’t pass is_current_color here because we might not be current_color
+-  blink::Color current_color =
+-      visited_link ? style.GetInternalForcedVisitedCurrentColor()
+-                   : style.GetInternalForcedCurrentColor();
+-
+-  return style.InternalForcedBorderColor().Resolve(
+-      current_color, style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    // Don’t pass is_current_color here because we might not be current_color
++    blink::Color current_color =
++        visited_link ? style.GetInternalForcedVisitedCurrentColor()
++                     : style.GetInternalForcedCurrentColor();
++
++    return style.InternalForcedBorderColor().Resolve(
++        current_color, style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* InternalForcedBorderColor::CSSValueFromComputedStyleInternal(
+@@ -6178,8 +6242,10 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  return style.GetInternalForcedCurrentColor(is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    return style.GetInternalForcedCurrentColor(is_current_color);
++  });
+ }
+ 
+ const CSSValue* InternalForcedColor::CSSValueFromComputedStyleInternal(
+@@ -6196,13 +6262,15 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  // No is_current_color here because we might not be current_color
+-  blink::Color current_color =
+-      visited_link ? style.GetInternalForcedVisitedCurrentColor()
+-                   : style.GetInternalForcedCurrentColor();
+-
+-  return style.InternalForcedOutlineColor().Resolve(
+-      current_color, style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    // No is_current_color here because we might not be current_color
++    blink::Color current_color =
++        visited_link ? style.GetInternalForcedVisitedCurrentColor()
++                     : style.GetInternalForcedCurrentColor();
++
++    return style.InternalForcedOutlineColor().Resolve(
++        current_color, style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* InternalForcedOutlineColor::CSSValueFromComputedStyleInternal(
+@@ -6250,8 +6318,10 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(visited_link);
+-  return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(visited_link);
++    return style.GetInternalForcedVisitedCurrentColor(is_current_color);
++  });
+ }
+ 
+ const CSSValue* Interactivity::CSSValueFromComputedStyleInternal(
+@@ -6409,15 +6479,17 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  const StyleColor& lighting_color = style.LightingColor();
+-  if (style.ShouldForceColor(lighting_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  blink::Color current_color = visited_link
+-                                   ? style.GetInternalVisitedCurrentColor()
+-                                   : style.GetCurrentColor();
+-  return lighting_color.Resolve(current_color, style.UsedColorScheme(),
+-                                is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    const StyleColor& lighting_color = style.LightingColor();
++    if (style.ShouldForceColor(lighting_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    blink::Color current_color = visited_link
++                                     ? style.GetInternalVisitedCurrentColor()
++                                     : style.GetCurrentColor();
++    return lighting_color.Resolve(current_color, style.UsedColorScheme(),
++                                  is_current_color);
++  });
+ }
+ 
+ const CSSValue* LightingColor::CSSValueFromComputedStyleInternal(
+@@ -7653,14 +7725,16 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& outline_color = style.OutlineColor();
+-  if (style.ShouldForceColor(outline_color)) {
+-    return GetCSSPropertyInternalForcedOutlineColor().ColorIncludingFallback(
+-        false, style, is_current_color);
+-  }
+-  return outline_color.Resolve(style.GetCurrentColor(), style.UsedColorScheme(),
+-                               is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& outline_color = style.OutlineColor();
++    if (style.ShouldForceColor(outline_color)) {
++      return GetCSSPropertyInternalForcedOutlineColor().ColorIncludingFallback(
++          false, style, is_current_color);
++    }
++    return outline_color.Resolve(style.GetCurrentColor(),
++                                 style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* OutlineColor::CSSValueFromComputedStyleInternal(
+@@ -9637,15 +9711,17 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  const StyleColor& stop_color = style.StopColor();
+-  if (style.ShouldForceColor(stop_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  blink::Color current_color = visited_link
+-                                   ? style.GetInternalVisitedCurrentColor()
+-                                   : style.GetCurrentColor();
+-  return stop_color.Resolve(current_color, style.UsedColorScheme(),
+-                            is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    const StyleColor& stop_color = style.StopColor();
++    if (style.ShouldForceColor(stop_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    blink::Color current_color = visited_link
++                                     ? style.GetInternalVisitedCurrentColor()
++                                     : style.GetCurrentColor();
++    return stop_color.Resolve(current_color, style.UsedColorScheme(),
++                              is_current_color);
++  });
+ }
+ 
+ const CSSValue* StopColor::CSSValueFromComputedStyleInternal(
+@@ -9682,14 +9758,16 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  DCHECK(style.StrokePaint().HasColor());
+-  const StyleColor& stroke_color = style.StrokePaint().GetColor();
+-  if (style.ShouldForceColor(stroke_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return stroke_color.Resolve(style.GetCurrentColor(), style.UsedColorScheme(),
+-                              is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    DCHECK(style.StrokePaint().HasColor());
++    const StyleColor& stroke_color = style.StrokePaint().GetColor();
++    if (style.ShouldForceColor(stroke_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return stroke_color.Resolve(style.GetCurrentColor(),
++                                style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ void Stroke::ApplyValue(StyleResolverState& state,
+@@ -9983,14 +10061,16 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& decoration_color =
+-      style.DecorationColorIncludingFallback(visited_link);
+-  if (style.ShouldForceColor(decoration_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return decoration_color.Resolve(style.GetCurrentColor(),
+-                                  style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& decoration_color =
++        style.DecorationColorIncludingFallback(visited_link);
++    if (style.ShouldForceColor(decoration_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return decoration_color.Resolve(style.GetCurrentColor(),
++                                    style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* TextDecorationColor::CSSValueFromComputedStyleInternal(
+@@ -11957,17 +12037,19 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  const StyleColor& highlight_color = style.TapHighlightColor();
+-  if (style.ShouldForceColor(highlight_color)) {
+-    return visited_link
+-               ? style.GetInternalForcedVisitedCurrentColor(is_current_color)
+-               : style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  blink::Color current_color = visited_link
+-                                   ? style.GetInternalVisitedCurrentColor()
+-                                   : style.GetCurrentColor();
+-  return highlight_color.Resolve(current_color, style.UsedColorScheme(),
+-                                 is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    const StyleColor& highlight_color = style.TapHighlightColor();
++    if (style.ShouldForceColor(highlight_color)) {
++      return visited_link
++                 ? style.GetInternalForcedVisitedCurrentColor(is_current_color)
++                 : style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    blink::Color current_color = visited_link
++                                     ? style.GetInternalVisitedCurrentColor()
++                                     : style.GetCurrentColor();
++    return highlight_color.Resolve(current_color, style.UsedColorScheme(),
++                                   is_current_color);
++  });
+ }
+ 
+ const CSSValue* WebkitTapHighlightColor::CSSValueFromComputedStyleInternal(
+@@ -12016,13 +12098,15 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& text_emphasis_color = style.TextEmphasisColor();
+-  if (style.ShouldForceColor(text_emphasis_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return text_emphasis_color.Resolve(style.GetCurrentColor(),
+-                                     style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& text_emphasis_color = style.TextEmphasisColor();
++    if (style.ShouldForceColor(text_emphasis_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return text_emphasis_color.Resolve(
++        style.GetCurrentColor(), style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* TextEmphasisColor::CSSValueFromComputedStyleInternal(
+@@ -12270,13 +12354,15 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& text_fill_color = style.TextFillColor();
+-  if (style.ShouldForceColor(text_fill_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return text_fill_color.Resolve(style.GetCurrentColor(),
+-                                 style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& text_fill_color = style.TextFillColor();
++    if (style.ShouldForceColor(text_fill_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return text_fill_color.Resolve(style.GetCurrentColor(),
++                                   style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* WebkitTextFillColor::CSSValueFromComputedStyleInternal(
+@@ -12311,13 +12397,15 @@
+     bool visited_link,
+     const ComputedStyle& style,
+     bool* is_current_color) const {
+-  DCHECK(!visited_link);
+-  const StyleColor& text_stroke_color = style.TextStrokeColor();
+-  if (style.ShouldForceColor(text_stroke_color)) {
+-    return style.GetInternalForcedCurrentColor(is_current_color);
+-  }
+-  return text_stroke_color.Resolve(style.GetCurrentColor(),
+-                                   style.UsedColorScheme(), is_current_color);
++  return krypton_boost::Resolve(style, [&]() -> blink::Color {
++    DCHECK(!visited_link);
++    const StyleColor& text_stroke_color = style.TextStrokeColor();
++    if (style.ShouldForceColor(text_stroke_color)) {
++      return style.GetInternalForcedCurrentColor(is_current_color);
++    }
++    return text_stroke_color.Resolve(style.GetCurrentColor(),
++                                     style.UsedColorScheme(), is_current_color);
++  });
+ }
+ 
+ const CSSValue* WebkitTextStrokeColor::CSSValueFromComputedStyleInternal(
+--- a/third_party/blink/renderer/core/paint/paint_layer_painter.cc
++++ b/third_party/blink/renderer/core/paint/paint_layer_painter.cc
+@@ -31,6 +31,7 @@
+ #include "third_party/blink/renderer/core/paint/scrollable_area_painter.h"
+ #include "third_party/blink/renderer/core/paint/svg_mask_painter.h"
+ #include "third_party/blink/renderer/core/paint/timing/paint_timing_utils.h"
++#include "third_party/blink/renderer/core/style/krypton_boost_colors.h"
+ #include "third_party/blink/renderer/core/view_transition/view_transition.h"
+ #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
+ #include "third_party/blink/renderer/platform/graphics/paint/foreign_layer_display_item.h"
+@@ -287,6 +288,8 @@
+ 
+ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
+                                      PaintFlags paint_flags) {
++  krypton_boost::PaintScope boost_paint_scope;
++
+   const auto& object = paint_layer_.GetLayoutObject();
+   if (object.NeedsLayout() && !object.ChildLayoutBlockedByDisplayLock())
+       [[unlikely]] {
+--- a/third_party/blink/renderer/core/style/build.gni
++++ b/third_party/blink/renderer/core/style/build.gni
+@@ -48,6 +48,7 @@
+   "grid_track_list.h",
+   "grid_track_size.h",
+   "flow_tolerance.h",
++  "krypton_boost_colors.h",
+   "position_area.cc",
+   "position_area.h",
+   "list_style_type_data.cc",
+--- a/third_party/blink/renderer/core/style/computed_style.cc
++++ b/third_party/blink/renderer/core/style/computed_style.cc
+@@ -75,6 +75,7 @@
+ #include "third_party/blink/renderer/core/style/coord_box_offset_path_operation.h"
+ #include "third_party/blink/renderer/core/style/cursor_data.h"
+ #include "third_party/blink/renderer/core/style/gap_data.h"
++#include "third_party/blink/renderer/core/style/krypton_boost_colors.h"
+ #include "third_party/blink/renderer/core/style/reference_offset_path_operation.h"
+ #include "third_party/blink/renderer/core/style/shadow_list.h"
+ #include "third_party/blink/renderer/core/style/shape_offset_path_operation.h"
+@@ -706,6 +707,10 @@
+     const Document& document,
+     const ComputedStyle& other) const {
+   StyleDifference diff;
++  if (krypton_boost::ThemeChanged(*this, other)) {
++    diff.SetNeedsNormalPaintInvalidation();
++  }
++
+   uint64_t field_diff = FieldInvalidationDiff(*this, other);
+ 
+   if (DiffNeedsReshape(other, field_diff)) {

@@ -1,0 +1,45 @@
+# Copyright 2026 The Krypton Authors
+# Purpose: GPU backdrop delivery and a see-through frame for opt-in KryptonUI
+# liquid glass.
+# Why: Native WinUI islands need the browser compositor's background through
+# public shared-texture interop; they cannot sample Chromium page surfaces.
+# Quality glass also leaves the frame unpainted over DWM's system backdrop,
+# which needs the Windows frame host's existing transparency hooks.
+# The implementation stays in Krypton-owned adapter sources.
+
+--- a/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc
++++ b/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc
+@@ -24,6 +24,7 @@
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/themes/theme_service.h"
+ #include "chrome/browser/themes/theme_service_factory.h"
++#include "chrome/browser/ui/krypton_ui/frame_material.h"
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/views/frame/browser_frame_view.h"
+ #include "chrome/browser/ui/views/frame/browser_frame_view_win.h"
+@@ -375,6 +376,13 @@
+       !browser_view_->GetIsNormalType() ||
+       !DesktopWindowTreeHostWin::ShouldUseNativeFrame()) {
+     return false;
++  }
++
++  // Krypton liquid glass: DWM's system backdrop fills the unpainted frame.
++  if (krypton_ui::FrameMaterialOf(GetWidget()) ==
++      krypton_ui::FrameMaterial::kTransparent) {
++    *insets = gfx::Insets(-1);
++    return true;
+   }
+ 
+   // Don't extend the glass in at all if it won't be visible.
+@@ -538,7 +546,10 @@
+ bool BrowserDesktopWindowTreeHostWin::ShouldWindowContentsBeTransparent()
+     const {
+   CHECK(browser_view_);
+-  return false;
++  // Krypton liquid glass leaves the frame unpainted over DWM's backdrop.
++  return krypton_ui::FrameMaterialOf(GetWidget()) ==
++             krypton_ui::FrameMaterial::kTransparent &&
++         !IsFullscreen();
+ }
+ 
+ void BrowserDesktopWindowTreeHostWin::ClientDestroyedWidget() {

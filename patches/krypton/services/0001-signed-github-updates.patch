@@ -1,0 +1,229 @@
+# Krypton: replace Helium browser updating with signed GitHub releases.
+# The user requested Krypton-owned updates and deferred installation.
+# Remove WinSparkle startup, relaunch handling, runtime linkage, and
+# update-helper packaging; use the signed Krypton helper and About UI.
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1632,19 +1632,10 @@
+   }
+ 
+   if (is_win) {
+-    if (enable_winsparkle) {
+-      sources += [
+-        "win/winsparkle_glue.cc",
+-        "win/winsparkle_glue.h",
+-      ]
+-      deps += [
+-        "//components/helium_services",
+-        "//third_party/winsparkle",
+-      ]
+-      data_deps = [ "//chrome/installer/helium_update_helper" ]
+-    }
+-
+     sources += [
++      "win/krypton_update_service.cc",
++      "win/krypton_update_service.h",
++      "win/krypton_update_trust.h",
+       "chrome_browser_main_win.cc",
+       "chrome_browser_main_win.h",
+       "font_prewarmer_tab_helper.cc",
+@@ -1657,6 +1648,7 @@
+     ]
+ 
+     libs = [
++      "bcrypt.lib",
+       "secur32.lib",
+ 
+       # Needed for _variant_t used in browser_dm_token_storage_win.cc
+--- a/chrome/browser/chrome_browser_main_win.cc
++++ b/chrome/browser/chrome_browser_main_win.cc
+@@ -4,6 +4,7 @@
+ 
+ 
+ #include "chrome/browser/chrome_browser_main_win.h"
++#include "chrome/browser/win/krypton_update_service.h"
+ 
+ // windows.h must be included before shellapi.h
+ #include <windows.h>
+@@ -137,9 +138,6 @@
+ #include "chrome/browser/platform_experience/installer/installer_win.h"
+ #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
+ 
+-#if BUILDFLAG(ENABLE_WINSPARKLE)
+-#include "chrome/browser/win/winsparkle_glue.h"
+-#endif  // BUILDFLAG(ENABLE_WINSPARKLE)
+ 
+ namespace {
+ 
+@@ -773,9 +771,6 @@
+   if (!is_initial_profile)
+     return;
+ 
+-#if BUILDFLAG(ENABLE_WINSPARKLE)
+-  helium::InitializeWinSparkle(profile);
+-#endif
+ 
+   // If Chrome was launched by a Progressive Web App launcher that needs to be
+   // updated, update all launchers for this profile.
+@@ -790,6 +785,7 @@
+ 
+ void ChromeBrowserMainPartsWin::PostBrowserStart() {
+   ChromeBrowserMainParts::PostBrowserStart();
++  krypton::MaybeStartSignedUpdater();
+ 
+   // Verify that the delay load helper hooks are in place. This cannot be tested
+   // from unit tests, so rely on this failing here.
+--- a/chrome/browser/lifetime/application_lifetime_desktop.cc
++++ b/chrome/browser/lifetime/application_lifetime_desktop.cc
+@@ -71,9 +71,9 @@
+ #include "chrome/browser/shutdown_watchdog_mac.h"
+ #endif  // BUILDFLAG(IS_MAC)
+ 
+-#if BUILDFLAG(ENABLE_WINSPARKLE)
+-#include "chrome/browser/win/winsparkle_glue.h"
+-#endif  // BUILDFLAG(ENABLE_WINSPARKLE)
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/win/krypton_update_service.h"
++#endif
+ 
+ #if BUILDFLAG(ENABLE_SESSION_SERVICE)
+ #include "chrome/browser/sessions/session_data_service.h"
+@@ -292,16 +292,10 @@
+       FROM_HERE, base::BindOnce(&ExitIgnoreUnloadHandlers));
+ #else   // !BUILDFLAG(IS_CHROMEOS).
+   // Set the flag to restore state after the restart.
+-  bool self_relaunch = true;
+-#if BUILDFLAG(ENABLE_WINSPARKLE)
+-  // If a system-level update is downloaded and waiting, we raise a
+-  // UAC prompt when the user clicks Relaunch, and hand off to the
+-  // elevated apply helper, which waits for this process to exit,
+-  // and relaunches the browser itself. In that case we do not want
+-  // the normal self-relaunch.
+-  if (helium::MaybeElevateSystemUpdateOnRelaunch()) {
+-    self_relaunch = false;
+-  }
++#if BUILDFLAG(IS_WIN)
++  const bool self_relaunch = !krypton::PrepareSignedUpdateRelaunch();
++#else
++  const bool self_relaunch = true;
+ #endif
+   if (self_relaunch) {
+     pref_service->SetBoolean(prefs::kRestartLastSessionOnShutdown, true);
+--- a/chrome/browser/ui/webui/help/BUILD.gn
++++ b/chrome/browser/ui/webui/help/BUILD.gn
+@@ -65,8 +65,8 @@
+         "//ui/base",
+         "//ui/gfx",
+       ]
+-    } else if (!enable_winsparkle) {
+-      sources = [ "version_updater_basic.cc" ]
++    } else {
++      # The signed Krypton updater factory is linked from //chrome/browser.
+     }
+   }
+ 
+--- a/chrome/browser/upgrade_detector/get_installed_version_win.cc
++++ b/chrome/browser/upgrade_detector/get_installed_version_win.cc
+@@ -12,75 +12,11 @@
+ #include "base/task/task_traits.h"
+ #include "base/task/thread_pool.h"
+ #include "chrome/browser/buildflags.h"
++#include "chrome/installer/util/install_util.h"
+ 
+-#if BUILDFLAG(ENABLE_WINSPARKLE)
+-#include <windows.h>
+-
+-#include <string>
+-#include <vector>
+-
+-#include "base/base_paths.h"
+-#include "base/files/file_path.h"
+-#include "base/files/file_util.h"
+-#include "base/path_service.h"
+-#include "base/process/process.h"
+-#include "base/strings/string_number_conversions.h"
+-#include "base/time/time.h"
+-#include "base/version.h"
+-#include "base/version_info/version_info.h"
+-#include "chrome/common/chrome_paths.h"
+-#include "chrome/installer/util/util_constants.h"
+-#else
+-#include "chrome/installer/util/install_util.h"
+-#endif
+ 
+ namespace {
+ 
+-#if BUILDFLAG(ENABLE_WINSPARKLE)
+-
+-// Duplicated helium::HasPendingUpdateSwap() here rather than shared to
+-// avoid an upgrade_detector -> //chrome/browser circular dependency.
+-bool HasPendingUpdateSwap() {
+-  base::FilePath dir;
+-  if (!base::PathService::Get(base::DIR_EXE, &dir)) {
+-    return false;
+-  }
+-  return ::GetFileAttributesW(
+-             dir.Append(installer::kChromeNewExe).value().c_str()) !=
+-         INVALID_FILE_ATTRIBUTES;
+-}
+-
+-// System installs can't stage without elevation, so the glue drops a
+-// marker holding the process's creation time, so any prior sessions
+-// are ignored, and quit-without-relaunch doesn't leave a stale chip.
+-bool HasPendingSystemUpdate() {
+-  base::FilePath user_data;
+-  if (!base::PathService::Get(chrome::DIR_USER_DATA, &user_data)) {
+-    return false;
+-  }
+-  std::string token;
+-  if (!base::ReadFileToString(
+-          user_data.Append(FILE_PATH_LITERAL("PendingSystemUpdate")), &token)) {
+-    return false;
+-  }
+-  return token == base::NumberToString(base::Process::Current()
+-                                           .CreationTime()
+-                                           .ToDeltaSinceWindowsEpoch()
+-                                           .InMicroseconds());
+-}
+-
+-InstalledAndCriticalVersion GetInstalledVersionSynchronous() {
+-  base::Version running = version_info::GetVersion();
+-  if ((HasPendingUpdateSwap() || HasPendingSystemUpdate()) &&
+-      running.IsValid()) {
+-    std::vector<uint32_t> components = running.components();
+-    components.back() += 1;
+-    return InstalledAndCriticalVersion(base::Version(std::move(components)));
+-  }
+-  return InstalledAndCriticalVersion(std::move(running));
+-}
+-
+-#else  // !BUILDFLAG(ENABLE_WINSPARKLE)
+ 
+ InstalledAndCriticalVersion GetInstalledVersionSynchronous() {
+   base::Version installed_version =
+@@ -95,7 +31,6 @@
+   return InstalledAndCriticalVersion(std::move(installed_version));
+ }
+ 
+-#endif  // BUILDFLAG(ENABLE_WINSPARKLE)
+ 
+ }  // namespace
+ 
+--- a/chrome/installer/mini_installer/chrome.release
++++ b/chrome/installer/mini_installer/chrome.release
+@@ -28,7 +28,6 @@
+ d3dcompiler_47.dll: %(VersionDir)s\
+ elevation_service.exe: %(VersionDir)s\
+ eventlog_provider.dll: %(VersionDir)s\
+-helium_update_helper.exe: %(VersionDir)s\
+ icudtl.dat: %(VersionDir)s\
+ libEGL.dll: %(VersionDir)s\
+ libGLESv2.dll: %(VersionDir)s\
+@@ -38,7 +37,6 @@
+ resources.pak: %(VersionDir)s\
+ vulkan-1.dll: %(VersionDir)s\
+ v8_context_snapshot.bin: %(VersionDir)s\
+-WinSparkle.dll: %(VersionDir)s\
+ #
+ # Sub directories living in the version dir
+ #

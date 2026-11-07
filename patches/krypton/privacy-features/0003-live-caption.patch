@@ -1,0 +1,128 @@
+Subject: [Krypton] Opt in to on-device Live Caption support and its native-menu command
+
+Helium returns false from IsLiveCaptionFeatureSupported and removes one page
+menu entry. Keep that behavior unless the default-off startup choice is on;
+then restore supported on-device captioning and just its context-menu command.
+The caption window anchors to the page's native widget, not the absent toolbar.
+The shared component allowlist enables only the engine and its enumerated
+language packs while this choice is on. The component endpoint uses this
+choice as consent for these downloads. Small-expert models, translation and
+other account-backed features remain disabled by the existing upstream patches.
+Turning the switch off preserves Helium's support/menu behavior after restart.
+
+--- a/chrome/browser/renderer_context_menu/BUILD.gn
++++ b/chrome/browser/renderer_context_menu/BUILD.gn
+@@ -85,6 +85,7 @@
+     "//chrome/browser/plugins",
+     "//chrome/browser/policy",
+     "//chrome/common",
++    "//components/krypton_privacy_features",
+     "//components/renderer_context_menu",
+     "//content/public/browser",
+     "//extensions/buildflags",
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <stddef.h>
+ 
+@@ -2594,6 +2595,7 @@
+     menu_model_.AddItemWithStringId(IDC_SAVE_PAGE,
+                                     IDS_CONTENT_CONTEXT_SAVEPAGEAS);
+     menu_model_.AddItemWithStringId(IDC_PRINT, IDS_CONTENT_CONTEXT_PRINT);
++    AppendLiveCaptionItem();
+ 
+     menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
+     return;
+@@ -3354,7 +3356,9 @@
+ 
+ void RenderViewContextMenu::AppendLiveCaptionItem() {
+   if (captions::IsLiveCaptionFeatureSupported() &&
+-      base::FeatureList::IsEnabled(media::kLiveCaptionRightClick)) {
++      (base::FeatureList::IsEnabled(media::kLiveCaptionRightClick) ||
++       krypton::privacy::IsStartupEnabled(
++           krypton::privacy::Id::kLiveCaption))) {
+     PrefService* prefs = GetPrefs(browser_context_);
+     int string_id = prefs->GetBoolean(prefs::kLiveCaptionEnabled)
+                         ? IDS_CONTENT_CONTEXT_LIVE_CAPTION_DISABLE
+--- a/chrome/browser/ui/views/overlay/BUILD.gn
++++ b/chrome/browser/ui/views/overlay/BUILD.gn
+@@ -81,6 +81,7 @@
+     "//chrome/browser/ui/global_media_controls",
+     "//chrome/browser/ui/views:layout_provider",
+     "//chrome/browser/ui/views/picture_in_picture",
++    "//components/krypton_privacy_features",
+     "//components/live_caption:constants",
+   ]
+ 
+--- a/chrome/browser/ui/views/overlay/video_overlay_window_views.cc
++++ b/chrome/browser/ui/views/overlay/video_overlay_window_views.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/overlay/video_overlay_window_views.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <memory>
+ #include <string>
+@@ -1238,7 +1239,8 @@
+                           base::Unretained(this)));
+   live_caption_button->SetSize(kActionButtonSize);
+   live_caption_button->SetIsLiveCaptionDialogOpen(false);
+-  live_caption_button->SetVisible(false);
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kLiveCaption))
++    live_caption_button->SetVisible(false);
+ 
+   auto live_caption_dialog = std::make_unique<OverlayWindowLiveCaptionDialog>(
+       Profile::FromBrowserContext(
+@@ -2413,8 +2415,10 @@
+   SetLiveCaptionDialogVisibility(!live_caption_dialog_->GetVisible());
+ }
+ 
+-void VideoOverlayWindowViews::SetLiveCaptionDialogVisibility(bool) {
+-  const bool wanted_visibility = false;
++void VideoOverlayWindowViews::SetLiveCaptionDialogVisibility(
++    bool wanted_visibility) {
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kLiveCaption))
++    wanted_visibility = false;
+   if (wanted_visibility == live_caption_dialog_->GetVisible()) {
+     return;
+   }
+--- a/components/live_caption/BUILD.gn
++++ b/components/live_caption/BUILD.gn
+@@ -220,6 +220,7 @@
+   deps = [
+     ":constants",
+     "//base",
++    "//components/krypton_privacy_features",
+     "//components/prefs",
+     "//media",
+     "//third_party/icu",
+--- a/components/live_caption/caption_util.cc
++++ b/components/live_caption/caption_util.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/live_caption/caption_util.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <stddef.h>
+ 
+@@ -125,7 +126,13 @@
+ }
+ 
+ bool IsLiveCaptionFeatureSupported() {
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kLiveCaption))
++    return false;
++#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID)
++  return speech::IsOnDeviceSpeechRecognitionSupported();
++#else
+   return false;
++#endif
+ }
+ 
+ bool IsHeadlessCaptionFeatureSupported() {

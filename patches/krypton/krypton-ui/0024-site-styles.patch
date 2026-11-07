@@ -1,0 +1,184 @@
+Add document-scoped user styles and an explicit element picker. Chromium owns stylesheet origins, document lifetime, and input isolation. No persistent page script or focus changes are needed for styling.
+
+--- a/chrome/common/chrome_render_frame.mojom
++++ b/chrome/common/chrome_render_frame.mojom
+@@ -28,6 +28,12 @@
+ 
+ // Messages sent from chrome to the render frame.
+ interface ChromeRenderFrame {
++  // User-authored, profile-owned CSS. The document identity prevents a queued
++  // navigation/update from styling a different document in this frame.
++  SetKryptonSiteStyle(url.mojom.Url document_url, array<string> css);
++  PickKryptonBoostElement() => (string selector);
++  CancelKryptonBoostPicker();
++
+   // Updates the window features of the main frame's render view.
+   SetWindowFeatures(blink.mojom.WindowFeatures window_features);
+ 
+--- a/chrome/renderer/chrome_render_frame_observer.h
++++ b/chrome/renderer/chrome_render_frame_observer.h
+@@ -8,6 +8,8 @@
+ #include <memory>
+ #include <string>
+ #include <vector>
++#include "third_party/blink/public/platform/web_string.h"
++#include "url/gurl.h"
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "build/build_config.h"
+@@ -108,7 +110,13 @@
+   void OnDestruct() override;
+   void WillDetach(blink::DetachReason detach_reason) override;
+ 
++  void ApplyKryptonSiteStyle();
++  void PickKryptonBoostElement(
++      PickKryptonBoostElementCallback callback) override;
++  void CancelKryptonBoostPicker() override;
+   // chrome::mojom::ChromeRenderFrame:
++  void SetKryptonSiteStyle(const GURL& document_url,
++                           const std::vector<std::string>& css) override;
+   void SetWindowFeatures(
+       blink::mojom::WindowFeaturesPtr window_features) override;
+   void ExecuteWebUIJavaScript(const std::u16string& javascript) override;
+@@ -228,6 +236,9 @@
+   std::unique_ptr<page_content_annotations::PageStabilityMonitor>
+       page_stability_monitor_;
+ 
++  GURL krypton_style_url_;
++  std::vector<std::string> krypton_site_css_;
++  std::vector<blink::WebString> krypton_style_keys_;
+   mojo::AssociatedReceiverSet<chrome::mojom::ChromeRenderFrame> receivers_;
+ 
+   service_manager::BinderRegistry registry_;
+--- a/chrome/renderer/chrome_render_frame_observer.cc
++++ b/chrome/renderer/chrome_render_frame_observer.cc
+@@ -3,9 +3,14 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/renderer/chrome_render_frame_observer.h"
++#include "chrome/renderer/krypton_boost_picker.h"
++#include "third_party/blink/public/mojom/script/script_evaluation_params.mojom.h"
++#include "third_party/blink/public/web/web_script_source.h"
+ 
+ #include <stddef.h>
+ #include <string.h>
++#include "base/containers/span.h"
++#include "base/values.h"
+ 
+ #include <limits>
+ #include <map>
+@@ -120,7 +125,6 @@
+ // Any text beyond this point will be clipped.
+ static const size_t kMaxIndexChars = 65535;
+ 
+-
+ // For a page that auto-refreshes, we still show the bubble, if
+ // the refresh delay is less than this value (in seconds).
+ static constexpr base::TimeDelta kLocationChangeInterval = base::Seconds(10);
+@@ -324,7 +328,8 @@
+   if (frame->Parent() || frame->IsInFencedFrameTree())
+     return;
+ 
+-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("disable-search-engine-collection")) {
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "disable-search-engine-collection")) {
+     GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
+     if (!osdd_url.is_empty()) {
+       mojo::Remote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
+@@ -337,7 +342,77 @@
+   }
+ }
+ 
++void ChromeRenderFrameObserver::CancelKryptonBoostPicker() {
++  const blink::WebScriptSource source(
++      blink::WebString::FromUtf8("globalThis.__kryptonBoostPicker?.()"));
++  render_frame()->GetWebFrame()->ExecuteScriptInIsolatedWorld(
++      ISOLATED_WORLD_ID_CHROME_INTERNAL, source,
++      blink::BackForwardCacheAware::kAllow);
++}
++void ChromeRenderFrameObserver::PickKryptonBoostElement(
++    PickKryptonBoostElementCallback callback) {
++  const auto document = render_frame()->GetWebFrame()->GetDocument();
++  if (document.IsNull() || !GURL(document.Url()).SchemeIsHTTPOrHTTPS()) {
++    std::move(callback).Run("");
++    return;
++  }
++  const blink::WebScriptSource source(
++      blink::WebString::FromUtf8(kKryptonBoostPicker));
++  render_frame()->GetWebFrame()->RequestExecuteScript(
++      ISOLATED_WORLD_ID_CHROME_INTERNAL, base::span_from_ref(source),
++      blink::mojom::UserActivationOption::kDoNotActivate,
++      blink::mojom::EvaluationTiming::kSynchronous,
++      blink::mojom::LoadEventBlockingOption::kDoNotBlock,
++      base::BindOnce(
++          [](PickKryptonBoostElementCallback callback,
++             std::optional<base::Value> value, base::TimeTicks) {
++            std::move(callback).Run(value && value->is_string()
++                                        ? value->GetString()
++                                        : std::string());
++          },
++          std::move(callback)),
++      blink::BackForwardCacheAware::kAllow,
++      blink::mojom::WantResultOption::kWantResult,
++      blink::mojom::PromiseResultOption::kAwait, blink::WebString());
++}
++
++void ChromeRenderFrameObserver::SetKryptonSiteStyle(
++    const GURL& document_url,
++    const std::vector<std::string>& css) {
++  if (!document_url.SchemeIsHTTPOrHTTPS() || css.size() > 257)
++    return;
++  size_t bytes = 0;
++  for (const auto& sheet : css) {
++    bytes += sheet.size();
++    if (bytes > 1024 * 1024)
++      return;
++  }
++  const auto url = document_url.GetWithoutRef();
++  if (krypton_style_url_ == url && krypton_site_css_ == css &&
++      (!krypton_style_keys_.empty() || css.empty()))
++    return;
++  krypton_style_url_ = url;
++  krypton_site_css_ = css;
++  ApplyKryptonSiteStyle();
++}
++void ChromeRenderFrameObserver::ApplyKryptonSiteStyle() {
++  auto document = render_frame()->GetWebFrame()->GetDocument();
++  if (document.IsNull() ||
++      GURL(document.Url()).GetWithoutRef() != krypton_style_url_)
++    return;
++  for (const auto& key : krypton_style_keys_)
++    document.RemoveInsertedStyleSheet(key, blink::WebCssOrigin::kUser);
++  krypton_style_keys_.clear();
++  for (const auto& sheet : krypton_site_css_)
++    if (!sheet.empty())
++      krypton_style_keys_.push_back(
++          document.InsertStyleSheet(blink::WebString::FromUtf8(sheet), nullptr,
++                                    blink::WebCssOrigin::kUser));
++}
++
+ void ChromeRenderFrameObserver::DidCreateNewDocument() {
++  krypton_style_keys_.clear();
++  ApplyKryptonSiteStyle();
+ #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
+   DCHECK(render_frame());
+   if (!render_frame()->IsMainFrame())
+@@ -462,7 +537,7 @@
+           {chrome::mojom::ImageFormat::PNG, lens::mojom::ImageFormat::PNG},
+           {chrome::mojom::ImageFormat::JPEG, lens::mojom::ImageFormat::JPEG},
+           {chrome::mojom::ImageFormat::WEBP, lens::mojom::ImageFormat::WEBP},
+-      };
++  };
+ 
+   if (context_node.IsNull() || !context_node.IsElementNode()) {
+     // The downscaled size is the original size, since no downscaling was
+--- a/chrome/renderer/BUILD.gn
++++ b/chrome/renderer/BUILD.gn
+@@ -82,6 +82,7 @@
+     "google_accounts_private_api_util.cc",
+     "google_accounts_private_api_util.h",
+     "instant_restricted_id_cache.h",
++    "krypton_boost_picker.h",
+     "loadtimes_bindings.cc",
+     "loadtimes_bindings.h",
+     "media/flash_embed_rewrite.cc",

@@ -1,0 +1,18 @@
+Subject: [Krypton] Declare the retained crash-reporting header dependency
+
+The retained upstream crash-reporting code includes its header from
+chrome_browser_main.cc, but core reaches that target only through
+private feedback/UI dependencies. Declare the direct dependency so
+GN can validate the existing include. This does not change upstream
+crash-reporting behavior or enable uploads.
+
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1131,6 +1131,7 @@
+     "//chrome/browser/contextual_cueing",
+     "//chrome/browser/contextual_tasks:ui",
+     "//chrome/browser/contextual_tasks:ui_impl",
++    "//chrome/browser/crash_upload_list",
+     "//chrome/browser/custom_handlers",
+     "//chrome/browser/data_saver",
+     "//chrome/browser/data_sharing",

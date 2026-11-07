@@ -1,0 +1,251 @@
+# Krypton: let browser services run without the Views browser chrome.
+# KryptonUI windows create no ToolbarView, tab strip region or permission
+# chip. Code that assumed them now reads tab state from the model, anchors
+# to the toolbar default, uses the bubble prompt or skips Views-only work.
+
+--- a/chrome/browser/ui/tabs/saved_tab_groups/most_recent_shared_tab_update_store.cc
++++ b/chrome/browser/ui/tabs/saved_tab_groups/most_recent_shared_tab_update_store.cc
+@@ -43,6 +43,10 @@
+ ui::TrackedElement* MostRecentSharedTabUpdateStore::GetIPHAnchor(
+     BrowserView* browser_view) {
+   CHECK(last_updated_tab_.has_value());
++  // The promo anchors to a tab or group header in the Views tab strip.
++  if (!browser_view->tab_strip_view()) {
++    return nullptr;
++  }
+ 
+   if (last_updated_tab_->second.has_value()) {
+     // Last update was an active tab. Anchor to this tab.
+--- a/chrome/browser/ui/tabs/split_tab_highlight_controller.cc
++++ b/chrome/browser/ui/tabs/split_tab_highlight_controller.cc
+@@ -64,10 +64,13 @@
+       browser_window_interface_->RegisterActiveTabDidChange(
+           base::BindRepeating(&SplitTabHighlightController::OnActiveTabChange,
+                               base::Unretained(this))));
+-  chip_controller_observation_.Observe(
+-      BrowserWindow::FromBrowser(browser_window_interface_)
+-          ->GetLocationBar()
+-          ->GetChipController());
++  // A location bar without a permission chip has no chip prompts to observe.
++  if (ChipController* const chip_controller =
++          BrowserWindow::FromBrowser(browser_window_interface_)
++              ->GetLocationBar()
++              ->GetChipController()) {
++    chip_controller_observation_.Observe(chip_controller);
++  }
+   for (ui::ElementIdentifier identifier : GetTrackedBubbleDialogs()) {
+     AddShowHideElementSubscriptions(identifier);
+   }
+--- a/chrome/browser/ui/tabs/split_view_iph_controller.cc
++++ b/chrome/browser/ui/tabs/split_view_iph_controller.cc
+@@ -112,7 +112,9 @@
+ 
+ ui::TrackedElement* SplitViewIphController::GetTabSwitchIPHAnchor(
+     BrowserView* browser_view) {
+-  if (recent_tabs_.size() < kNumTabsTracked) {
++  // The promo anchors to a tab in the Views tab strip.
++  if (!browser_view->tab_strip_view() ||
++      recent_tabs_.size() < kNumTabsTracked) {
+     return nullptr;
+   }
+ 
+--- a/chrome/browser/ui/views/bookmarks/saved_tab_groups/saved_tab_group_everything_menu.cc
++++ b/chrome/browser/ui/views/bookmarks/saved_tab_groups/saved_tab_group_everything_menu.cc
+@@ -293,9 +293,12 @@
+ 
+   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser_);
+   CHECK(browser_view);
+-  CHECK(browser_view->tab_strip_view());
+-  expand_on_hover_lock_ = browser_view->tab_strip_view()->GetExpandOnHoverLock(
+-      ExpandOnHoverLockType::kKeepCurrentState);
++  // Only a Views tab strip expands on hover.
++  if (TabStripRegionView* const tab_strip_view =
++          browser_view->tab_strip_view()) {
++    expand_on_hover_lock_ = tab_strip_view->GetExpandOnHoverLock(
++        ExpandOnHoverLockType::kKeepCurrentState);
++  }
+ 
+   menu_runner_ = std::make_unique<views::MenuRunner>(
+       std::move(root), views::MenuRunner::HAS_MNEMONICS);
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -674,6 +674,18 @@
+   return dst->HitTestPoint(*point);
+ }
+ 
++// Incognito dialogs anchor to the avatar button. A toolbar without one uses
++// its default bubble anchor.
++views::BubbleAnchor GetIncognitoDialogAnchor(BrowserWindowInterface& browser) {
++  ToolbarButtonProvider* const provider = ToolbarButtonProvider::From(&browser);
++  CHECK(provider);
++  if (AvatarToolbarButtonInterface* const avatar =
++          provider->GetAvatarToolbarButtonInterface()) {
++    return avatar->GetBubbleAnchor(browser);
++  }
++  return provider->GetBubbleAnchor(std::nullopt);
++}
++
+ }  // namespace
+ 
+ // Implements the exclusive access context and bubble context.
+@@ -3228,7 +3240,8 @@
+ }
+ 
+ bool BrowserView::IsTabStripEditable() const {
+-  return tab_strip_view()->IsTabStripEditable();
++  // Only a Views tab strip can hold a drag that blocks editing.
++  return !tab_strip_view() || tab_strip_view()->IsTabStripEditable();
+ }
+ 
+ void BrowserView::DisableTabStripEditingForTesting() {
+@@ -4015,7 +4028,8 @@
+ }
+ 
+ void BrowserView::ReparentTopContainerForEndOfImmersive() {
+-  if (top_container()->parent() == this && tab_strip_view()->parent() == this) {
++  if (top_container()->parent() == this &&
++      (!tab_strip_view() || tab_strip_view()->parent() == this)) {
+     return;
+   }
+ 
+@@ -5638,7 +5652,7 @@
+     return;
+   }
+ 
+-  if (GetSupportsTabStrip()) {
++  if (GetSupportsTabStrip() && tab_strip_view()) {
+     // Loading animations are shown in the tab for tabbed windows. Update them
+     // even if the tabstrip isn't currently visible so they're in the right
+     // state when it returns.
+@@ -6241,21 +6255,15 @@
+ }
+ 
+ void BrowserView::ShowIncognitoClearBrowsingDataDialog() {
+-  CHECK(ToolbarButtonProvider::From(browser_));
+   IncognitoClearBrowsingDataDialogCoordinator::From(browser())->Show(
+       IncognitoClearBrowsingDataDialogInterface::Type::kDefaultBubble,
+-      ToolbarButtonProvider::From(browser_)
+-          ->GetAvatarToolbarButtonInterface()
+-          ->GetBubbleAnchor(*browser()));
++      GetIncognitoDialogAnchor(*browser()));
+ }
+ 
+ void BrowserView::ShowIncognitoHistoryDisclaimerDialog() {
+-  CHECK(ToolbarButtonProvider::From(browser_));
+   IncognitoClearBrowsingDataDialogCoordinator::From(browser())->Show(
+       IncognitoClearBrowsingDataDialogInterface::Type::kHistoryDisclaimerBubble,
+-      ToolbarButtonProvider::From(browser_)
+-          ->GetAvatarToolbarButtonInterface()
+-          ->GetBubbleAnchor(*browser()));
++      GetIncognitoDialogAnchor(*browser()));
+ }
+ 
+ void BrowserView::UpdateWebAppStatusIconsVisiblity() {
+@@ -6465,6 +6473,10 @@
+ // TODO(crbug.com/529834985): See if we can consolidate the logic here and in
+ // TabView::UpdateAccessibleName/TabView::UpdateAccessibleName.
+ void BrowserView::UpdateAccessibleNameForTabAt(int index) {
++  // Tab names belong to the Views tab strip; other tab UIs name their own.
++  if (!tab_strip_view()) {
++    return;
++  }
+   tabs::TabInterface* tab_interface =
+       browser()->GetTabStripModel()->GetTabAtIndex(index);
+   std::u16string accessible_title =
+--- a/chrome/browser/ui/views/frame/system_menu_model_delegate.cc
++++ b/chrome/browser/ui/views/frame/system_menu_model_delegate.cc
+@@ -314,9 +314,12 @@
+ void SystemMenuModelDelegate::OnMenuWillShow(ui::SimpleMenuModel* source) {
+   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser_);
+   CHECK(browser_view);
+-  CHECK(browser_view->tab_strip_view());
+-  expand_on_hover_lock_ = browser_view->tab_strip_view()->GetExpandOnHoverLock(
+-      ExpandOnHoverLockType::kKeepCurrentState);
++  // Only a Views tab strip expands on hover.
++  if (TabStripRegionView* const tab_strip_view =
++          browser_view->tab_strip_view()) {
++    expand_on_hover_lock_ = tab_strip_view->GetExpandOnHoverLock(
++        ExpandOnHoverLockType::kKeepCurrentState);
++  }
+ }
+ 
+ void SystemMenuModelDelegate::MenuClosed(ui::SimpleMenuModel* source) {
+--- a/chrome/browser/ui/views/permissions/exclusive_access_permission_prompt.cc
++++ b/chrome/browser/ui/views/permissions/exclusive_access_permission_prompt.cc
+@@ -19,8 +19,9 @@
+ 
+     // Before showing a chip make sure the LocationBar is in a valid state. That
+     // fixes a bug when a chip overlays the padlock icon. The LocationBarView
+-    // may be null for non-BrowserView windows (e.g., WebUIBrowserWindow).
+-    if (lb) {
++    // may be null for non-BrowserView windows (e.g., WebUIBrowserWindow), and
++    // a location bar may have no permission chip.
++    if (lb && lb->GetChipController()) {
+       lb->InvalidateLayout();
+       lb->GetChipController()->ShowPermissionChip(delegate->GetWeakPtr());
+     }
+--- a/chrome/browser/ui/views/permissions/permission_prompt_bubble.cc
++++ b/chrome/browser/ui/views/permissions/permission_prompt_bubble.cc
+@@ -21,7 +21,7 @@
+     Delegate* delegate)
+     : PermissionPromptDesktop(web_contents, delegate) {
+   LocationBar* lb = GetLocationBar();
+-  if (lb && lb->IsDrawn() &&
++  if (lb && lb->GetChipController() && lb->IsDrawn() &&
+       delegate->Requests()[0]->IsConfirmationChipSupported()) {
+     lb->GetChipController()->InitializePermissionPrompt(
+         delegate->GetWeakPtr(),
+@@ -137,7 +137,7 @@
+         lb && lb->GetOmniboxController() &&
+         lb->GetOmniboxController()->edit_model()->user_input_in_progress();
+ 
+-    if (lb && lb->IsDrawn() && !lb->IsFullscreen() &&
++    if (lb && lb->GetChipController() && lb->IsDrawn() && !lb->IsFullscreen() &&
+         !is_user_input_in_progress) {
+       auto* chip_controller = lb->GetChipController();
+       chip_controller->InitializePermissionPrompt(delegate()->GetWeakPtr());
+--- a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
++++ b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
+@@ -141,7 +141,8 @@
+ 
+ bool IsLocationBarDisplayed(content::WebContents* web_contents) {
+   LocationBar* lb = ::location_bar::GetLocationBarForWebContents(web_contents);
+-  return lb && lb->IsDrawn() && !lb->IsFullscreen();
++  // Chip prompts also need a location bar that hosts the permission chip.
++  return lb && lb->GetChipController() && lb->IsDrawn() && !lb->IsFullscreen();
+ }
+ 
+ bool ShouldCurrentRequestUseQuietChip(
+--- a/chrome/browser/ui/views/tabs/tab/tab_accessibility.cc
++++ b/chrome/browser/ui/views/tabs/tab/tab_accessibility.cc
+@@ -91,8 +91,15 @@
+   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(bwi);
+   const TabStripModel* tab_strip_model = bwi->GetTabStripModel();
+ 
++  // Without a Views tab strip, derive the same data from the tab model.
++  std::optional<TabData> model_tab_data;
++  if (!browser_view->tab_strip_view()) {
++    model_tab_data = TabData::FromTabInterface(tab->GetHandle().Get());
++  }
+   const TabData& tab_data =
+-      browser_view->tab_strip_view()->GetTabData(tab->GetHandle());
++      model_tab_data
++          ? *model_tab_data
++          : browser_view->tab_strip_view()->GetTabData(tab->GetHandle());
+ 
+   auto* controller = WindowMetadataController::From(bwi);
+ 
+--- a/chrome/browser/ui/views/user_education/impl/browser_feature_promo_preconditions.cc
++++ b/chrome/browser/ui/views/user_education/impl/browser_feature_promo_preconditions.cc
+@@ -135,8 +135,10 @@
+ user_education::FeaturePromoResult
+ ToolbarNotCollapsedPrecondition::CheckPrecondition(
+     user_education::UnownedTypedDataCollection&) const {
++  // Only the Views toolbar collapses into an overflow menu.
++  const ToolbarView* const toolbar = browser_view_->toolbar();
+   if (const auto* const controller =
+-          browser_view_->toolbar()->toolbar_controller()) {
++          toolbar ? toolbar->toolbar_controller() : nullptr) {
+     if (controller->InOverflowMode()) {
+       return user_education::FeaturePromoResult::kWindowTooSmall;
+     }

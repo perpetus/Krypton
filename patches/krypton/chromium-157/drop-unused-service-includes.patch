@@ -1,0 +1,37 @@
+# Remove unused service includes left by Chromium 157 feature stripping.
+#
+# Helium removes the Autofill ML page registration and ScreenAI factory use;
+# their stale includes would falsely require enabling the corresponding targets.
+# The notification manager also uses none of the detection-model constants.
+# Keep the disabled features disabled and remove only unused declarations.
+
+--- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+@@ -100,7 +100,6 @@
+ #endif
+ #include "chrome/browser/ui/webui/access_code_cast/access_code_cast_ui.h"
+ #include "chrome/browser/ui/webui/app_service_internals/app_service_internals_ui.h"
+-#include "chrome/browser/ui/webui/autofill_ml_internals/autofill_ml_internals_ui.h"
+ #include "chrome/browser/ui/webui/bookmarks/bookmarks_ui.h"
+ #include "chrome/browser/ui/webui/color_pipeline_internals/color_pipeline_internals_ui.h"
+ #include "chrome/browser/ui/webui/commerce/shopping_insights_side_panel_ui.h"
+--- a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
++++ b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
+@@ -374,7 +374,6 @@
+ #include "chrome/browser/accessibility/live_caption/live_caption_controller_factory.h"
+ #include "chrome/browser/accessibility/live_caption/live_translate_controller_factory.h"
+ #include "chrome/browser/accessibility/phrase_segmentation/dependency_parser_model_loader_factory.h"
+-#include "chrome/browser/accessibility/tree_fixing/ax_tree_fixing_services_router_factory.h"
+ #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+ #include "chrome/browser/badging/badge_manager_factory.h"
+ #include "chrome/browser/device_api/managed_configuration_api_factory.h"
+--- a/chrome/browser/ui/safety_hub/abusive_notification_permissions_manager.cc
++++ b/chrome/browser/ui/safety_hub/abusive_notification_permissions_manager.cc
+@@ -25,7 +25,6 @@
+ #include "components/content_settings/core/common/features.h"
+ #include "components/permissions/notifications_engagement_service.h"
+ #include "components/prefs/pref_service.h"
+-#include "components/safe_browsing/content/browser/notification_content_detection/notification_content_detection_constants.h"
+ #include "components/safe_browsing/core/browser/db/sb_protocol_manager_util.h"
+ #include "components/safe_browsing/core/browser/db/v5_get_hash_protocol_manager.h"
+ #include "components/safe_browsing/core/browser/safe_browsing_metrics_collector.h"

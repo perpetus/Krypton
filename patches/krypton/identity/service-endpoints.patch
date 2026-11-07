@@ -1,0 +1,40 @@
+# Keep Krypton off Helium's servers.
+#
+# Helium's services, update feed and crash collector are run by imput for
+# Helium. Krypton has none of its own yet, so the defaults point nowhere
+# (.invalid never resolves) and crash reports are not uploaded. Users can
+# still point services at their own instance in Settings.
+
+--- a/components/crash/core/app/crash_reporter_client.cc
++++ b/components/crash/core/app/crash_reporter_client.cc
+@@ -154,7 +154,7 @@
+ #endif
+ 
+ #if defined(OFFICIAL_BUILD)
+-  return "https://crash.helium.computer/crash";
++  return std::string();  // No Krypton crash endpoint yet.
+ #else
+   return std::string();
+ #endif
+--- a/components/helium_services/helium_services_helpers.cc
++++ b/components/helium_services/helium_services_helpers.cc
+@@ -28,7 +28,7 @@
+ #endif
+ 
+ #if defined(UPDATES_SUPPORTED)
+-constexpr std::string_view kUpdateBaseUrl = "https://updates.helium.computer/";
++constexpr std::string_view kUpdateBaseUrl = "https://updates.krypton.invalid/";
+ constexpr const char kUpdatePath[] =
+ #if BUILDFLAG(IS_MAC)
+     "mac/appcast-" CPU_ARCH_STR ".xml";
+--- a/components/helium_services/helium_services_helpers.h
++++ b/components/helium_services/helium_services_helpers.h
+@@ -13,7 +13,7 @@
+ namespace helium {
+ 
+ const char kHeliumDefaultOrigin[] =
+-    "https://services.helium.imput.net";
++    "https://services.krypton.invalid";
+ 
+ const char kHeliumDummyOrigin[] =
+     "https://helium-services-are-disabled.qjz9zk";

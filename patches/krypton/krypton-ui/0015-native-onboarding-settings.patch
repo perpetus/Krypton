@@ -1,0 +1,52 @@
+Subject: [Krypton] Connect native onboarding and browser settings services
+
+Krypton uses its native onboarding in eligible tabbed windows rather than
+Helium's setup WebUI. Delay first run until the native shell is attached and
+keep explicit startup URLs. Older modules without the optional onboarding
+tail still receive the existing setup page from the adapter. Chromium keeps
+profile, import, search, startup, download and Windows default-app ownership.
+
+--- a/chrome/browser/ui/startup/BUILD.gn
++++ b/chrome/browser/ui/startup/BUILD.gn
+@@ -154,6 +154,7 @@
+     "//chrome/browser/signin",
+     "//chrome/browser/sync",
+     "//chrome/browser/sync:factories",
++    "//chrome/browser/ui:browser_tabrestore",
+     "//chrome/browser/ui:simple_message_box_headers",
+     "//chrome/browser/ui/browser_window:create_browser_window",
+     "//chrome/browser/ui/dialogs",
+@@ -164,6 +165,7 @@
+     "//chrome/common:non_code_constants",
+     "//components/autofill/core/common",
+     "//components/crash/core/app",
++    "//components/helium_services",
+     "//components/history_clusters/core",
+     "//components/infobars/content",
+     "//components/infobars/core",
+--- a/chrome/browser/ui/startup/startup_browser_creator_impl.cc
++++ b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
+ 
+ #include <stddef.h>
+ 
+@@ -671,7 +673,14 @@
+       base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoFirstRun);
+   if (!is_incognito_or_guest && !no_first_run) {
+     if (!profile_->GetPrefs()->GetBoolean(prefs::kHeliumDidOnboarding)) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++      // The native adapter starts first run after its HWND and services attach.
++      // Keep explicit launch URLs; an older module uses the existing setup page.
++      if (tabs.empty())
++        UrlsToTabs({chrome::ChromeUINewTabURLAsGURL()}, &tabs);
++#else
+       UrlsToTabs({GURL(chrome::kHeliumSetupURL)}, &tabs);
++#endif
+       return {tabs, LaunchResult::kWithGivenUrls};
+     }
+   }

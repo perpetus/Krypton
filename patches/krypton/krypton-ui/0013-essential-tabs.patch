@@ -1,0 +1,38 @@
+# Krypton: preserve Essential membership alongside workspace session data.
+# The profile catalog owns saved pages; session and Recently Closed records
+# retain each real tab's catalog identity through rebuild and restore.
+
+--- a/chrome/browser/sessions/session_service_base.cc
++++ b/chrome/browser/sessions/session_service_base.cc
+@@ -624,11 +624,11 @@
+   command_storage_manager()->AppendRebuildCommand(
+       sessions::CreateSetTabWindowCommand(window_id, session_id));
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (const auto workspace = krypton_ui::WorkspaceForTab(tab)) {
++  std::map<std::string, std::string> krypton_tab_data;
++  krypton_ui::AddWorkspaceSessionData(tab, krypton_tab_data);
++  for (const auto& [key, value] : krypton_tab_data) {
+     command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateAddTabExtraDataCommand(
+-            session_id, krypton_ui::kWorkspaceSessionKey,
+-            base::NumberToString(workspace)));
++        sessions::CreateAddTabExtraDataCommand(session_id, key, value));
+   }
+ #endif
+ 
+--- a/chrome/browser/ui/browser_live_tab_context.cc
++++ b/chrome/browser/ui/browser_live_tab_context.cc
+@@ -213,11 +213,8 @@
+   std::map<std::string, std::string> extra_data;
+ 
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (const auto workspace = krypton_ui::WorkspaceForTab(
+-          tab_strip_model_->GetWebContentsAt(index))) {
+-    extra_data[krypton_ui::kWorkspaceSessionKey] =
+-        base::NumberToString(workspace);
+-  }
++  krypton_ui::AddWorkspaceSessionData(tab_strip_model_->GetWebContentsAt(index),
++                                      extra_data);
+ #endif
+ 
+   glic::PopulateGlicExtraData(tab_strip_model_->GetTabAtIndex(index),

@@ -1,0 +1,176 @@
+Subject: [Krypton] Default-off optional-feature registry and native settings
+
+Helium keeps the listed optional features disabled. Register default-false
+Local State choices without changing any feature decision, capture immutable
+startup state after Local State loads, and expose only usable feature records
+through the optional native settings contract. With every switch off this
+plumbing makes no network requests and leaves Helium's feature gates intact.
+
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -278,6 +278,7 @@
+     <!-- IMPORTANT: .grdp files must be in the same directory as this file -->
+     <messages fallback_to_english="true">
+       <!-- Access Code Cast specific strings -->
++      <part file="krypton_privacy_features.grdp" />
+       <part file="access_code_cast_strings.grdp" />
+ 
+       <!-- Actor specific strings -->
+--- a/chrome/app/generated_resources.grd.gritdeps
++++ b/chrome/app/generated_resources.grd.gritdeps
+@@ -10,6 +10,7 @@
+ chrome/app/extensions_strings.grdp
+ chrome/app/glic_strings.grdp
+ chrome/app/gmc_strings.grdp
++chrome/app/krypton_privacy_features.grdp
+ chrome/app/media_live_preview_strings.grdp
+ chrome/app/media_router_strings.grdp
+ chrome/app/nearby_share_strings.grdp
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1066,7 +1066,6 @@
+   }
+ 
+   deps = [
+-    "//chrome/browser/ui/krypton_ui:runtime",
+     ":active_use_util",
+     ":after_startup_task_utils",
+     ":bad_message",
+@@ -1157,6 +1156,7 @@
+     "//chrome/browser/history",
+     "//chrome/browser/infobars",
+     "//chrome/browser/interstitials",
++    "//chrome/browser/krypton_privacy_features",
+     "//chrome/browser/language",
+     "//chrome/browser/language_detection",
+     "//chrome/browser/lifetime",
+@@ -1249,6 +1249,7 @@
+     "//chrome/browser/ui/color:mixers",
+     "//chrome/browser/ui/dialogs:browser_dialogs",
+     "//chrome/browser/ui/javascript_dialogs",
++    "//chrome/browser/ui/krypton_ui:runtime",
+     "//chrome/browser/ui/login",
+     "//chrome/browser/ui/navigator",
+     "//chrome/browser/ui/omnibox",
+@@ -5456,7 +5457,6 @@
+ # units are compiled.
+ group("browser_generated_files") {
+   public_deps = [
+-    "//chrome/browser/ui/krypton_ui:buildflags",
+     ":buildflags",
+     "//chrome/browser/media:media_engagement_preload_proto",
+     "//chrome/browser/media:mojo_bindings",
+@@ -5469,6 +5469,7 @@
+     "//chrome/browser/predictors/lcp_critical_path_predictor:lcp_critical_path_predictor_proto",
+     "//chrome/browser/regional_capabilities",
+     "//chrome/browser/resource_coordinator:mojo_bindings",
++    "//chrome/browser/ui/krypton_ui:buildflags",
+     "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
+     "//chrome/browser/ui/webui/content_settings:mojo_bindings",
+     "//chrome/browser/ui/webui/context_hub:mojo_bindings",
+@@ -5481,9 +5482,9 @@
+     "//chrome/browser/ui/webui/user_education_internals:mojo_bindings",
+     "//chrome/browser/web_applications/mojom:mojom_web_apps_enum",
+     "//chrome/common/request_header_integrity:buildflags",
+-    "//components/helium_onboarding:generated_resources",
+     "//components/autofill/core/browser/ml_model/logging:mojo_bindings",
+     "//components/enterprise/connectors:mojom",
++    "//components/helium_onboarding:generated_resources",
+     "//components/webui/chrome_urls/mojom:mojo_bindings",
+   ]
+   if (is_android) {
+@@ -5975,10 +5976,10 @@
+       "spellchecker/test/spellcheck_panel_browsertest_helper.h",
+     ]
+     deps += [
++      "//chrome/browser/profiles:profile",
+       "//chrome/browser/spellchecker",
++      "//components/helium_services",
+       "//components/spellcheck/common",
+-      "//components/helium_services",
+-      "//chrome/browser/profiles:profile",
+     ]
+   }
+   if (enable_bound_session_credentials) {
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_browser_main.h"
++#include "chrome/browser/krypton_privacy_features/registry.h"
+ 
+ #include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+@@ -1025,6 +1026,11 @@
+   bool failed_to_load_resource_bundle = false;
+   const int load_local_state_result =
+       OnLocalStateLoaded(&failed_to_load_resource_bundle);
++  if (load_local_state_result == content::RESULT_CODE_NORMAL_EXIT &&
++      browser_process_->local_state()) {
++    krypton::privacy::CaptureStartupSnapshot(*browser_process_->local_state());
++    krypton::privacy::InitializeRegistry(*browser_process_->local_state());
++  }
+ 
+   if (load_local_state_result == CHROME_RESULT_CODE_MISSING_DATA &&
+       failed_to_load_resource_bundle) {
+@@ -2207,6 +2213,7 @@
+ }
+ 
+ void ChromeBrowserMainParts::PostMainMessageLoopRun() {
++  krypton::privacy::ShutdownRegistry();
+   TRACE_EVENT_END("toplevel", perfetto::Track::FromPointer(this));
+   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PostMainMessageLoopRun");
+ #if BUILDFLAG(IS_ANDROID)
+--- a/chrome/browser/prefs/BUILD.gn
++++ b/chrome/browser/prefs/BUILD.gn
+@@ -154,6 +154,7 @@
+     "//components/feature_engagement/public:prefs",
+     "//components/history_clusters/core",
+     "//components/image_fetcher/core/cache",
++    "//components/krypton_privacy_features",
+     "//components/language/content/browser",
+     "//components/language/content/browser/ulp_language_code_locator",
+     "//components/language/core/browser",
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/prefs/browser_prefs.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+@@ -1663,6 +1664,7 @@
+ }
+ 
+ void RegisterLocalState(PrefRegistrySimple* registry) {
++  krypton::privacy::RegisterLocalState(registry);
+   // Call outs to individual subsystems that register Local State (browser-wide)
+   // prefs en masse. See RegisterProfilePrefs for per-profile prefs. Please
+   // keep this list alphabetized.
+--- a/chrome/browser/ui/chrome_pages.cc
++++ b/chrome/browser/ui/chrome_pages.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/chrome_pages.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/privacy_features_bridge.h"
++#endif
+ 
+ #include <stddef.h>
+ 
+@@ -485,6 +489,10 @@
+ 
+ void ShowSettingsSubPageInTabbedBrowser(BrowserWindowInterface* browser,
+                                         std::string_view sub_page) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::ShowNativeSettings(browser, sub_page))
++    return;
++#endif
+   base::RecordAction(UserMetricsAction("ShowOptions"));
+ 
+   // Since the user may be triggering navigation from another UI element such as

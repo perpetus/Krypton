@@ -1,0 +1,74 @@
+Subject: [Krypton] Let the native toolbar draw extension badges
+
+Chromium paints an extension's badge into its toolbar icon at a fixed size.
+Krypton draws the badge natively over the address field's extension icon,
+using the same badge metrics as the rest of its chrome. Give the native host
+the icon without its badge, and the action whose badge state it draws. Views
+toolbar callers keep the badged icon from GetIcon().
+
+--- a/chrome/browser/ui/extensions/extension_action_view_model.cc
++++ b/chrome/browser/ui/extensions/extension_action_view_model.cc
+@@ -748,6 +748,17 @@
+   return GetIconImageSource(web_contents, size);
+ }
+ 
++ui::ImageModel ExtensionActionViewModel::GetIconWithoutBadge(
++    content::WebContents* web_contents,
++    const gfx::Size& size) {
++  if (!ExtensionIsValid()) {
++    return ui::ImageModel();
++  }
++
++  return ui::ImageModel::FromImageSkia(gfx::ImageSkia(
++      GetIconImageSource(web_contents, size, /*include_badge=*/false), size));
++}
++
+ void ExtensionActionViewModel::TriggerPopup(PopupShowAction show_action,
+                                             bool by_user,
+                                             ShowPopupCallback callback) {
+@@ -781,7 +792,8 @@
+ 
+ std::unique_ptr<IconWithBadgeImageSource>
+ ExtensionActionViewModel::GetIconImageSource(content::WebContents* web_contents,
+-                                             const gfx::Size& size) {
++                                             const gfx::Size& size,
++                                             bool include_badge) {
+   // `web_contents` may be null during tab closure or in tests.  Fall back on a
+   // generic color provider.
+   auto get_color_provider_callback = base::BindRepeating(
+@@ -802,7 +814,7 @@
+ 
+   std::unique_ptr<IconWithBadgeImageSource::Badge> badge;
+   std::string badge_text = extension_action_->GetDisplayBadgeText(tab_id);
+-  if (!badge_text.empty()) {
++  if (include_badge && !badge_text.empty()) {
+     badge = std::make_unique<IconWithBadgeImageSource::Badge>(
+         badge_text, extension_action_->GetBadgeTextColor(tab_id),
+         extension_action_->GetBadgeBackgroundColor(tab_id));
+--- a/chrome/browser/ui/extensions/extension_action_view_model.h
++++ b/chrome/browser/ui/extensions/extension_action_view_model.h
+@@ -125,6 +125,14 @@
+       content::WebContents* web_contents,
+       const gfx::Size& size);
+ 
++  // Krypton draws extension badges natively over an icon without one, from
++  // the badge state of `extension_action()`.
++  ui::ImageModel GetIconWithoutBadge(content::WebContents* web_contents,
++                                     const gfx::Size& size);
++  extensions::ExtensionAction* extension_action() const {
++    return extension_action_;
++  }
++
+  private:
+   // New instances should be instantiated with Create().
+   ExtensionActionViewModel(scoped_refptr<const extensions::Extension> extension,
+@@ -160,7 +168,8 @@
+   // Returns the image source for the icon.
+   std::unique_ptr<IconWithBadgeImageSource> GetIconImageSource(
+       content::WebContents* web_contents,
+-      const gfx::Size& size);
++      const gfx::Size& size,
++      bool include_badge = true);
+ 
+   // The extension ID.
+   extensions::ExtensionId extension_id_;

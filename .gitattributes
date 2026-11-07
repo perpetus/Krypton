@@ -1,0 +1,3 @@
+*.patch linguist-language=C++
+* text=auto
+chromium_src/chrome/browser/ui/krypton_ui/include/krypton_ui/abi.h text eol=lf

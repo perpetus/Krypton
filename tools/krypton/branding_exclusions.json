@@ -1,0 +1,30 @@
+{
+  "files": [
+    {"pattern": "**/credits*.grd*", "reason": "Credits and third-party license attributions retain their original names."},
+    {"pattern": "**/about_credits*.grd*", "reason": "Credits and third-party license attributions retain their original names."}
+  ],
+  "messages": [
+    {"pattern": "*IMPORT*HELIUM*", "reason": "The source browser of an import must keep its own name."},
+    {"pattern": "*COPYRIGHT*", "reason": "Copyright notices name the original rights holders."},
+    {"pattern": "*LICENSE*", "reason": "License text and legal notices keep the original attribution."},
+    {"pattern": "*CREDITS*", "reason": "The credits page and attribution links retain original names."}
+  ],
+  "product_messages": [
+    {"pattern": "IDS_ABOUT_VERSION_COPYRIGHT", "reason": "The user explicitly requested Krypton's displayed product copyright; source copyright headers remain untouched."},
+    {"pattern": "IDS_VERSION_UI_LICENSE*", "reason": "The About product introduction names Krypton while preserving upstream project attribution and license links."}
+  ],
+  "resources": [
+    {"pattern": "IDR_UBLOCK_ASSETS_HELIUM_*_TXT", "reason": "Upstream filter-list names and attribution identify the preserved third-party privacy lists."},
+    {"pattern": "IDR_UBLOCK_ASSETS_ASSETS_JSON", "reason": "Third-party filter-list source identities, keys and URLs remain unchanged."},
+    {"pattern": "IDR_UBLOCK_JS_STORAGE_JS", "reason": "Upstream filter-list source identities and implementation comments remain unchanged."},
+    {"pattern": "IDR_UBLOCK_ABOUT_HTML", "reason": "The bundled extension's upstream fork attribution and original legal links remain unchanged."},
+    {"pattern": "IDR_UBLOCK_JS_ABOUT_JS", "reason": "The bundled extension's About page credits its upstream fork."},
+    {"pattern": "IDR_UBLOCK_ASSETS_THIRDPARTIES_PUBLICSUFFIX_ORG_LIST_EFFECTIVE_TLD_NAMES_DAT", "reason": "Helium TLDs Ltd is an unrelated registry named in the public-suffix data."},
+    {"pattern": "IDR_USB_IDS_DATA", "reason": "Hardware model names containing Helium are unrelated third-party USB identities."}
+  ],
+  "content": [
+    {"pattern": "(?m)(?://|<!--)[^\\r\\n]*Copyright[^\\r\\n]*Helium Authors", "reason": "Bundled source copyright comments retain the original rights-holder attribution."},
+    {"pattern": "(?m)//[^\\r\\n]*The flag is never set for Helium", "reason": "This upstream implementation comment describes the preserved extension-store eligibility logic, not displayed product text."},
+    {"pattern": "(?<![A-Za-z0-9_])(?:SettingsHeliumServicesPageElement(?:Base)?|HeliumServicesChangeHandlerImpl|onHeliumServicesPageClick_|getHeliumCrashReporting|setHeliumCrashReportingMode|itemSourceHeliumComponent|copyHeliumVersionToClipboard|HeliumServices|\\$userChoseHeliumAsDefault)(?![A-Za-z0-9_])", "reason": "Upstream JavaScript identifiers, data keys and onboarding state names are code identities, not displayed product text."}
+  ]
+}

@@ -1,0 +1,33 @@
+Subject: [Krypton] Preserve Chromium menu component data across the UI ABI
+
+Capture the complete MenuModel presentation data, including hidden rows,
+secondary/accessibility labels, minor icons, color roles, font fallback and
+render parameters, accelerators, badges, groups and button rows. Keep source
+ids separate from invocation tokens and invalidate captured commands when
+their model changes. Capture does not take ownership of browser menu models.
+
+The replacement presenter needs the same minor-icon placement query as the
+original Views presenter. Grant that narrow passkey access without changing
+MenuModel behavior, exposing the passkey publicly or inventing a default.
+
+--- a/ui/base/models/menu_model.h
++++ b/ui/base/models/menu_model.h
+@@ -33,6 +33,10 @@
+ }  // namespace examples
+ 
+ }  // namespace views
++namespace krypton_ui {
++class MenuModelSnapshot;
++}
++
+ namespace ui {
+ 
+ class Accelerator;
+@@ -79,6 +83,7 @@
+     // These cases are exclusively the ones allowed to use the feature.
+     friend class ::OmniboxContextMenuController;
+     friend class ::views::MenuModelAdapter;
++    friend class ::krypton_ui::MenuModelSnapshot;
+     friend class ::ui::SimpleMenuModel;
+     // This item is here merely for testing and example of this feature.
+     friend class ::views::examples::ExampleMenuModel;

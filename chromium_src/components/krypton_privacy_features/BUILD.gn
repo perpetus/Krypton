@@ -1,0 +1,12 @@
+component("krypton_privacy_features") {
+  sources = [
+    "privacy_features.cc",
+    "privacy_features.h",
+    "speech_component_ids.h",
+  ]
+  public_deps = [
+    "//base",
+    "//components/prefs",
+  ]
+  defines = [ "IS_KRYPTON_PRIVACY_FEATURES_IMPL" ]
+}

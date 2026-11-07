@@ -1,0 +1,60 @@
+# Let components, Widevine above all, arrive without Helium's services.
+#
+# Helium serves component updates from its services and otherwise returns a
+# dead URL, so with no reachable service the Widevine CDM never arrives and
+# DRM playback fails. When Helium's component service is not in use, fall
+# back to Chromium's own component endpoint, still gated on services consent
+# and the update-fetching preference. The condition is narrower than it
+# should be. Later privacy-features/0002-widevine-consent.patch replaces this
+# condition: explicit startup feature consent authorizes its own downloads,
+# and Widevine registration/loading require that choice independently of
+# services consent. This earlier patch remains ordered and applied unchanged.
+
+--- a/components/component_updater/component_updater_url_constants.cc
++++ b/components/component_updater/component_updater_url_constants.cc
+@@ -15,9 +15,9 @@
+ // The value of |kDefaultUrlSource| can be overridden with
+ // --component-updater=url-source=someurl.
+ const char kUpdaterJSONDefaultUrl[] =
+-    "trk:345:https://update.googleapis.com/service/update2/json";
++    "https://update.googleapis.com/service/update2/json";
+ 
+ const char kUpdaterJSONFallbackUrl[] =
+-    "trk:346:http://update.googleapis.com/service/update2/json";
++    "http://update.googleapis.com/service/update2/json";
+ 
+ }  // namespace component_updater
+--- a/components/helium_services/helium_services_helpers.cc
++++ b/components/helium_services/helium_services_helpers.cc
+@@ -152,11 +152,29 @@
+ }
+ 
+ GURL GetComponentUpdateURL(const PrefService* prefs) {
+-    if (!prefs || !ShouldAccessComponentUpdateService(*prefs)) {
++    if (!prefs) {
+         return GetDummyURL();
+     }
+ 
+-    return GetServicesBaseURL(*prefs).Resolve("/com");
++    // Helium's component service, once the user has authorised it.
++    if (ShouldAccessComponentUpdateService(*prefs)) {
++        return GetServicesBaseURL(*prefs).Resolve("/com");
++    }
++
++    // Otherwise fall back to Chromium's upstream component endpoint. Widevine
++    // ships as a component rather than in the binary, so with no reachable
++    // service it never arrives and DRM playback fails with "Update error".
++    // Fetching it from upstream is how other Chromium forks deliver it without
++    // redistributing the proprietary CDM themselves. Access remains gated on
++    // service consent and the update-fetching preference.
++    if (ShouldAccessServices(*prefs) &&
++        prefs->GetBoolean(prefs::kHeliumUpdateFetchingEnabled)) {
++        constexpr char kUpstreamComponentUpdateUrl[] =
++            "https://update.googleapis.com/service/update2/json";
++        return GURL(kUpstreamComponentUpdateUrl);
++    }
++
++    return GetDummyURL();
+ }
+ 
+ GURL GetUBlockAssetsURL(const PrefService& prefs) {

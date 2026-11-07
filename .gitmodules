@@ -1,0 +1,3 @@
+[submodule "upstream/helium-windows"]
+	path = upstream/helium-windows
+	url = https://github.com/imputnet/helium-windows.git

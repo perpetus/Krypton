@@ -1,0 +1,17 @@
+Name: uBlock Origin
+Short Name: ublock
+URL: https://github.com/gorhill/uBlock
+Version: 1.75.4
+License: GPL-3.0
+License File: LICENSE.txt
+Shipped: yes
+Security Critical: yes
+
+Description:
+Official uBlock Origin Chromium release from gorhill/uBlock.
+The exact archive and SHA-256 are pinned in Krypton's deps.ini.
+
+Local Modifications:
+Component build metadata and the manifest public key from the official signed
+Chromium release. Extension code, default settings and filter catalog are
+unchanged; uBlock Origin controls filter updates directly.

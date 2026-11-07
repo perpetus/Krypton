@@ -1,0 +1,69 @@
+# Fetch extensions from the Chrome Web Store's own endpoints.
+#
+# Helium routes every Web Store request through its services proxy and
+# returns a dead placeholder URL when the proxy is off. Krypton always talks
+# to the store directly: both helpers return the original endpoints, pending
+# installs are no longer skipped, and the proxy toggle leaves Settings because
+# it no longer controls anything. The ping domain stays Helium's, so no usage
+# pings are sent to Google.
+
+--- a/chrome/browser/resources/settings/privacy_page/services_page.html
++++ b/chrome/browser/resources/settings/privacy_page/services_page.html
+@@ -82,11 +82,6 @@
+     </settings-toggle-button>
+     <div class="cr-col">
+         <cr-collapse id="servicesCollapse" opened="[[prefs.helium.services.enabled.value]]">
+-            <settings-toggle-button id="extProxyToggleButton"
+-                pref="{{prefs.helium.services.ext_proxy}}"
+-                label="$i18n{heliumExtProxyToggle}"
+-                sub-label="$i18n{heliumExtProxyToggleDescription}">
+-            </settings-toggle-button>
+             <settings-toggle-button id="bangToggleButton"
+                 pref="{{prefs.helium.services.bangs}}"
+                 label="$i18n{heliumBangsToggle}"
+--- a/components/helium_services/helium_services_helpers.cc
++++ b/components/helium_services/helium_services_helpers.cc
+@@ -113,21 +113,16 @@
+             prefs.GetBoolean(prefs::kHeliumUBlockAssetsEnabled);
+ }
+ 
++// Krypton: extensions always come from the Chrome Web Store itself, never
++// through the services proxy.
+ GURL GetExtensionUpdateURL(const PrefService& prefs) {
+-    if (!ShouldAccessExtensionService(prefs)) {
+-        return GetDummyURL();
+-    }
+-
+-    return GetServicesBaseURL(prefs).Resolve("/ext");
++    return GURL("https://clients2.google.com/service/update2/crx");
+ }
+ 
+ GURL GetWebstoreSnippetURL(const PrefService& prefs, std::string_view id) {
+-    if (!ShouldAccessExtensionService(prefs)) {
+-        return GetDummyURL();
+-    }
+-
+-    return GetServicesBaseURL(prefs).Resolve(
+-        base::StringPrintf("/ext/cws_snippet?id=%s", id));
++    return GURL(base::StringPrintf(
++        "https://chromewebstore.googleapis.com/v2/items/%s:fetchItemSnippet",
++        id));
+ }
+ 
+ GURL GetSpellcheckURL(const PrefService& prefs) {
+--- a/extensions/browser/pending_extension_manager.cc
++++ b/extensions/browser/pending_extension_manager.cc
+@@ -236,11 +236,10 @@
+       Profile* profile = Profile::FromBrowserContext(context_.get());
+       PrefService* prefs = profile->GetPrefs();
+ 
+-      if (prefs && helium::ShouldAccessExtensionService(*prefs)) {
+-        it.second.OverrideURL(helium::GetExtensionUpdateURL(*prefs));
+-      } else {
++      if (!prefs) {
+         continue;
+       }
++      it.second.OverrideURL(helium::GetExtensionUpdateURL(*prefs));
+     }
+ 
+     result.push_back(it.first);

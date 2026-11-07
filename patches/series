@@ -1,0 +1,66 @@
+# Krypton's patch layer. Applied after Helium's series and then
+# helium-windows' series; see tools/krypton/layout.py for the order.
+# These patches adapt to Helium, never the reverse, and only the files they
+# change carry Krypton's name.
+
+# Product and install identity, and no use of Helium's servers.
+krypton/identity/branding.patch
+krypton/identity/service-endpoints.patch
+krypton/windows/install-identity.patch
+
+# Build and network.
+krypton/build/simd-and-max-optimization.patch
+krypton/net/doh-minimal-headers.patch
+
+# Services.
+krypton/services/use-original-web-store.patch
+krypton/services/direct-webstore-protocol.patch
+krypton/services/component-updates-upstream-fallback.patch
+
+# Profile import.
+krypton/importer/helium-thorium-profile-import.patch
+
+# Helium code that referred to the UI patches in skip-helium.
+krypton/without-helium-ui/custom-shortcuts.patch
+
+# Retained disabled-WebUI registrations must not leave stale UI includes.
+krypton/build/drop-disabled-webui-binder-include.patch
+krypton/build/expose-crash-reporting-dependency.patch
+krypton/build/recover-empty-midl-baselines.patch
+
+# KryptonUI integration, ordered after the complete upstream baseline.
+krypton/krypton-ui/0001-build-runtime.patch
+krypton/krypton-ui/0002-window-lifetime.patch
+krypton/krypton-ui/0004-menu-component-data.patch
+krypton/krypton-ui/0006-browser-shell.patch
+krypton/krypton-ui/0008-optional-views-chrome.patch
+krypton/krypton-ui/0009-shell-layout-prefs.patch
+krypton/krypton-ui/0010-native-context-menus.patch
+krypton/krypton-ui/0011-persistent-workspaces.patch
+krypton/krypton-ui/0013-essential-tabs.patch
+krypton/privacy-features/0001-shared-registry-and-native-settings.patch
+krypton/privacy-features/0002-widevine-consent.patch
+krypton/privacy-features/0003-live-caption.patch
+krypton/privacy-features/0004-downloaded-autoplay-list.patch
+krypton/privacy-features/0005-cast-discovery-gates.patch
+krypton/identity/visible-branding.patch
+krypton/identity/persisted-profile-branding.patch
+
+krypton/krypton-ui/0015-native-onboarding-settings.patch
+krypton/krypton-ui/0017-screenshot-overlay-bounds.patch
+krypton/krypton-ui/0018-native-extension-badges.patch
+krypton/krypton-ui/0019-multi-page.patch
+krypton/krypton-ui/0020-liquid-glass.patch
+krypton/krypton-ui/0022-omnibox-results.patch
+krypton/krypton-ui/0023-workspace-close-selection.patch
+krypton/webui/0001-monochrome-settings.patch
+krypton/services/0001-signed-github-updates.patch
+krypton/build/abseil-windows-store-fence.patch
+krypton/services/disabled-service-compat.patch
+krypton/services/official-ublock-origin.patch
+
+# Chromium 157 granular native build wiring.
+krypton/chromium-157/native-build-targets.patch
+krypton/chromium-157/production-dependencies.patch
+krypton/chromium-157/drop-unused-service-includes.patch
+krypton/build/windows-optimized-thinlto.patch

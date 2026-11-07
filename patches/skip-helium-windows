@@ -1,0 +1,4 @@
+# Chromium 157 includes these two fixes verbatim. Reverse dry-runs against the
+# pristine 157 sources succeed; applying the backports again is an error.
+helium/windows/drm/mf-fix-resize-cache.patch
+helium/windows/drm/mf-fix-geometry.patch

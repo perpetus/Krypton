@@ -1,0 +1,770 @@
+# Krypton: connect the native shell to normal BrowserViews.
+# Chromium retains web contents and browser services; eligible windows
+# require KryptonUI and omit the original toolbar and tab strips.
+
+--- a/chrome/browser/ui/views/bookmarks/bookmark_bar_view.cc
++++ b/chrome/browser/ui/views/bookmarks/bookmark_bar_view.cc
+@@ -699,7 +699,8 @@
+   // bottom margin of the toolbar into the button position.
+   int toolbar_bottom_margin = 0;
+   // Note: |browser_view_| may be null during tests.
+-  if (browser_view_ && !browser_view_->IsFullscreen()) {
++  if (browser_view_ && browser_view_->toolbar() &&
++      !browser_view_->IsFullscreen()) {
+     toolbar_bottom_margin = browser_view_->toolbar()->height() -
+                             browser_view_->GetLocationBar()->Bounds().bottom();
+   }
+--- a/chrome/browser/ui/views/bubble_anchor_util_views.cc
++++ b/chrome/browser/ui/views/bubble_anchor_util_views.cc
+@@ -86,7 +86,7 @@
+             kLocationIconElementId, views::BubbleBorder::TOP_LEFT};
+   }
+ 
+-  if (anchor == Anchor::kCustomTabBar &&
++  if (anchor == Anchor::kCustomTabBar && browser_view->toolbar() &&
+       browser_view->toolbar()->custom_tab_bar()) {
+     return {views::BubbleAnchor(browser_view->toolbar()->custom_tab_bar()),
+             kLocationIconElementId, views::BubbleBorder::TOP_LEFT};
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -5,6 +5,7 @@
+ import("//build/config/features.gni")
+ import("//build/config/ozone.gni")
+ import("//build/config/ui.gni")
++import("//chrome/browser/ui/krypton_ui/features.gni")
+ import("//extensions/buildflags/buildflags.gni")
+ 
+ assert(!is_android)
+@@ -2946,6 +2947,12 @@
+     if (is_win) {
+       deps += [ ":browser_frame_view_win" ]
+     }
++    if (krypton_ui_enabled) {
++      deps += [
++        "//chrome/browser/ui/krypton_ui:window_core",
++        "//chrome/browser/ui/krypton_ui:workspace_models",
++      ]
++    }
+   }
+ }
+ 
+--- a/chrome/browser/ui/views/frame/browser_frame_view_factory_views.cc
++++ b/chrome/browser/ui/views/frame/browser_frame_view_factory_views.cc
+@@ -8,6 +8,10 @@
+ #include "chrome/browser/themes/theme_service.h"
+ #include "chrome/browser/themes/theme_service_factory.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#include "chrome/browser/ui/krypton_ui/frame_view.h"
++#endif
+ #include "chrome/browser/ui/views/frame/opaque_browser_frame_view.h"
+ #include "chrome/browser/ui/views/frame/opaque_browser_frame_view_layout.h"
+ 
+@@ -97,6 +101,13 @@
+ std::unique_ptr<BrowserFrameView> CreateBrowserFrameViewWin(
+     BrowserWidget* widget,
+     BrowserView* browser_view) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* adapter = browser_view->krypton_ui()) {
++    return std::make_unique<krypton_ui::FrameView>(
++        widget, browser_view, adapter->session().GetWeakPtr());
++  }
++#endif
++
+   if (browser_view->browser()->GetType() ==
+       BrowserWindowInterface::Type::TYPE_PICTURE_IN_PICTURE) {
+     return std::make_unique<PictureInPictureBrowserFrameView>(widget,
+--- a/chrome/browser/ui/views/frame/browser_root_view.cc
++++ b/chrome/browser/ui/views/frame/browser_root_view.cc
+@@ -212,8 +212,9 @@
+ bool BrowserRootView::GetDropFormats(
+     int* formats,
+     std::set<ui::ClipboardFormatType>* format_types) {
+-  if (browser_view_->tab_strip_view()->GetVisible() ||
+-      toolbar()->GetVisible()) {
++  if ((browser_view_->tab_strip_view() &&
++       browser_view_->tab_strip_view()->GetVisible()) ||
++      (toolbar() && toolbar()->GetVisible())) {
+     *formats = ui::OSExchangeData::URL | ui::OSExchangeData::STRING;
+     return true;
+   }
+@@ -230,8 +231,9 @@
+     return false;
+   }
+ 
+-  if (!browser_view_->tab_strip_view()->GetVisible() &&
+-      !toolbar()->GetVisible()) {
++  if ((!browser_view_->tab_strip_view() ||
++       !browser_view_->tab_strip_view()->GetVisible()) &&
++      (!toolbar() || !toolbar()->GetVisible())) {
+     return false;
+   }
+ 
+@@ -339,7 +341,7 @@
+ 
+   // Scroll-event-changes-tab is incompatible with vertical tabstrip, so
+   // disable it if the latter feature is enabled.
+-  if (scroll_event_changes_tab_ &&
++  if (scroll_event_changes_tab_ && browser_view_->tab_strip_view() &&
+       !browser_view_->ShouldDrawVerticalTabStrip()) {
+     // Switch to the left/right tab if the wheel-scroll happens over the
+     // tabstrip, or the empty space beside the tabstrip.
+@@ -525,11 +527,13 @@
+ 
+   // See if we should drop links onto tabstrip first.
+   gfx::Point loc_in_tabstrip(event.location());
+-  ConvertPointToTarget(this, browser_view_->tab_strip_view(), &loc_in_tabstrip);
+-  target = browser_view_->tab_strip_view()->GetDropTarget(loc_in_tabstrip);
++  if (auto* strip = browser_view_->tab_strip_view()) {
++    ConvertPointToTarget(this, strip, &loc_in_tabstrip);
++    target = strip->GetDropTarget(loc_in_tabstrip);
++  }
+ 
+   // See if we can drop links onto toolbar.
+-  if (!target) {
++  if (!target && toolbar()) {
+     gfx::Point loc_in_toolbar(event.location());
+     ConvertPointToTarget(this, toolbar(), &loc_in_toolbar);
+     target =
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -3,6 +3,15 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#include "chrome/browser/ui/krypton_ui/contents_layout.h"
++#include "chrome/browser/ui/krypton_ui/native_location_bar.h"
++#include "chrome/browser/ui/krypton_ui/native_toolbar.h"
++#include "ui/views/controls/message_box_view.h"
++#include "ui/views/window/dialog_delegate.h"
++#endif
+ 
+ #include <stdint.h>
+ 
+@@ -1034,8 +1043,17 @@
+   top_container_ = AddChildView(std::make_unique<TopContainerView>(this));
+   top_container_insertion_index_ = GetIndexOf(top_container_.get());
+ 
+-  toolbar_ = top_container_->AddChildView(
+-      std::make_unique<ToolbarView>(browser_.get(), this));
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::BrowserAdapter::IsEligible(*browser_)) {
++    krypton_ui_ = std::make_unique<krypton_ui::BrowserAdapter>(*this);
++    main_background_region_->SetVisible(false);
++    startup_layout_state_ = StartupLayoutState::kDisabled;
++  } else
++#endif
++  {
++    toolbar_ = top_container_->AddChildView(
++        std::make_unique<ToolbarView>(browser_.get(), this));
++  }
+ 
+   top_container_separator_ = top_container_->AddChildView(
+       ContentsSeparator::CreateContentsSeparator());
+@@ -1066,46 +1084,51 @@
+ 
+   // Tabstrip comes basically last because it should be before toolbar in the
+   // focus order but also needs to paint on top of everything.
+-  horizontal_tab_strip_region_view_ =
+-      AddChildView(CreateHorizontalTabStripRegionView(this));
+-  horizontal_tab_strip_region_insertion_index_ =
+-      GetIndexOf(horizontal_tab_strip_region_view_.get());
+-
+   auto* const vertical_tab_strip_state_controller =
+       tabs::VerticalTabStripStateController::From(browser_);
+-  if (vertical_tab_strip_state_controller) {
+-    auto vertical_tab_strip_container =
+-        std::make_unique<VerticalTabStripRegionView>(
+-            vertical_tab_strip_state_controller,
+-            BrowserActions::From(browser_)->root_action_item(), this);
+-
+-    if (features::IsGlassFrameEnabled()) {
+-      vertical_tab_strip_background_blur_backdrop_ = AddChildView(
+-          std::make_unique<VerticalTabStripBackgroundBlurBackdrop>());
+-    }
+-    vertical_tab_strip_region_view_ =
+-        AddChildView(std::move(vertical_tab_strip_container));
+-
+-    vertical_tab_strip_top_corner_ =
+-        AddChildView(std::make_unique<CustomFloatingCorner>(
+-            *this, CornerOrientation::kTopLeading,
+-            views::ShapeContextTokens::kContentSeparatorRadius,
+-            CustomFloatingCorner::FrameTheme(), kColorVerticalTabStripShadow,
+-            /*is_vertical_window_edge=*/true));
+-    vertical_tab_strip_top_corner_->SetProperty(
+-        views::kElementIdentifierKey,
+-        BrowserViewLayoutViews::kVerticalTabStripTopCornerElementId);
+-    vertical_tab_strip_bottom_corner_ =
+-        AddChildView(std::make_unique<CustomFloatingCorner>(
+-            *this, CornerOrientation::kBottomLeading,
+-            views::ShapeContextTokens::kContentSeparatorRadius,
+-            CustomFloatingCorner::FrameTheme(), kColorVerticalTabStripShadow,
+-            /*is_vertical_window_edge=*/true));
+-    vertical_tab_strip_bottom_corner_->SetProperty(
+-        views::kElementIdentifierKey,
+-        BrowserViewLayoutViews::kVerticalTabStripBottomCornerElementId);
+-  } else {
+-    horizontal_tab_strip_region_view_->InitializeTabStrip();
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (!krypton_ui_)
++#endif
++  {
++    horizontal_tab_strip_region_view_ =
++        AddChildView(CreateHorizontalTabStripRegionView(this));
++    horizontal_tab_strip_region_insertion_index_ =
++        GetIndexOf(horizontal_tab_strip_region_view_.get());
++
++    if (vertical_tab_strip_state_controller) {
++      auto vertical_tab_strip_container =
++          std::make_unique<VerticalTabStripRegionView>(
++              vertical_tab_strip_state_controller,
++              BrowserActions::From(browser_)->root_action_item(), this);
++
++      if (features::IsGlassFrameEnabled()) {
++        vertical_tab_strip_background_blur_backdrop_ = AddChildView(
++            std::make_unique<VerticalTabStripBackgroundBlurBackdrop>());
++      }
++      vertical_tab_strip_region_view_ =
++          AddChildView(std::move(vertical_tab_strip_container));
++
++      vertical_tab_strip_top_corner_ =
++          AddChildView(std::make_unique<CustomFloatingCorner>(
++              *this, CornerOrientation::kTopLeading,
++              views::ShapeContextTokens::kContentSeparatorRadius,
++              CustomFloatingCorner::FrameTheme(), kColorVerticalTabStripShadow,
++              /*is_vertical_window_edge=*/true));
++      vertical_tab_strip_top_corner_->SetProperty(
++          views::kElementIdentifierKey,
++          BrowserViewLayoutViews::kVerticalTabStripTopCornerElementId);
++      vertical_tab_strip_bottom_corner_ =
++          AddChildView(std::make_unique<CustomFloatingCorner>(
++              *this, CornerOrientation::kBottomLeading,
++              views::ShapeContextTokens::kContentSeparatorRadius,
++              CustomFloatingCorner::FrameTheme(), kColorVerticalTabStripShadow,
++              /*is_vertical_window_edge=*/true));
++      vertical_tab_strip_bottom_corner_->SetProperty(
++          views::kElementIdentifierKey,
++          BrowserViewLayoutViews::kVerticalTabStripBottomCornerElementId);
++    } else {
++      horizontal_tab_strip_region_view_->InitializeTabStrip();
++    }
+   }
+ 
+   if (auto* const organizer_panel_controller =
+@@ -1235,6 +1258,9 @@
+   // since it is responsible for showing autofill related bubbles from toolbar's
+   // child views and it is an observer for avatar toolbar button if any.
+   autofill_bubble_handler_.reset();
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  krypton_ui_.reset();
++#endif
+ 
+   // These are raw pointers to child views, so they need to be set to null
+   // before `RemoveAllChildViews()` is called to avoid dangling.
+@@ -1528,6 +1554,11 @@
+ }
+ 
+ bool BrowserView::ShouldDrawTabStrip() const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    return false;
++#endif
++
+   // Return false if this window does not normally display a tabstrip or if the
+   // tabstrip is currently hidden, e.g. because we're in fullscreen.
+   if (!WindowFeatureController::From(browser_)->SupportsWindowFeature(
+@@ -1560,6 +1591,11 @@
+ }
+ 
+ bool BrowserView::ShouldDrawVerticalTabStrip() const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    return false;
++#endif
++
+   auto* controller = tabs::VerticalTabStripStateController::From(browser_);
+   return ShouldDrawTabStrip() && controller &&
+          controller->ShouldDisplayVerticalTabs() &&
+@@ -1691,6 +1727,11 @@
+ 
+ void BrowserView::OnVerticalTabStripModeChanged(
+     tabs::VerticalTabStripStateController* controller) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    return;
++#endif
++
+   // Clear selection model
+   if (auto* active_tab = browser_->GetTabStripModel()->GetActiveTab()) {
+     tabs::TabStripModelSelectionState selection_state(
+@@ -2432,6 +2473,11 @@
+ }
+ 
+ LocationBar* BrowserView::GetLocationBar() const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    return &krypton_ui_->location_bar();
++#endif
++
+   return toolbar_ ? toolbar_->location_bar() : nullptr;
+ }
+ 
+@@ -2480,6 +2526,13 @@
+ }
+ 
+ void BrowserView::UpdateToolbar(content::WebContents* contents) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    krypton_ui_->location_bar().Update(contents);
++    krypton_ui_->PublishNavigation();
++  }
++#endif
++
+   // We may end up here during destruction.
+   if (toolbar_) {
+     toolbar_->Update(contents);
+@@ -2491,6 +2544,13 @@
+ }
+ 
+ bool BrowserView::UpdateToolbarSecurityState() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    krypton_ui_->PublishNavigation();
++    return krypton_ui_->location_bar().HasSecurityStateChanged();
++  }
++#endif
++
+   // We may end up here during destruction.
+   if (toolbar_) {
+     return toolbar_->UpdateSecurityState();
+@@ -2506,6 +2566,11 @@
+ }
+ 
+ void BrowserView::ResetToolbarTabState(content::WebContents* contents) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->location_bar().ResetTabState(contents);
++#endif
++
+   // We may end up here during destruction.
+   if (toolbar_) {
+     toolbar_->ResetTabState(contents);
+@@ -2952,6 +3017,13 @@
+ }
+ 
+ void BrowserView::FocusAppMenu() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    krypton_ui_->toolbar().Focus(&krypton_ui_->toolbar());
++    return;
++  }
++#endif
++
+   // Chrome doesn't have a traditional menu bar, but it has a menu button in the
+   // main toolbar that plays the same role.  If the user presses a key that
+   // would typically focus the menu bar, tell the toolbar to focus the menu
+@@ -3164,6 +3236,11 @@
+ }
+ 
+ bool BrowserView::IsToolbarVisible() const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    return krypton_ui_->ready();
++#endif
++
+ #if BUILDFLAG(IS_MAC)
+   // Immersive full screen makes it possible to display the toolbar when
+   // kShowFullscreenToolbar is not set.
+@@ -3191,6 +3268,11 @@
+ }
+ 
+ bool BrowserView::IsLocationBarVisible() const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    return krypton_ui_->ready();
++#endif
++
+   return WindowFeatureController::From(browser_)->SupportsWindowFeature(
+              WindowFeatureController::WindowFeature::kFeatureLocationBar) &&
+          GetLocationBar()->IsVisible();
+@@ -3207,12 +3289,34 @@
+     apps::IntentPickerBubbleType bubble_type,
+     const std::optional<url::Origin>& initiating_origin,
+     IntentPickerResponse callback) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    IntentPickerBubbleView::ShowBubble(
++        krypton_ui_->toolbar().GetBubbleAnchor(kActionShowIntentPicker),
++        kIntentPickerPageActionElementId, bubble_type, GetActiveWebContents(),
++        std::move(app_info), show_stay_in_chrome, show_remember_selection,
++        initiating_origin, std::move(callback));
++    return;
++  }
++#endif
++
+   toolbar_->ShowIntentPickerBubble(std::move(app_info), show_stay_in_chrome,
+                                    show_remember_selection, bubble_type,
+                                    initiating_origin, std::move(callback));
+ }
+ 
+ void BrowserView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    auto& toolbar = krypton_ui_->toolbar();
++    BookmarkBubbleView::ShowBubble(
++        toolbar.GetBubbleAnchor(kActionBookmarkThisTab), GetActiveWebContents(),
++        toolbar.GetPageActionViewInterface(kActionBookmarkThisTab),
++        browser_.get(), url, already_bookmarked);
++    return;
++  }
++#endif
++
+   toolbar_->ShowBookmarkBubble(url, already_bookmarked);
+ }
+ 
+@@ -3663,7 +3767,8 @@
+   // can change its preferred size. Re-lay-out the toolbar to reflect the
+   // possible change.
+   if (selection.active_tab_changed()) {
+-    toolbar_->InvalidateLayout();
++    if (toolbar_)
++      toolbar_->InvalidateLayout();
+ 
+     // Update the accessible URL when the selected tab changes. This ensures
+     // that the accessibility document URL is updated for both keyboard and
+@@ -3734,7 +3839,7 @@
+     int command_id,
+     ui::Accelerator* accelerator) const {
+   // Let's let the ToolbarView own the canonical implementation of this method.
+-  return toolbar_->GetAcceleratorForCommandId(command_id, accelerator);
++  return GetWidget()->GetAccelerator(command_id, accelerator);
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+@@ -4255,6 +4360,11 @@
+ #endif  // IS_MAC
+ 
+ void BrowserView::OnWidgetDestroying(views::Widget* widget) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->Close();
++#endif
++
+   DCHECK(widget_observation_.IsObservingSource(widget));
+   widget_observation_.Reset();
+ 
+@@ -4281,6 +4391,11 @@
+ 
+ void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
+                                             bool active) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->PublishWindowState();
++#endif
++
+   if (browser_->GetWindow()) {
+     if (active) {
+       if (restore_focus_on_activation_.has_value() &&
+@@ -4306,6 +4421,11 @@
+ 
+ void BrowserView::OnWidgetBoundsChanged(views::Widget* widget,
+                                         const gfx::Rect& new_bounds) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->PublishWindowState();
++#endif
++
+   TryNotifyWindowBoundsChanged(new_bounds);
+ }
+ 
+@@ -4326,6 +4446,11 @@
+ }
+ 
+ void BrowserView::OnWidgetMove() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->PublishWindowState();
++#endif
++
+   if (!initialized_) {
+     // Creating the widget can trigger a move. Ignore it until we've initialized
+     // things.
+@@ -4398,6 +4523,13 @@
+ }
+ 
+ void BrowserView::UpdateTabSearchBubbleHost() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    tab_search_bubble_host_.reset();
++    return;
++  }
++#endif
++
+   if (!GetIsNormalType() || organizer_panel::IsOrganizerPanelFeatureEnabled()) {
+     return;
+   }
+@@ -4577,6 +4709,11 @@
+ }
+ 
+ void BrowserView::GetAccessiblePanes(std::vector<views::View*>* panes) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    panes->push_back(&krypton_ui_->toolbar());
++#endif
++
+   // This should be in the order of pane traversal of the panes using F6
+   // (Windows) or Ctrl+Back/Forward (Chrome OS).  If one of these is
+   // invisible or has no focusable children, it will be automatically
+@@ -4724,6 +4861,11 @@
+ }
+ 
+ int BrowserView::NonClientHitTest(const gfx::Point& point) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    return HTCLIENT;
++#endif
++
+ #if BUILDFLAG(IS_MAC)
+   // The top container while in immersive fullscreen on macOS lives in another
+   // Widget (OverlayWidgetMac). This means that BrowserView does not need to
+@@ -4938,6 +5080,11 @@
+ // BrowserView, views::View overrides:
+ 
+ void BrowserView::Layout(PassKey) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_ && !krypton_ui_->ready())
++    return;
++#endif
++
+   TRACE_EVENT0("ui", "BrowserView::Layout");
+   // Do not perform layout if the view is not yet initialized, in fullscreen
+   // transition, shutting down, or if the underlying widget has already closed.
+@@ -4992,10 +5139,11 @@
+   LayoutSuperclass<views::View>(this);
+ 
+   // TODO(jamescook): Why was this in the middle of layout code?
+-  toolbar_->location_bar()->UpdateFocusBehavior(IsToolbarVisible());
++  if (auto* location = GetLocationBar())
++    location->UpdateFocusBehavior(IsToolbarVisible());
+   GetFrameView()->UpdateMinimumSize();
+ 
+-  if (omnibox::IsWebUIOmniboxInBrowserViewEnabled()) {
++  if (toolbar_ && omnibox::IsWebUIOmniboxInBrowserViewEnabled()) {
+     // When the WebUI Omnibox is embedded directly in the `BrowserView` (instead
+     // of being a separate popup widget), its layout depends on the position of
+     // the `LocationBarView`. We must update its layout after the
+@@ -5132,9 +5280,16 @@
+   SetThemeProfileForWindow(GetNativeWindow(), browser_->GetProfile());
+ #endif
+ 
+-  toolbar_->Init();
+-
+-  if (omnibox::IsWebUIOmniboxInBrowserViewEnabled()) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->InitializeServices();
++  else
++#endif
++  {
++    toolbar_->Init();
++  }
++
++  if (toolbar_ && omnibox::IsWebUIOmniboxInBrowserViewEnabled()) {
+     // When the WebUI Omnibox is embedded directly in the `BrowserView` (instead
+     // of being a separate popup widget), the popup view needs a reference to
+     // `BrowserView` to add the popup frame as a child view. We inject it here
+@@ -5223,9 +5378,22 @@
+   layout_views.top_container_separator = top_container_separator_;
+   // LINT.ThenChange(//chrome/browser/ui/views/frame/layout/browser_view_layout.h:BrowserViewLayoutViews)
+ 
+-  SetLayoutManager(BrowserViewLayout::CreateLayout(
+-      std::make_unique<BrowserViewLayoutDelegateImpl>(*this), browser(),
+-      std::move(layout_views)));
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    SetLayoutManager(std::make_unique<krypton_ui::ContentsLayout>(
++        std::make_unique<BrowserViewLayoutDelegateImpl>(*this),
++        std::move(layout_views), krypton_ui_->session().GetWeakPtr(),
++        base::BindRepeating(&krypton_ui::BrowserAdapter::WindowFlags,
++                            base::Unretained(krypton_ui_.get())),
++        base::BindRepeating(&BrowserView::ReportKryptonUiFailure,
++                            GetAsWeakPtr())));
++  } else
++#endif
++  {
++    SetLayoutManager(BrowserViewLayout::CreateLayout(
++        std::make_unique<BrowserViewLayoutDelegateImpl>(*this), browser(),
++        std::move(layout_views)));
++  }
+ 
+   EnsureFocusOrder();
+ 
+@@ -5265,7 +5433,9 @@
+   }
+ 
+   if (auto* const vertical_tab_strip_state_controller =
+-          tabs::VerticalTabStripStateController::From(browser_)) {
++          tabs::VerticalTabStripStateController::From(browser_);
++      vertical_tab_strip_state_controller &&
++      horizontal_tab_strip_region_view_) {
+     if (vertical_tab_strip_state_controller->ShouldDisplayVerticalTabs()) {
+       vertical_tab_strip_region_view_->InitializeTabStrip();
+     } else {
+@@ -5307,8 +5477,65 @@
+   }
+ }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++bool BrowserView::ExecuteCapturedAccelerator(const ui::Accelerator& accelerator,
++                                             int command_id) {
++  if (!chrome::IsCommandEnabled(browser(), command_id))
++    return false;
++  UpdateAcceleratorMetrics(accelerator, command_id);
++
++  if (command_id == IDC_CLEAR_BROWSING_DATA) {
++    views::ElementTrackerViews::GetInstance()->NotifyCustomEvent(
++        browsing_data_important_sites_util::
++            kOpenClearBrowsingDataDialogViaAcceleratorEventId,
++        this);
++  }
++
++  actions::ActionInvocationContext context;
++  context.SetProperty(chrome::kActionInvocationSourceKey,
++                      chrome::ActionInvocationSource::kKeyboardShortcut);
++
++  if (command_id == IDC_SHOW_READING_MODE) {
++    context.SetProperty(
++        kSidePanelOpenTriggerKey,
++        static_cast<std::underlying_type_t<SidePanelOpenTrigger>>(
++            SidePanelOpenTrigger::kReadAnythingKeyboardShortcut));
++  }
++
++  return chrome::ExecuteCommandWithContext(
++      browser_.get(), command_id, std::move(context), accelerator.time_stamp());
++}
++
++void BrowserView::AttachKryptonUi() {
++  if (!krypton_ui_)
++    return;
++  auto result = krypton_ui_->Attach();
++  if (!result.has_value())
++    ReportKryptonUiFailure(std::move(result.error()));
++}
++
++void BrowserView::ReportKryptonUiFailure(std::string error) {
++  if (!krypton_ui_ || suppress_layout_for_teardown_)
++    return;
++  suppress_layout_for_teardown_ = true;
++  krypton_ui_->Close();
++  auto dialog = std::make_unique<views::DialogDelegate>();
++  dialog->SetTitle(u"KryptonUI initialization failed");
++  dialog->SetButtons(static_cast<int>(ui::mojom::DialogButton::kOk));
++  dialog->SetContentsView(
++      std::make_unique<views::MessageBoxView>(base::UTF8ToUTF16(error)));
++  views::DialogDelegate::CreateDialogWidget(std::move(dialog), nullptr, nullptr)
++      ->Show();
++  GetWidget()->Close();
++}
++
++#endif
+ void BrowserView::OnThemeChanged() {
+   views::ClientView::OnThemeChanged();
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->PublishTheme();
++#endif
+   if (!initialized_) {
+     return;
+   }
+@@ -5363,6 +5590,11 @@
+     return false;
+   }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    return ExecuteCapturedAccelerator(accelerator, command_id);
++  }
++#endif
+   UpdateAcceleratorMetrics(accelerator, command_id);
+ 
+   if (command_id == IDC_CLEAR_BROWSING_DATA) {
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -28,6 +28,7 @@
+ #include "chrome/browser/ui/download_close_type.h"
+ #include "chrome/browser/ui/global_error/global_error_observer.h"
+ #include "chrome/browser/ui/immersive/immersive_mode_controller.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #include "chrome/browser/ui/tabs/organizer/organizer_panel_controller.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
+ #include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
+@@ -78,6 +79,10 @@
+ class BookmarkBarController;
+ class BookmarkBarView;
+ class BrowserWindowInterface;
++namespace krypton_ui {
++class BrowserAdapter;
++}
++
+ class BrowserViewLayout;
+ class ContentsContainerView;
+ class ContentsWebView;
+@@ -192,6 +197,11 @@
+   const BrowserWindowInterface* browser() const { return browser_; }
+ 
+   Profile* GetProfile() const;
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  krypton_ui::BrowserAdapter* krypton_ui() const { return krypton_ui_.get(); }
++  void AttachKryptonUi();
++  void ReportKryptonUiFailure(std::string error);
++#endif
+ 
+   const TopControlsSlideController* top_controls_slide_controller() const {
+     return top_controls_slide_controller_.get();
+@@ -835,6 +845,13 @@
+   void DeleteBrowserWindow() final;
+ 
+  private:
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  friend class krypton_ui::BrowserAdapter;
++  bool ExecuteCapturedAccelerator(const ui::Accelerator& accelerator,
++                                  int command_id);
++  std::unique_ptr<krypton_ui::BrowserAdapter> krypton_ui_;
++#endif
++
+   // Do not friend BrowserViewLayout. Use the BrowserViewLayoutDelegate
+   // interface to keep these two classes decoupled and testable.
+   friend class BrowserViewLayoutDelegateImpl;
+--- a/chrome/browser/ui/views/frame/browser_widget.cc
++++ b/chrome/browser/ui/views/frame/browser_widget.cc
+@@ -218,6 +218,9 @@
+   }
+ 
+   Init(std::move(params));
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  browser_view_->AttachKryptonUi();
++#endif
+ 
+ #if BUILDFLAG(IS_LINUX)
+   SelectNativeTheme();
+--- a/chrome/browser/ui/views/frame/tab_modal_dialog_host.cc
++++ b/chrome/browser/ui/views/frame/tab_modal_dialog_host.cc
+@@ -128,6 +128,14 @@
+ }
+ 
+ int TabModalDialogHost::GetToolbarOverlappingYCoordinate() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (browser_view_->krypton_ui()) {
++    return contents_container_view_
++        ->ConvertRectToWidget(contents_container_view_->GetLocalBounds())
++        .y();
++  }
++#endif
++
+   gfx::Rect toolbar_coordinates_in_browser =
+       browser_view_->toolbar()->ConvertRectToWidget(
+           browser_view_->toolbar()->GetLocalBounds());

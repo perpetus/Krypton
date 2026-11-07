@@ -1,0 +1,68 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:svg xmlns:ns0="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="127.05 105.45 1011.7 1011.7" preserveAspectRatio="xMidYMid meet">
+  <ns0:defs>
+    <ns0:radialGradient id="c" gradientUnits="userSpaceOnUse" cx="310" cy="215" r="260">
+      <ns0:stop offset="0" stop-color="#8f9aff" stop-opacity=".55" />
+      <ns0:stop offset=".42" stop-color="#5d6fff" stop-opacity=".2" />
+      <ns0:stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </ns0:radialGradient>
+    <ns0:radialGradient id="i" gradientUnits="userSpaceOnUse" cx="901" cy="225" r="245">
+      <ns0:stop offset="0" stop-color="#e9ffff" stop-opacity=".72" />
+      <ns0:stop offset=".4" stop-color="#9ff8ff" stop-opacity=".26" />
+      <ns0:stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </ns0:radialGradient>
+    <ns0:radialGradient id="j" gradientUnits="userSpaceOnUse" cx="412" cy="680" r="170">
+      <ns0:stop offset="0" stop-color="#9cffff" stop-opacity=".64" />
+      <ns0:stop offset=".42" stop-color="#61eaff" stop-opacity=".24" />
+      <ns0:stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </ns0:radialGradient>
+    <ns0:radialGradient id="f" gradientUnits="userSpaceOnUse" cx="930" cy="930" r="220">
+      <ns0:stop offset="0" stop-color="#f4b2ff" stop-opacity=".42" />
+      <ns0:stop offset=".48" stop-color="#dd6cff" stop-opacity=".14" />
+      <ns0:stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </ns0:radialGradient>
+    <ns0:linearGradient id="a" gradientUnits="userSpaceOnUse" x1="245" y1="170" x2="505" y2="1015">
+      <ns0:stop offset="0" stop-color="#2948ff" />
+      <ns0:stop offset=".22" stop-color="#2536e8" />
+      <ns0:stop offset=".62" stop-color="#15198f" />
+      <ns0:stop offset="1" stop-color="#171a91" />
+    </ns0:linearGradient>
+    <ns0:linearGradient id="d" gradientUnits="userSpaceOnUse" x1="510" y1="575" x2="1015" y2="1040">
+      <ns0:stop offset="0" stop-color="#3f1fe3" />
+      <ns0:stop offset=".42" stop-color="#6519ff" />
+      <ns0:stop offset=".76" stop-color="#942cff" />
+      <ns0:stop offset="1" stop-color="#bf47ff" />
+    </ns0:linearGradient>
+    <ns0:linearGradient id="g" gradientUnits="userSpaceOnUse" x1="390" y1="735" x2="1015" y2="165">
+      <ns0:stop offset="0" stop-color="#0d74ff" />
+      <ns0:stop offset=".34" stop-color="#0766ff" />
+      <ns0:stop offset=".72" stop-color="#18bff4" />
+      <ns0:stop offset="1" stop-color="#41e9f7" />
+    </ns0:linearGradient>
+    <ns0:clipPath id="b">
+      <ns0:path stroke="#000" stroke-width="260" stroke-linecap="round" d="M367 303v615" />
+    </ns0:clipPath>
+    <ns0:clipPath id="e">
+      <ns0:path stroke="#000" stroke-width="260" stroke-linecap="round" d="m555 610 342 313" />
+    </ns0:clipPath>
+    <ns0:clipPath id="h">
+      <ns0:path stroke="#000" stroke-width="260" stroke-linecap="round" d="m493 644 406-344" />
+    </ns0:clipPath>
+  </ns0:defs>
+  <ns0:path d="M367 303v615m188-308 342 313M493 644l406-344" data-name="01 - White Backplate" fill="none" stroke="#fff" stroke-width="348" stroke-linecap="round" stroke-linejoin="round" />
+  <ns0:path fill="none" stroke="url(#a)" stroke-width="260" stroke-linecap="round" data-name="02 - Blue Stem" d="M367 303v615" />
+  <ns0:g data-name="03 - Stem Gloss" clip-path="url(#b)">
+    <ns0:circle cx="310" cy="215" r="260" fill="url(#c)" />
+    <ns0:path d="M258 220c20-37 61-54 102-54-46 19-77 54-96 101-10 24-16 49-18 76-7-48-3-91 12-123" fill="#fff" opacity=".16" />
+  </ns0:g>
+  <ns0:path fill="none" stroke="url(#d)" stroke-width="260" stroke-linecap="round" data-name="04 - Purple Lower Arm" d="m555 610 342 313" />
+  <ns0:g data-name="05 - Purple Gloss" clip-path="url(#e)">
+    <ns0:circle cx="930" cy="930" r="220" fill="url(#f)" />
+  </ns0:g>
+  <ns0:path fill="none" stroke="url(#g)" stroke-width="260" stroke-linecap="round" data-name="06 - Cyan Upper Arm" d="m493 644 406-344" />
+  <ns0:g data-name="07 - Cyan Gloss" clip-path="url(#h)">
+    <ns0:circle cx="899" cy="300" r="245" fill="url(#i)" />
+    <ns0:circle cx="430" cy="675" r="170" fill="url(#j)" />
+    <ns0:path d="M827 206c33-26 78-35 117-26-37 8-73 29-100 58-13 14-25 31-35 49-2-33 4-61 18-81" fill="#fff" opacity=".17" />
+  </ns0:g>
+</ns0:svg>

@@ -1,0 +1,100 @@
+# Copyright 2026 The Krypton Authors
+# Purpose: Match desktop Chromium Google omnibox results and rich images.
+# Why: Helium treats Google as a generic provider and uses its basic
+# suggestion endpoint; without Chrome Finch defaults the search provider
+# is also capped at three. Krypton restores the desktop request format,
+# ten-match capacity and Google rich-result handling for opted-in requests.
+# The consent default, OTR gates, saved engine definitions, API keys,
+# telemetry and page-context suppression retain Helium behavior.
+--- a/components/omnibox/browser/BUILD.gn
++++ b/components/omnibox/browser/BUILD.gn
+@@ -416,6 +416,7 @@
+     "//components/history_clusters/core",
+     "//components/history_embeddings/core",
+     "//components/keyed_service/core",
++    "//components/krypton_omnibox",
+     "//components/metrics",
+     "//components/navigation_metrics",
+     "//components/open_from_clipboard",
+--- a/components/omnibox/browser/base_search_provider.cc
++++ b/components/omnibox/browser/base_search_provider.cc
+@@ -20,6 +20,7 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "components/google/core/common/google_util.h"
++#include "components/krypton_omnibox/google_suggest_compat.h"
+ #include "components/omnibox/browser/actions/omnibox_action_in_suggest.h"
+ #include "components/omnibox/browser/aim_eligibility_service.h"
+ #include "components/omnibox/browser/autocomplete_provider_client.h"
+@@ -147,7 +148,10 @@
+   if (!template_url)
+     return match;
+   match.keyword = template_url->keyword();
+-  bool is_google = search::TemplateURLIsGoogle(template_url, search_terms_data);
++  const bool is_google =
++      search::TemplateURLIsGoogle(template_url, search_terms_data) ||
++      krypton::omnibox::IsGoogleSearchProvider(
++          template_url->GenerateSearchURL(search_terms_data));
+   const auto& suggest_template_info = suggestion.suggest_template_info();
+   if (suggest_template_info) {
+     match.suggest_template = suggest_template_info;
+--- a/components/omnibox/browser/omnibox_field_trial.cc
++++ b/components/omnibox/browser/omnibox_field_trial.cc
+@@ -22,6 +22,7 @@
+ #include "base/trace_event/memory_usage_estimator.h"
+ #include "build/build_config.h"
+ #include "components/history/core/browser/url_database.h"
++#include "components/krypton_omnibox/google_suggest_compat.h"
+ #include "components/omnibox/browser/aim_eligibility_service.h"
+ #include "components/omnibox/browser/autocomplete_provider.h"
+ #include "components/omnibox/browser/autocomplete_provider_client.h"
+@@ -173,7 +174,10 @@
+ 
+ size_t OmniboxFieldTrial::GetProviderMaxMatches(
+     AutocompleteProvider::Type provider) {
+-  size_t default_max_matches_per_provider = 3;
++  size_t default_max_matches_per_provider =
++      provider == AutocompleteProvider::Type::kSearch
++          ? krypton::omnibox::kSearchProviderMaxMatches
++          : 3;
+ 
+   std::string param_value;
+   if (OmniboxFieldTrial::IsMlUrlScoringEnabled()) {
+--- a/components/omnibox/browser/remote_suggestions_service.cc
++++ b/components/omnibox/browser/remote_suggestions_service.cc
+@@ -18,6 +18,7 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/time/time.h"
+ #include "base/timer/elapsed_timer.h"
++#include "components/krypton_omnibox/google_suggest_compat.h"
+ #include "components/lens/lens_features.h"
+ #include "components/lens/proto/server/lens_overlay_response.pb.h"
+ #include "components/omnibox/browser/base_search_provider.h"
+@@ -304,8 +305,7 @@
+             : search_terms_args.input_state.active_tool;
+     modified_url = net::AppendOrReplaceQueryParameter(
+         url_to_modify, "azm",
+-        base::NumberToString(
+-            static_cast<int>(tool_mode)));
++        base::NumberToString(static_cast<int>(tool_mode)));
+   }
+   if (search_terms_args.input_state.active_model !=
+       omnibox::ModelMode::MODEL_MODE_UNSPECIFIED) {
+@@ -420,6 +420,17 @@
+     const SearchTermsData& search_terms_data) {
+   GURL url = GURL(template_url.suggestions_url_ref().ReplaceSearchTerms(
+       search_terms_args, search_terms_data));
++
++  // Krypton: retain the user's endpoint, using Chromium's desktop
++  // protocol for legacy Google client=chrome definitions. Request consent
++  // and private-browsing checks remain with the existing providers.
++  if (search_terms_args.request_source ==
++          SearchTermsData::RequestSource::SEARCHBOX &&
++      TemplateURL::GetSuggestionClient(search_terms_args) == "chrome-omni") {
++    url = krypton::omnibox::UpgradeGoogleSuggestRequest(
++        template_url.GenerateSearchURL(search_terms_data), url,
++        search_terms_args.cursor_position);
++  }
+ 
+   // Return early for non-Google template URLs.
+   if (!search::TemplateURLIsGoogle(&template_url, search_terms_data)) {

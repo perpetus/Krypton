@@ -1,0 +1,110 @@
+Subject: [Krypton] Migrate generated profile names alongside visible branding
+
+The product strings are rebuilt, but profile names are copied to both profile
+preferences and the Local State profile-picker cache. Translate only names
+explicitly marked browser-generated, preserving custom names, managed prefs
+and enterprise/account labels. Apply profile-pref migration before name
+observers are installed so the old pref cannot overwrite the updated cache.
+Use the existing Windows shortcut manager to refresh only already generated
+profile shortcuts whose recorded name matches the migration; never create new
+shortcuts or rename arbitrary files. All disk writes use the existing browser
+preference/shortcut services. Upstream identifiers and profile paths stay intact.
+
+--- a/chrome/browser/profiles/BUILD.gn
++++ b/chrome/browser/profiles/BUILD.gn
+@@ -138,6 +138,7 @@
+     "//components/heavy_ad_intervention",
+     "//components/history/core/common",
+     "//components/keyed_service/content",
++    "//components/krypton_branding",
+     "//components/language/core/common",
+     "//components/payments/core",
+     "//components/policy/core/browser",
+@@ -671,6 +672,7 @@
+     "//components/embedder_support:user_agent",
+     "//components/enterprise/common/proto:connectors_proto",
+     "//components/keyed_service/content",
++    "//components/krypton_branding",
+     "//components/policy/core/browser",
+     "//components/policy/core/common",
+     "//components/pref_registry",
+--- a/chrome/browser/profiles/profile_attributes_storage.cc
++++ b/chrome/browser/profiles/profile_attributes_storage.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/profiles/profile_attributes_storage.h"
++#include "components/krypton_branding/persisted_names.h"
+ 
+ #include <algorithm>
+ #include <utility>
+@@ -290,6 +291,12 @@
+                using_default_name.value());
+     }
+ 
++    // Krypton: inactive profiles also appear in pickers before their own prefs
++    // load. Migrate the cache only with explicit browser-generated metadata.
++    krypton::branding::MigrateCachedDefaultProfileName(
++        info, ProfileAttributesEntry::kNameKey,
++        ProfileAttributesEntry::kIsUsingDefaultNameKey);
++
+     // For profiles that don't have the "using default avatar" state set yet,
+     // assume it's the same as the "using default name" state.
+     if (!info.FindBool(ProfileAttributesEntry::kIsUsingDefaultAvatarKey)) {
+--- a/chrome/browser/profiles/profile_impl.cc
++++ b/chrome/browser/profiles/profile_impl.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/profiles/profile_impl.h"
++#include "components/krypton_branding/persisted_names.h"
+ 
+ #include <stddef.h>
+ 
+@@ -742,6 +743,10 @@
+ 
+   PrefService* prefs = GetPrefs();
+ 
++  // Krypton: migrate only browser-generated names before registering observers.
++  krypton::branding::MigrateDefaultProfileName(*prefs, prefs::kProfileName,
++                                               prefs::kProfileUsingDefaultName);
++
+   // Do not override the existing pref in case a profile directory is copied, or
+   // if the file system does not support creation time and the property (i.e.
+   // st_ctim in posix which is actually the last status change time when the
+--- a/chrome/browser/profiles/profile_shortcut_manager_win.cc
++++ b/chrome/browser/profiles/profile_shortcut_manager_win.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/profiles/profile_shortcut_manager_win.h"
++#include "components/krypton_branding/persisted_names.h"
+ 
+ #include <shlobj.h>  // For SHChangeNotify().
+ #include <stddef.h>
+@@ -898,8 +899,24 @@
+ 
+ ProfileShortcutManagerWin::ProfileShortcutManagerWin(ProfileManager* manager)
+     : profile_manager_(manager) {
+-  profile_manager_->GetProfileAttributesStorage().AddObserver(this);
++  auto& storage = profile_manager_->GetProfileAttributesStorage();
++  storage.AddObserver(this);
+   profile_manager_->AddObserver(this);
++  // The cache migration precedes shortcut-manager construction. Refresh only
++  // existing generated shortcuts whose recorded old name matches that rename.
++  for (auto* entry : storage.GetAllProfilesAttributes()) {
++    if (!entry->IsUsingDefaultName())
++      continue;
++    const auto old_name = entry->GetShortcutName();
++    if (old_name.find(u"Helium") == std::u16string::npos)
++      continue;
++    if (krypton::branding::ShouldRefreshDefaultProfileShortcut(
++            old_name, entry->GetName(), /*is_default=*/true)) {
++      CreateOrUpdateShortcutsForProfileAtPath(
++          entry->GetPath(), UPDATE_EXISTING_ONLY, IGNORE_NON_PROFILE_SHORTCUTS,
++          /*incognito=*/false);
++    }
++  }
+ }
+ 
+ ProfileShortcutManagerWin::~ProfileShortcutManagerWin() {

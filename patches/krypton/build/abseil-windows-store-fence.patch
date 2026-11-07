@@ -1,0 +1,34 @@
+# Protect Abseil CRC helpers from the Windows SDK StoreFence macro.
+#
+# SDK 10.0.28000 aliases StoreFence to _mm_sfence. When Windows
+# headers precede this SIMD header, that macro rewrites Abseil's
+# helper into a recursive intrinsic wrapper. Preserve upstream
+# helper names and restore the caller's macro after the header.
+
+--- a/third_party/abseil-cpp/absl/crc/internal/crc32_x86_arm_combined_simd.h
++++ b/third_party/abseil-cpp/absl/crc/internal/crc32_x86_arm_combined_simd.h
+@@ -73,6 +73,14 @@
+ #define ABSL_INTERNAL_ATTRIBUTE_AVX [[gnu::target("avx")]]
+ #else
+ #define ABSL_INTERNAL_ATTRIBUTE_AVX
++#endif
++
++// Windows SDK headers alias StoreFence to an intrinsic. Protect the CRC helper
++// from that macro while preserving the caller's Windows declarations.
++#ifdef StoreFence
++#pragma push_macro("StoreFence")
++#undef StoreFence
++#define ABSL_CRC_INTERNAL_RESTORE_STORE_FENCE
+ #endif
+ 
+ namespace absl {
+@@ -473,4 +481,9 @@
+ ABSL_NAMESPACE_END
+ }  // namespace absl
+ 
++#ifdef ABSL_CRC_INTERNAL_RESTORE_STORE_FENCE
++#pragma pop_macro("StoreFence")
++#undef ABSL_CRC_INTERNAL_RESTORE_STORE_FENCE
++#endif
++
+ #endif  // ABSL_CRC_INTERNAL_CRC32_X86_ARM_COMBINED_SIMD_H_

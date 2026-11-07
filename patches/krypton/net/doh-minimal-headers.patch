@@ -1,0 +1,75 @@
+# Keep DNS-over-HTTPS requests small.
+#
+# DoH queries carry a new LOAD_MINIMAL_HEADERS flag, so they send no
+# Accept-Language or User-Agent and advertise no brotli or zstd: the payload
+# is compact binary and never content-encoded, and a smaller request means a
+# faster lookup.
+
+--- a/net/base/load_flags_list.h
++++ b/net/base/load_flags_list.h
+@@ -123,4 +123,10 @@
+ // compromised renderer concern is acceptable.
+ LOAD_FLAG(IS_MAIN_FRAME_ORIGIN_RECENTLY_ACCESSED, 1 << 19)
+ 
++// This load will not send an Accept-Language or User-Agent header, and will
++// not advertise brotli or zstd encoding. Used for DNS-over-HTTPS queries,
++// whose payload is already compact binary and is never content-encoded, to
++// minimise request size and therefore lookup latency.
++LOAD_FLAG(MINIMAL_HEADERS, 1 << 20)
++
+ // See note at top of file about why adding LoadFlags is often a bad idea.
+--- a/net/dns/dns_http_attempt.cc
++++ b/net/dns/dns_http_attempt.cc
+@@ -176,7 +176,7 @@
+   // avoid deadlock and enable the use of preconfigured IP addresses.
+   request_->SetSecureDnsPolicy(SecureDnsPolicy::kBootstrap);
+   request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
+-                         LOAD_BYPASS_PROXY);
++                         LOAD_BYPASS_PROXY | LOAD_MINIMAL_HEADERS);
+   request_->set_disallow_credentials();
+   request_->set_isolation_info(GetDohIsolationInfo());
+ }
+--- a/net/url_request/url_request_http_job.cc
++++ b/net/url_request/url_request_http_job.cc
+@@ -480,10 +480,14 @@
+                                           referer_value);
+   }
+ 
+-  request_info_.extra_headers.SetHeaderIfMissing(
+-      HttpRequestHeaders::kUserAgent,
+-      http_user_agent_settings_ ? http_user_agent_settings_->GetUserAgent()
+-                                : std::string());
++  // Krypton: requests carrying LOAD_MINIMAL_HEADERS (DNS-over-HTTPS) omit the
++  // User-Agent entirely to keep the query as small as possible.
++  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
++    request_info_.extra_headers.SetHeaderIfMissing(
++        HttpRequestHeaders::kUserAgent,
++        http_user_agent_settings_ ? http_user_agent_settings_->GetUserAgent()
++                                  : std::string());
++  }
+ 
+   AddExtraHeaders();
+ 
+@@ -741,12 +745,18 @@
+ }
+ 
+ void URLRequestHttpJob::AddExtraHeaders() {
++  // Krypton: DNS-over-HTTPS queries set LOAD_MINIMAL_HEADERS. Their payload is
++  // already compact binary and is never content-encoded, so advertising brotli
++  // or zstd only inflates the request; Accept-Language is likewise pointless.
++  const bool minimal_headers =
++      (request_info_.load_flags & LOAD_MINIMAL_HEADERS) != 0;
++
+   request_info_.extra_headers.SetAcceptEncodingIfMissing(
+       request()->url(), request()->accepted_stream_types(),
+-      request()->context()->enable_brotli(),
+-      request()->context()->enable_zstd());
+-
+-  if (http_user_agent_settings_) {
++      !minimal_headers && request()->context()->enable_brotli(),
++      !minimal_headers && request()->context()->enable_zstd());
++
++  if (http_user_agent_settings_ && !minimal_headers) {
+     // Only add default Accept-Language if the request didn't have it
+     // specified.
+     std::string accept_language =

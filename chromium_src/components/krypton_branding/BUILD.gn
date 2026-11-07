@@ -1,0 +1,22 @@
+import("//testing/test.gni")
+
+source_set("krypton_branding") {
+  sources = [
+    "persisted_names.cc",
+    "persisted_names.h",
+  ]
+  public_deps = [
+    "//base",
+    "//components/prefs",
+  ]
+}
+
+test("krypton_branding_tests") {
+  sources = [ "persisted_names_unittest.cc" ]
+  deps = [
+    ":krypton_branding",
+    "//components/prefs:test_support",
+    "//testing/gtest",
+    "//testing/gtest:gtest_main",
+  ]
+}

@@ -1,0 +1,14 @@
+# Copyright 2026 The Krypton Authors
+# Use of this source code is governed by the GPL-3.0 license in LICENSE.
+
+declare_args() {
+  # Enabling this makes KryptonUI mandatory in normal tabbed windows. Runtime
+  # failures never select Chromium's original browser chrome.
+  enable_krypton_ui = is_win && target_cpu == "x64"
+
+  # Populated by build.py using KryptonUI's Runtime installation component.
+  krypton_ui_runtime_dir = "//krypton_ui_runtime"
+}
+
+# Secondary host toolchains must not load or stage the x64 module as x86.
+krypton_ui_enabled = enable_krypton_ui && is_win && current_cpu == "x64"

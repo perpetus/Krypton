@@ -1,0 +1,33 @@
+Subject: [Krypton] Place the screenshot selection overlay in page coordinates
+
+On Aura, ScreenshotFlow adds its selection layer as a child of the WebContents
+window's layer but sized it with that window's bounds() in parent coordinates.
+Mouse locations, the drag rectangle and the captured region are local to the
+WebContents window, so whenever the page does not start at its parent's origin
+the dimmed overlay and selection were drawn shifted by that offset. Krypton's
+page card sits beside the native sidebar, which left part of the page outside
+the overlay. Use the window's size at the layer origin instead.
+
+--- a/chrome/browser/image_editor/screenshot_flow.cc
++++ b/chrome/browser/image_editor/screenshot_flow.cc
+@@ -132,7 +132,10 @@
+ #else
+   const gfx::NativeWindow& native_window = web_contents_->GetNativeView();
+   ui::Layer* content_layer = native_window->layer();
+-  const gfx::Rect bounds = native_window->bounds();
++  // The overlay is a child of the WebContents layer, so it uses that layer's
++  // local coordinates. bounds() is in the parent's coordinates and is offset
++  // when the page does not start at the parent's origin.
++  const gfx::Rect bounds(native_window->bounds().size());
+   // Capture mouse down and drag events on our window.
+   event_capture_.Observe(native_window);
+ #endif
+@@ -371,7 +374,7 @@
+   }
+ #else
+   const gfx::NativeWindow& native_window = web_contents_->GetNativeView();
+-  const gfx::Rect bounds = native_window->bounds();
++  const gfx::Rect bounds(native_window->bounds().size());
+ #endif
+   screen_capture_layer_->SetBounds(bounds);
+ }

@@ -1,0 +1,14 @@
+# Copyright 2026 The Krypton Authors
+# Use of this source code is governed by the GPL-3.0 license in LICENSE.
+source_set("krypton_omnibox") {
+  sources = [
+    "google_suggest_compat.cc",
+    "google_suggest_compat.h",
+  ]
+  public_deps = [ "//url" ]
+  deps = [
+    "//base",
+    "//components/google/core/common",
+    "//net",
+  ]
+}

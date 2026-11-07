@@ -1,0 +1,46 @@
+# Krypton: keep direct tab closure inside the visible workspace.
+# Preserve native close ordering, beforeunload and focus restoration; add a
+# background New Tab only after confirmation when other workspaces remain.
+
+--- a/chrome/browser/ui/tabs/tab_strip_model.cc
++++ b/chrome/browser/ui/tabs/tab_strip_model.cc
+@@ -8,6 +8,7 @@
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+ #include "chrome/browser/ui/krypton_ui/multi_page_controller.h"
+ #include "chrome/browser/ui/krypton_ui/multi_page_session.h"
++#include "chrome/browser/ui/krypton_ui/workspace_close.h"
+ #endif
+ 
+ #include <algorithm>
+@@ -1404,6 +1405,20 @@
+ 
+   CHECK(contents);
+   CHECK_NE(GetIndexOfWebContents(contents), kNoTab);
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (!closing_all_ && !browser_shutdown::HasShutdownStarted() &&
++      IsTabClosable(GetTabForWebContents(contents)) &&
++      krypton_ui::NeedsWorkspaceCloseTarget(contents)) {
++    if (!contents->GetClosedByUserGesture())
++      contents->SetClosedByUserGesture(close_types &
++                                       TabCloseTypes::CLOSE_USER_GESTURE);
++    if (RunUnloadListenerBeforeClosing(contents)) {
++      TabCloseTypesData::CreateForWebContents(contents, close_types);
++      return;
++    }
++    krypton_ui::PrepareWorkspaceCloseTarget(contents);
++  }
++#endif
+   CloseTabs({contents}, close_types);
+ }
+ 
+@@ -6207,6 +6222,10 @@
+       if (!ContainsIndex(index)) {
+         return false;
+       }
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++      if (!krypton_ui::IsWorkspaceCloseCandidate(*this, GetTabAtIndex(index)))
++        return false;
++#endif
+       return !focused_group.has_value() ||
+              tabs::TabStripModelSelectionState::IsTabValidInFocusedGroup(
+                  GetTabAtIndex(index), focused_group);

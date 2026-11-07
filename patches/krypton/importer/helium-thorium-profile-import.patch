@@ -1,0 +1,211 @@
+# Import profiles from Helium and Thorium, and complete Arc/Dia discovery.
+#
+# Helium and Thorium reuse the Chrome importer. Their importer types follow
+# Helium's last one (TYPE_ZEN); Arc and Dia retain their existing types and
+# importers, including Helium's Arc sidebar bookmark support.
+#
+# Krypton corrects Arc's Windows path to LocalCache/Local/Arc/User Data and
+# enables Dia discovery on Windows at %LOCALAPPDATA%/Dia/User Data. Upstream
+# omits Arc's application subfolder and restricts Dia discovery to macOS.
+
+--- a/chrome/browser/importer/brave_external_process_importer_client.cc
++++ b/chrome/browser/importer/brave_external_process_importer_client.cc
+@@ -25,6 +25,8 @@
+     case user_data_importer::TYPE_DIA:
+     case user_data_importer::TYPE_PERPLEXITY_COMET:
+     case user_data_importer::TYPE_BRAVE:
++    case user_data_importer::TYPE_HELIUM:
++    case user_data_importer::TYPE_THORIUM:
+       return true;
+     default:
+       return false;
+--- a/chrome/browser/importer/chrome_importer_list.cc
++++ b/chrome/browser/importer/chrome_importer_list.cc
+@@ -87,7 +87,7 @@
+           base::FilePath::StringType(FILE_PATH_LITERAL("Local State")))),
+       GetArcUserDataFolder(), kArcBrowser, user_data_importer::TYPE_ARC);
+ #endif
+-#if BUILDFLAG(IS_MAC)
++#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+   AddChromeToProfiles(
+       profiles,
+       GetChromeSourceProfiles(GetDiaUserDataFolder().Append(
+@@ -107,6 +107,20 @@
+           base::FilePath::StringType(FILE_PATH_LITERAL("Local State")))),
+       GetChromiumUserDataFolder(), kChromiumBrowser,
+       user_data_importer::TYPE_CHROME);
++
++  AddChromeToProfiles(
++      profiles,
++      GetChromeSourceProfiles(GetHeliumUserDataFolder().Append(
++          base::FilePath::StringType(FILE_PATH_LITERAL("Local State")))),
++      GetHeliumUserDataFolder(), kHeliumBrowser,
++      user_data_importer::TYPE_HELIUM);
++
++  AddChromeToProfiles(
++      profiles,
++      GetChromeSourceProfiles(GetThoriumUserDataFolder().Append(
++          base::FilePath::StringType(FILE_PATH_LITERAL("Local State")))),
++      GetThoriumUserDataFolder(), kThoriumBrowser,
++      user_data_importer::TYPE_THORIUM);
+ 
+   AddChromeToProfiles(
+       profiles,
+--- a/chrome/common/importer/chrome_importer_utils.h
++++ b/chrome/common/importer/chrome_importer_utils.h
+@@ -35,7 +35,7 @@
+ base::FilePath GetCometUserDataFolder();
+ #endif
+ 
+-#if BUILDFLAG(IS_MAC)
++#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+ // Dia only has Windows/Mac builds
+ base::FilePath GetDiaUserDataFolder();
+ #endif
+@@ -49,6 +49,8 @@
+ base::FilePath GetYandexUserDataFolder();
+ base::FilePath GetWhaleUserDataFolder();
+ base::FilePath GetBraveUserDataFolder();
++base::FilePath GetHeliumUserDataFolder();
++base::FilePath GetThoriumUserDataFolder();
+ 
+ #if BUILDFLAG(IS_LINUX)
+ base::FilePath GetOperaSnapUserDataFolder();
+--- a/chrome/common/importer/chrome_importer_utils_linux.cc
++++ b/chrome/common/importer/chrome_importer_utils_linux.cc
+@@ -131,3 +131,19 @@
+ 
+   return result;
+ }
++
++base::FilePath GetHeliumUserDataFolder() {
++  base::FilePath result;
++  if (!base::PathService::Get(base::DIR_HOME, &result))
++    return base::FilePath();
++
++  return result.Append(".config").Append("net.imput.helium");
++}
++
++base::FilePath GetThoriumUserDataFolder() {
++  base::FilePath result;
++  if (!base::PathService::Get(base::DIR_HOME, &result))
++    return base::FilePath();
++
++  return result.Append(".config").Append("thorium");
++}
+--- a/chrome/common/importer/chrome_importer_utils_mac.mm
++++ b/chrome/common/importer/chrome_importer_utils_mac.mm
+@@ -80,3 +80,13 @@
+   base::FilePath result = base::apple::GetUserLibraryPath();
+   return result.Append("Application Support").Append("BraveSoftware").Append("Brave-Browser");
+ }
++
++base::FilePath GetHeliumUserDataFolder() {
++  base::FilePath result = base::apple::GetUserLibraryPath();
++  return result.Append("Application Support/net.imput.helium");
++}
++
++base::FilePath GetThoriumUserDataFolder() {
++  base::FilePath result = base::apple::GetUserLibraryPath();
++  return result.Append("Application Support/Thorium");
++}
+--- a/chrome/common/importer/chrome_importer_utils_win.cc
++++ b/chrome/common/importer/chrome_importer_utils_win.cc
+@@ -124,14 +124,25 @@
+ 
+ base::FilePath GetArcUserDataFolder() {
+   base::FilePath result;
+-  if (!base::PathService::Get(base::DIR_LOCAL_APP_DATA, &result))
++  if (!base::PathService::Get(base::DIR_LOCAL_APP_DATA, &result)) {
+     return base::FilePath();
++  }
+ 
+   return result.AppendASCII("Packages")
+       .AppendASCII("TheBrowserCompany.Arc_ttt1ap7aakyb4")
+       .AppendASCII("LocalCache")
+       .AppendASCII("Local")
++      .AppendASCII("Arc")
+       .AppendASCII("User Data");
++}
++
++base::FilePath GetDiaUserDataFolder() {
++  base::FilePath result;
++  if (!base::PathService::Get(base::DIR_LOCAL_APP_DATA, &result)) {
++    return base::FilePath();
++  }
++
++  return result.AppendASCII("Dia").AppendASCII("User Data");
+ }
+ 
+ base::FilePath GetCometUserDataFolder() {
+@@ -153,3 +164,21 @@
+       .AppendASCII("Brave-Browser")
+       .AppendASCII("User Data");
+ }
++
++base::FilePath GetHeliumUserDataFolder() {
++  base::FilePath result;
++  if (!base::PathService::Get(base::DIR_LOCAL_APP_DATA, &result))
++    return base::FilePath();
++
++  return result.AppendASCII("imput")
++      .AppendASCII("Helium")
++      .AppendASCII("User Data");
++}
++
++base::FilePath GetThoriumUserDataFolder() {
++  base::FilePath result;
++  if (!base::PathService::Get(base::DIR_LOCAL_APP_DATA, &result))
++    return base::FilePath();
++
++  return result.AppendASCII("Thorium").AppendASCII("User Data");
++}
+--- a/chrome/common/importer/importer_constants.h
++++ b/chrome/common/importer/importer_constants.h
+@@ -33,6 +33,8 @@
+ inline constexpr char kDiaBrowser[] = "Dia";
+ inline constexpr char kPerplexityCometBrowser[] = "Perplexity Comet";
+ inline constexpr char kBraveBrowser[] = "Brave";
++inline constexpr char kHeliumBrowser[] = "Helium";
++inline constexpr char kThoriumBrowser[] = "Thorium";
+ // End of browser names section
+ 
+ #endif  // BRAVE_COMMON_IMPORTER_IMPORTER_CONSTANTS_H_
+--- a/chrome/common/importer/profile_import_process_param_traits_macros.h
++++ b/chrome/common/importer/profile_import_process_param_traits_macros.h
+@@ -23,11 +23,11 @@
+ #if BUILDFLAG(IS_WIN)
+ IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImporterType,
+                               user_data_importer::TYPE_UNKNOWN,
+-                              user_data_importer::TYPE_ZEN)
++                              user_data_importer::TYPE_THORIUM)
+ #else
+ IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImporterType,
+                               user_data_importer::TYPE_UNKNOWN,
+-                              user_data_importer::TYPE_ZEN)
++                              user_data_importer::TYPE_THORIUM)
+ #endif
+ 
+ IPC_ENUM_TRAITS_MIN_MAX_VALUE(user_data_importer::ImportItem,
+--- a/chrome/utility/importer/brave_profile_import_impl.cc
++++ b/chrome/utility/importer/brave_profile_import_impl.cc
+@@ -51,6 +51,8 @@
+     case user_data_importer::TYPE_PERPLEXITY_COMET:
+       return new ChromeImporter();
+     case user_data_importer::TYPE_BRAVE:
++    case user_data_importer::TYPE_HELIUM:
++    case user_data_importer::TYPE_THORIUM:
+       return new ChromeImporter();
+     default:
+       break;
+--- a/components/user_data_importer/common/importer_type.h
++++ b/components/user_data_importer/common/importer_type.h
+@@ -39,6 +39,8 @@
+   TYPE_DIA = 72,
+   TYPE_PERPLEXITY_COMET = 73,
+   TYPE_ZEN = 74,
++  TYPE_HELIUM = 75,
++  TYPE_THORIUM = 76,
+ };
+ 
+ }  // namespace user_data_importer

@@ -1,0 +1,402 @@
+Subject: [Krypton] Keep compiled discovery inert without explicit startup consent
+
+The user approved only the named mDNS/service-discovery build exceptions.
+The default-off Cast choice gates MediaRouterEnabled before cached/policy state,
+and all net mDNS socket creation fails closed without process startup consent.
+Browser startup and child process arguments propagate that consent. With Cast
+off, the renderer's WebRTC mDNS feature is disabled to preserve the former
+compiled-out behavior. DIAL's existing repetition patch is retained.
+Adapt upstream's no-discovery registry/lister workaround to compile the
+approved path while leaving its discovery inactive without startup consent.
+Cast remains unpublished pending real-device/native UI and packet validation.
+The backend cannot dynamically toggle media routing, so any eventual catalog
+record must require restart. These guards add no polling or idle work.
+
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_browser_main.h"
++#include "net/net_buildflags.h"
++#if BUILDFLAG(ENABLE_MDNS)
++#include "net/dns/mdns_client.h"
++#endif
+ #include "chrome/browser/krypton_privacy_features/registry.h"
+ 
+ #include "chrome/browser/ui/krypton_ui/buildflags.h"
+@@ -1029,6 +1033,10 @@
+   if (load_local_state_result == content::RESULT_CODE_NORMAL_EXIT &&
+       browser_process_->local_state()) {
+     krypton::privacy::CaptureStartupSnapshot(*browser_process_->local_state());
++#if BUILDFLAG(ENABLE_MDNS)
++    net::MDnsClient::SetKryptonDiscoveryEnabledForProcess(
++        krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kCast));
++#endif
+     krypton::privacy::InitializeRegistry(*browser_process_->local_state());
+   }
+ 
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_content_browser_client.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <algorithm>
+ #include <iterator>
+@@ -3339,6 +3340,20 @@
+                                     switches::kChangeStackGuardOnForkEnabled);
+   }
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++
++  // Krypton: newly compiled mDNS remains inert without startup consent.
++  if (krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kCast)) {
++    command_line->AppendSwitch("krypton-local-device-discovery");
++  } else if (command_line->GetSwitchValueASCII(switches::kProcessType) ==
++             switches::kRendererProcess) {
++    // Preserve the previous no-mDNS WebRTC address handling while Cast is off.
++    std::string disabled =
++        command_line->GetSwitchValueASCII(switches::kDisableFeatures);
++    if (!disabled.empty())
++      disabled += ',';
++    disabled += "WebRtcHideLocalIpsWithMdns";
++    command_line->AppendSwitchASCII(switches::kDisableFeatures, disabled);
++  }
+ }
+ 
+ std::string
+--- a/chrome/browser/media/router/BUILD.gn
++++ b/chrome/browser/media/router/BUILD.gn
+@@ -50,6 +50,7 @@
+     "//chrome/browser/profiles",
+     "//chrome/browser/profiles:profile",
+     "//chrome/common:constants",
++    "//components/krypton_privacy_features",
+     "//components/media_router/common",
+     "//components/prefs",
+     "//components/user_prefs",
+--- a/chrome/browser/media/router/discovery/BUILD.gn
++++ b/chrome/browser/media/router/discovery/BUILD.gn
+@@ -3,6 +3,7 @@
+ # found in the LICENSE file.
+ 
+ import("//build/config/chrome_build.gni")
++import("//chrome/common/features.gni")
+ 
+ assert(!is_android || is_desktop_android, "Not supported on mobile")
+ assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
+@@ -67,6 +68,7 @@
+     "//chrome/browser/media/router:logger_list",
+     "//chrome/browser/media/router:media_router_feature",
+     "//chrome/common:constants",
++    "//components/krypton_privacy_features",
+     "//components/media_router/browser",
+     "//components/media_router/common",
+     "//components/media_router/common/mojom:logger",
+@@ -80,6 +82,10 @@
+     "//services/network/public/cpp",
+     "//third_party/openscreen/src/cast/common/channel/proto:channel_proto",
+   ]
++
++  if (enable_service_discovery) {
++    deps += [ "//chrome/browser/local_discovery" ]
++  }
+ 
+   if (is_linux || is_chromeos) {
+     sources += [ "discovery_network_list_wifi_linux.cc" ]
+--- a/chrome/browser/media/router/discovery/mdns/dns_sd_device_lister.cc
++++ b/chrome/browser/media/router/discovery/mdns/dns_sd_device_lister.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/media/router/discovery/mdns/dns_sd_device_lister.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include "chrome/browser/media/router/discovery/mdns/dns_sd_delegate.h"
+ 
+@@ -41,22 +42,46 @@
+ DnsSdDeviceLister::~DnsSdDeviceLister() = default;
+ 
+ void DnsSdDeviceLister::Discover() {
++#if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kCast) ||
++      !service_discovery_client_) {
++    return;
++  }
++  if (!device_lister_) {
++    device_lister_ = local_discovery::ServiceDiscoveryDeviceLister::Create(
++        this, service_discovery_client_, service_type_);
++    device_lister_->Start();
++  }
++  device_lister_->DiscoverNewDevices();
++#endif
+ }
+ 
+ void DnsSdDeviceLister::Reset() {
++  device_lister_.reset();
+ }
+ 
+ void DnsSdDeviceLister::OnDeviceChanged(
+     const std::string& service_type,
+     bool added,
+     const ServiceDescription& service_description) {
++  if (!device_lister_)
++    return;
++  DnsSdService service;
++  FillServiceInfo(service_description, &service);
++  delegate_->ServiceChanged(service_type, added, service);
+ }
+ 
+ void DnsSdDeviceLister::OnDeviceRemoved(const std::string& service_type,
+                                         const std::string& service_name) {
++  if (device_lister_)
++    delegate_->ServiceRemoved(service_type, service_name);
+ }
+ 
+ void DnsSdDeviceLister::OnDeviceCacheFlushed(const std::string& service_type) {
++  if (!device_lister_)
++    return;
++  delegate_->ServicesFlushed(service_type);
++  device_lister_->DiscoverNewDevices();
+ }
+ 
+ void DnsSdDeviceLister::OnPermissionRejected() {
+--- a/chrome/browser/media/router/discovery/mdns/dns_sd_registry.cc
++++ b/chrome/browser/media/router/discovery/mdns/dns_sd_registry.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/media/router/discovery/mdns/dns_sd_registry.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <algorithm>
+ #include <limits>
+@@ -92,8 +93,17 @@
+ 
+ DnsSdRegistry::DnsSdRegistry() {
+ #if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
+-  service_discovery_client_ =
+-      local_discovery::ServiceDiscoverySharedClient::GetInstance();
++  if (krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kCast)) {
++    service_discovery_client_ =
++        local_discovery::ServiceDiscoverySharedClient::GetInstance();
++  }
++#endif
++}
++
++DnsSdRegistry::DnsSdRegistry(
++    local_discovery::ServiceDiscoverySharedClient* client) {
++#if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
++  service_discovery_client_ = client;
+ #endif
+ }
+ 
+@@ -119,8 +129,9 @@
+ 
+ DnsSdDeviceLister* DnsSdRegistry::CreateDnsSdDeviceLister(
+     DnsSdDelegate* delegate,
+-    const std::string& service_type) {
+-  return new DnsSdDeviceLister(nullptr, delegate, service_type);
++    const std::string& service_type,
++    local_discovery::ServiceDiscoverySharedClient* discovery_client) {
++  return new DnsSdDeviceLister(discovery_client, delegate, service_type);
+ }
+ 
+ void DnsSdRegistry::Publish(const std::string& service_type) {
+@@ -148,7 +159,13 @@
+   }
+ 
+   std::unique_ptr<DnsSdDeviceLister> dns_sd_device_lister(
+-      CreateDnsSdDeviceLister(this, service_type));
++      CreateDnsSdDeviceLister(this, service_type,
++#if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
++                              service_discovery_client_.get()
++#else
++                              nullptr
++#endif
++                                  ));
+   dns_sd_device_lister->Discover();
+   service_data_map_[service_type] =
+       std::make_unique<ServiceTypeData>(std::move(dns_sd_device_lister));
+@@ -169,6 +186,9 @@
+ 
+ void DnsSdRegistry::ResetForTest() {
+   service_data_map_.clear();
++#if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
++  service_discovery_client_.reset();
++#endif
+ }
+ 
+ void DnsSdRegistry::ServiceChanged(const std::string& service_type,
+--- a/chrome/browser/media/router/discovery/mdns/dns_sd_registry.h
++++ b/chrome/browser/media/router/discovery/mdns/dns_sd_registry.h
+@@ -10,11 +10,17 @@
+ #include <string>
+ #include <utility>
+ #include <vector>
++#include "base/memory/scoped_refptr.h"
++#include "chrome/common/buildflags.h"
+ 
+ #include "base/memory/singleton.h"
+ #include "base/observer_list.h"
+ #include "base/threading/thread_checker.h"
+ #include "chrome/browser/media/router/discovery/mdns/dns_sd_delegate.h"
++
++namespace local_discovery {
++class ServiceDiscoverySharedClient;
++}
+ 
+ namespace media_router {
+ 
+@@ -99,7 +105,8 @@
+ 
+   virtual DnsSdDeviceLister* CreateDnsSdDeviceLister(
+       DnsSdDelegate* delegate,
+-      const std::string& service_type);
++      const std::string& service_type,
++      local_discovery::ServiceDiscoverySharedClient* discovery_client);
+ 
+   // DnsSdDelegate implementation:
+   void ServiceChanged(const std::string& service_type,
+@@ -118,11 +125,16 @@
+   friend class TestDnsSdRegistry;
+ 
+   DnsSdRegistry();
++  explicit DnsSdRegistry(local_discovery::ServiceDiscoverySharedClient* client);
+   virtual ~DnsSdRegistry();
+ 
+   void DispatchApiEvent(const std::string& service_type);
+   bool IsRegistered(const std::string& service_type);
+ 
++#if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
++  scoped_refptr<local_discovery::ServiceDiscoverySharedClient>
++      service_discovery_client_;
++#endif
+   base::ObserverList<DnsSdObserver>::Unchecked observers_;
+   base::ThreadChecker thread_checker_;
+ };
+--- a/chrome/browser/media/router/media_router_feature.cc
++++ b/chrome/browser/media/router/media_router_feature.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/media/router/media_router_feature.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <stdint.h>
+ 
+@@ -100,6 +101,8 @@
+ }
+ 
+ bool MediaRouterEnabled(content::BrowserContext* context) {
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kCast))
++    return false;
+ #if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
+   if (!base::FeatureList::IsEnabled(kMediaRouter)) {
+     return false;
+--- a/net/dns/BUILD.gn
++++ b/net/dns/BUILD.gn
+@@ -397,6 +397,10 @@
+   # Restricted access so we can keep track of all usage external to the
+   # network stack.
+   friend = [
++    # Krypton: initialize process startup consent and test the fail-closed gate.
++    "//chrome/browser",
++    "//chrome/browser/ui/krypton_ui:krypton_privacy_features_tests",
++
+     # chrome/browser/local_discovery/service_discovery_client_mdns.h
+     # chrome/browser/local_discovery/service_discovery_client_impl.h
+     # Makes MDNS queries using MDnsClient.
+--- a/net/dns/mdns_client.cc
++++ b/net/dns/mdns_client.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "net/dns/mdns_client.h"
++#include <atomic>
++#include "base/command_line.h"
+ 
+ #include "net/base/address_family.h"
+ #include "net/base/net_errors.h"
+@@ -15,6 +17,7 @@
+ namespace net {
+ 
+ namespace {
++std::atomic<bool> krypton_discovery_enabled{false};
+ 
+ int Bind(AddressFamily address_family,
+          uint32_t interface_index,
+@@ -31,6 +34,16 @@
+ }
+ 
+ }  // namespace
++
++void MDnsClient::SetKryptonDiscoveryEnabledForProcess(bool enabled) {
++  krypton_discovery_enabled.store(enabled, std::memory_order_relaxed);
++}
++bool MDnsClient::IsKryptonDiscoveryEnabledForProcess() {
++  return krypton_discovery_enabled.load(std::memory_order_relaxed) ||
++         (base::CommandLine::InitializedForCurrentProcess() &&
++          base::CommandLine::ForCurrentProcess()->HasSwitch(
++              "krypton-local-device-discovery"));
++}
+ 
+ const base::TimeDelta MDnsTransaction::kTransactionTimeout = base::Seconds(3);
+ 
+@@ -66,6 +79,8 @@
+     AddressFamily address_family,
+     uint32_t interface_index,
+     NetLog* net_log) {
++  if (!MDnsClient::IsKryptonDiscoveryEnabledForProcess())
++    return nullptr;
+   auto socket = std::make_unique<UDPServerSocket>(net_log, NetLogSource());
+ 
+   int rv = Bind(address_family, interface_index, socket.get());
+--- a/net/dns/mdns_client.h
++++ b/net/dns/mdns_client.h
+@@ -154,6 +154,9 @@
+ // the client stops listening on the network and destroys the cache.
+ class NET_EXPORT MDnsClient {
+  public:
++  // Krypton: startup consent gates compiled discovery before socket creation.
++  static void SetKryptonDiscoveryEnabledForProcess(bool enabled);
++  static bool IsKryptonDiscoveryEnabledForProcess();
+   virtual ~MDnsClient() = default;
+ 
+   // Create listener object for RRType |rrtype| and name |name|.
+--- a/net/dns/mdns_client_impl.cc
++++ b/net/dns/mdns_client_impl.cc
+@@ -495,6 +495,8 @@
+ }
+ 
+ int MDnsClientImpl::StartListening(MDnsSocketFactory* socket_factory) {
++  if (!MDnsClient::IsKryptonDiscoveryEnabledForProcess())
++    return ERR_NOT_IMPLEMENTED;
+   DCHECK(!core_.get());
+   core_ = std::make_unique<Core>(clock_, cleanup_timer_.get());
+   int rv = core_->Init(socket_factory);
+--- a/net/test/net_test_suite.cc
++++ b/net/test/net_test_suite.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "net/test/net_test_suite.h"
++#include "net/net_buildflags.h"
++#if BUILDFLAG(ENABLE_MDNS)
++#include "net/dns/mdns_client.h"
++#endif
+ 
+ #include "base/check_op.h"
+ #include "base/command_line.h"
+@@ -64,6 +68,9 @@
+ 
+ void NetTestSuite::Initialize() {
+   TestSuite::Initialize();
++#if BUILDFLAG(ENABLE_MDNS)
++  net::MDnsClient::SetKryptonDiscoveryEnabledForProcess(true);
++#endif
+   InitializeTestThread();
+ 
+   testing::TestEventListeners& listeners =

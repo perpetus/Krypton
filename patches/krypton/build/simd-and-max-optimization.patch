@@ -1,0 +1,214 @@
+# Optimise for x86-64-v3 and above.
+#
+# Adds build/config/compiler_opt.gni with use_sse3 ... use_avx512 and use_fma,
+# which flags.krypton.gn sets, and applies them to C/C++ code only (the
+# Windows assembler rejects them). Also raises clang-cl from -O2 to -O3 for
+# official builds, and declares two opt-in LLVM passes that stay off.
+
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -12,6 +12,7 @@
+ import("//build/config/clang/clang.gni")
+ import("//build/config/compiler/compiler.gni")
+ import("//build/config/compiler_cpu_abi.gn")
++import("//build/config/compiler_opt.gni")
+ import("//build/config/coverage/coverage.gni")
+ import("//build/config/cronet/config.gni")
+ import("//build/config/dcheck_always_on.gni")
+@@ -1374,6 +1375,63 @@
+   }
+ 
+   asmflags = cflags
++
++  # Krypton: x86-64 microarchitecture (SIMD) code generation. Appended after
++  # `asmflags` is computed above so these apply to C/C++ translation units
++  # only -- the Windows assembler does not accept them.
++  if (is_clang && current_cpu == "x64") {
++    _simd_flags = []
++    if (use_sse3) {
++      _simd_flags += [ "-msse3" ]
++    }
++    if (use_sse41) {
++      _simd_flags += [
++        "-mssse3",
++        "-msse4.1",
++      ]
++    }
++    if (use_sse42) {
++      _simd_flags += [ "-msse4.2" ]
++    }
++    if (use_avx) {
++      _simd_flags += [
++        "-mpclmul",
++        "-maes",
++        "-mavx",
++      ]
++    }
++    if (use_fma) {
++      _simd_flags += [
++        "-mfma",
++        "-ffp-contract=fast",
++      ]
++    }
++    if (use_avx2) {
++      _simd_flags += [
++        "-mavx2",
++        "-mf16c",
++        "-mlzcnt",
++        "-mbmi",
++        "-mbmi2",
++      ]
++    }
++    if (use_avx512) {
++      _simd_flags += [
++        "-mavx512f",
++        "-mavx512cd",
++        "-mavx512vl",
++        "-mavx512bw",
++        "-mavx512dq",
++      ]
++    }
++    foreach(_flag, _simd_flags) {
++      if (is_win) {
++        cflags += [ "/clang:$_flag" ]
++      } else {
++        cflags += [ _flag ]
++      }
++    }
++  }
+ }
+ 
+ # This provides options that make the build deterministic, so that the same
+@@ -2541,6 +2599,32 @@
+   if (is_official_build) {
+     common_optimize_on_ldflags += [ "/OPT:REF" ]  # Remove unreferenced data.
+   }
++
++  if (is_full_optimization_build) {
++    # Krypton: raise clang-cl from -O2 to -O3. config("optimize*") prepends
++    # /O1 or /O2 to common_optimize_on_cflags, so this must land after it in
++    # the command line for the higher level to win.
++    common_optimize_on_cflags += [ "/clang:-O3" ]
++  }
++
++  # Krypton: opt-in LLVM passes. Both default to false; see
++  # //build/config/compiler_opt.gni for why. The `-mllvm:` spelling is the
++  # lld-link form and is what carries the pass into the ThinLTO backend,
++  # where most of the codegen for an official build actually happens.
++  if (use_aggressive_ext_opt) {
++    common_optimize_on_cflags += [
++      "-mllvm",
++      "-aggressive-ext-opt",
++    ]
++    common_optimize_on_ldflags += [ "-mllvm:-aggressive-ext-opt" ]
++  }
++  if (use_gvn_hoist) {
++    common_optimize_on_cflags += [
++      "-mllvm",
++      "-enable-gvn-hoist",
++    ]
++    common_optimize_on_ldflags += [ "-mllvm:-enable-gvn-hoist" ]
++  }
+ } else {
+   common_optimize_on_cflags = []
+   common_optimize_on_ldflags = []
+--- /dev/null
++++ b/build/config/compiler_opt.gni
+@@ -0,0 +1,97 @@
++# Copyright 2026 The Krypton Authors
++# Based on Thorium's //build/config/compiler_opt.gni by Alex313031.
++# You can use, redistribute, and/or modify Krypton's changes under the
++# terms of the GPL-3.0 license that can be found in the LICENSE file.
++# The underlying Thorium work remains subject to its BSD-style terms.
++#
++# Declares the x86-64 microarchitecture (SIMD) and optimization-level build
++# args used by Krypton. Consumed by //build/config/compiler/BUILD.gn.
++#
++# flags.krypton.gn selects the x86-64-v3 (AVX2) level.
++
++declare_args() {
++  # Turn compiler optimization up to the maximum, i.e. use -O3 instead of -O2.
++  is_full_optimization_build = is_official_build
++}
++
++declare_args() {
++  # Extra LLVM optimization passes, applied to Windows clang-cl builds only.
++  #
++  # Both default to false. Neither is enabled by upstream LLVM or Chromium, and
++  # neither has a demonstrated win on a browser workload. Treat them as
++  # experiments: build, then re-test rendering and JavaScript correctness
++  # before trusting the result.
++
++  # Passes `-mllvm -aggressive-ext-opt`, which propagates zero- and
++  # sign-extension information more aggressively across basic blocks.
++  use_aggressive_ext_opt = false
++
++  # Passes `-mllvm -enable-gvn-hoist`, which hoists redundant expressions out
++  # of branches. This pass is disabled by default in upstream LLVM because of
++  # known miscompiles; see https://github.com/llvm/llvm-project/issues/33153.
++  use_gvn_hoist = false
++}
++
++declare_args() {
++  # x86-64 SIMD levels. These are NOT cumulative: for an AVX build you must
++  # also enable use_sse3/use_sse41/use_sse42; for AVX2 add use_avx, and so on.
++
++  # SSE3 -- Chromium's normal x64 baseline.
++  use_sse3 = target_cpu == "x86" || target_cpu == "x64"
++
++  # SSE4.1 (pulls in SSSE3).
++  use_sse41 = false
++
++  # SSE4.2 -- the x86-64-v2 level.
++  use_sse42 = false
++
++  # AVX (pulls in AES and PCLMUL).
++  use_avx = false
++
++  # AVX2 -- the x86-64-v3 level.
++  use_avx2 = false
++
++  # AVX-512 -- the x86-64-v4 level. Only the F/CD/VL/BW/DQ subsets common to
++  # Skylake-X and AMD Zen 4/5 are used.
++  use_avx512 = false
++}
++
++declare_args() {
++  # Fused multiply-add. Implied by AVX2 and AVX-512.
++  use_fma = use_avx2 || use_avx512
++}
++
++# --- Consistency checks ------------------------------------------------------
++
++if (use_sse3 || use_sse41 || use_sse42 || use_avx || use_avx2 || use_avx512) {
++  assert(target_cpu == "x86" || target_cpu == "x64",
++         "x86 SIMD optimizations cannot be used with a non-x86 target_cpu.")
++}
++
++if (use_avx || use_avx2 || use_avx512 || use_fma) {
++  assert(target_cpu == "x64",
++         "AVX, AVX2, AVX-512 and FMA all require target_cpu = \"x64\".")
++}
++
++if (is_debug) {
++  assert(!is_full_optimization_build,
++         "is_full_optimization_build only works with non-debug builds.")
++}
++
++if (use_gvn_hoist) {
++  print("WARNING: use_gvn_hoist enables an LLVM pass that upstream disables " +
++        "by default because of known miscompiles. Verify rendering and " +
++        "JavaScript correctness before shipping this build.")
++}
++
++# These combinations are legal but almost always a mistake, so warn instead of
++# failing -- a few real CPUs (e.g. AMD Piledriver) genuinely want them.
++if (use_avx512 && !use_avx2) {
++  print("WARNING: use_avx512 is true but use_avx2 is false.")
++}
++if (use_avx2 && !use_avx) {
++  print("WARNING: use_avx2 is true but use_avx is false.")
++}
++if (use_fma && !use_avx) {
++  print("WARNING: use_fma is true but use_avx is false. FMA requires AVX.")
++}

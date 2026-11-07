@@ -1,0 +1,574 @@
+# Declare direct production dependencies after Chromium 157 modularization.
+#
+# Imported service, profile, importer and browser-chrome sources previously
+# reached these headers through the monolithic browser/UI dependency groups.
+# Keep the implementation owners explicit and publish updater declarations
+# separately so lifetime shutdown does not depend back on the browser core.
+# Optional service enablement and runtime consent are unchanged.
+
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1634,7 +1634,6 @@
+   if (is_win) {
+     sources += [
+       "win/krypton_update_service.cc",
+-      "win/krypton_update_service.h",
+       "win/krypton_update_trust.h",
+       "chrome_browser_main_win.cc",
+       "chrome_browser_main_win.h",
+@@ -2237,6 +2236,17 @@
+     "//chrome/browser/ui/krypton_ui:multi_page_features",
+     "//chrome/browser/ui/krypton_ui:runtime",
+   ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (is_win) {
++    if (!defined(deps)) {
++      deps = []
++    }
++    deps += [
++      "//chrome/browser/ui/webui/help:help",
++      "//chrome/browser/win:krypton_update_service_headers",
++    ]
++  }
+ }
+ 
+ # This target no longer has any sources of its own; it only aggregates
+--- a/chrome/browser/actor/BUILD.gn
++++ b/chrome/browser/actor/BUILD.gn
+@@ -348,6 +348,14 @@
+       "//chrome/browser/ui:browser_window_header",
+     ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//components/performance_manager:performance_manager",
++  ]
+ }
+ 
+ # actor_tab_data.cc is split from :impl into an internal source_set with
+--- a/chrome/browser/component_updater/BUILD.gn
++++ b/chrome/browser/component_updater/BUILD.gn
+@@ -316,6 +316,14 @@
+   if (enable_request_header_integrity) {
+     deps += [ "//chrome/browser/request_header_integrity" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//components/helium_services:helium_services",
++  ]
+ }
+ 
+ source_set("test_support") {
+--- a/chrome/browser/external_protocol/BUILD.gn
++++ b/chrome/browser/external_protocol/BUILD.gn
+@@ -61,6 +61,16 @@
+   if (!is_android && !is_chromeos) {
+     sources += [ "auto_launch_protocols_policy_handler.cc" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!is_android && !is_chromeos) {
++    if (!defined(deps)) {
++      deps = []
++    }
++    deps += [
++      "//components/strings:components_strings",
++    ]
++  }
+ }
+ 
+ source_set("unit_tests") {
+--- a/chrome/browser/importer/BUILD.gn
++++ b/chrome/browser/importer/BUILD.gn
+@@ -34,6 +34,14 @@
+     "//mojo/public/cpp/bindings",
+     "//ui/gfx",
+     "//url",
++  ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(public_deps)) {
++    public_deps = []
++  }
++  public_deps += [
++    "//extensions/browser:webstore_installer",
+   ]
+ }
+ 
+@@ -76,6 +84,17 @@
+   } else {
+     sources += [ "firefox_profile_lock_posix.cc" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/extensions:extensions",
++    "//components/value_store:value_store",
++    "//extensions/browser",
++    "//extensions/browser/api/storage:storage",
++  ]
+ }
+ 
+ source_set("browser_tests") {
+--- a/chrome/browser/interstitials/BUILD.gn
++++ b/chrome/browser/interstitials/BUILD.gn
+@@ -24,6 +24,14 @@
+   # as a dep (cycle: interstitials → safe_browsing → interstitials).
+   allow_circular_includes_from =
+       [ "//chrome/browser/safe_browsing:safe_browsing" ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(public_deps)) {
++    public_deps = []
++  }
++  public_deps += [
++    "//components/safe_browsing:buildflags",
++  ]
+ }
+ 
+ source_set("impl") {
+--- a/chrome/browser/lifetime/BUILD.gn
++++ b/chrome/browser/lifetime/BUILD.gn
+@@ -212,6 +212,16 @@
+   if (enable_background_mode) {
+     deps += [ "//chrome/browser/background/extensions" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (is_win) {
++    if (!defined(deps)) {
++      deps = []
++    }
++    deps += [
++      "//chrome/browser/win:krypton_update_service_headers",
++    ]
++  }
+ }
+ 
+ if (!is_android) {
+--- a/chrome/browser/net/BUILD.gn
++++ b/chrome/browser/net/BUILD.gn
+@@ -338,6 +338,15 @@
+       "//components/tabs:public",
+     ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/metrics:metrics",
++    "//chrome/browser/policy:policy",
++  ]
+ }
+ 
+ if (is_android) {
+--- a/chrome/browser/password_manager/BUILD.gn
++++ b/chrome/browser/password_manager/BUILD.gn
+@@ -271,6 +271,14 @@
+   if (!is_android) {
+     deps += [ "//chrome/browser/ui:browser_window_header" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/metrics:metrics",
++  ]
+ }
+ 
+ if (!is_android) {
+--- a/chrome/browser/permissions/BUILD.gn
++++ b/chrome/browser/permissions/BUILD.gn
+@@ -207,6 +207,14 @@
+       "prediction_service/contextual_notification_permission_ui_selector.h",
+     ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/notifications:notifications",
++  ]
+ }
+ 
+ proto_library("permissions_proto") {
+--- a/chrome/browser/prefs/BUILD.gn
++++ b/chrome/browser/prefs/BUILD.gn
+@@ -514,6 +514,14 @@
+     "//chrome/browser/ui/krypton_ui:buildflags",
+     "//chrome/browser/ui/krypton_ui:workspace_models",
+   ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/crash_upload_list:crash_upload_list",
++  ]
+ }
+ 
+ # There are users of this util such as //c/b/ash/app_restore. If it's part of
+--- a/chrome/browser/profiles/BUILD.gn
++++ b/chrome/browser/profiles/BUILD.gn
+@@ -621,6 +621,14 @@
+     "//ui/base",
+     "//ui/gfx",
+   ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(public_deps)) {
++    public_deps = []
++  }
++  public_deps += [
++    "//components/vector_icons:vector_icons",
++  ]
+ }
+ 
+ source_set("profile_util_impl") {
+@@ -711,6 +719,16 @@
+       "//chrome/browser/ash/profiles",
+     ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/enterprise:enterprise",
++    "//chrome/browser/policy:policy",
++    "//chrome/browser/signin:signin",
++  ]
+ }
+ 
+ source_set("profiles_extra_parts") {
+--- a/chrome/browser/site_protection/BUILD.gn
++++ b/chrome/browser/site_protection/BUILD.gn
+@@ -65,6 +65,15 @@
+     "//net",
+     "//url",
+   ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//extensions/common:common_constants",
++    "//services/metrics/public/cpp:ukm_builders",
++  ]
+ }
+ 
+ if (!is_android) {
+--- a/chrome/browser/spellchecker/BUILD.gn
++++ b/chrome/browser/spellchecker/BUILD.gn
+@@ -103,6 +103,14 @@
+   if (is_chromeos) {
+     deps += [ "//ash/constants" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//components/helium_services:helium_services",
++  ]
+ }
+ 
+ source_set("unit_tests") {
+--- a/chrome/browser/ssl/BUILD.gn
++++ b/chrome/browser/ssl/BUILD.gn
+@@ -184,6 +184,14 @@
+       "//chrome/browser/ui:settings_window_manager_chromeos",
+     ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/metrics:metrics",
++  ]
+ }
+ 
+ source_set("test_support") {
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -528,6 +528,14 @@
+     "//chrome/browser/ui/krypton_ui:buildflags",
+     "//chrome/browser/ui/krypton_ui:workspace_session",
+   ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//components/favicon/content:content",
++  ]
+ }
+ 
+   source_set("scoped_tabbed_browser_displayer") {
+@@ -626,7 +634,15 @@
+       "//chrome/browser/ui/tabs:tab_strip_model_observer",
+       "//ui/base/unowned_user_data",
+     ]
+-  }
++  
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(public_deps)) {
++    public_deps = []
++  }
++  public_deps += [
++    ":simple_message_box_headers",
++  ]
++}
+ 
+   source_set("unload_controller_impl") {
+     sources = [ "unload_controller.cc" ]
+@@ -670,7 +686,15 @@
+     if (is_chromeos) {
+       deps += [ "//chrome/browser/ash/boca/on_task" ]
+     }
+-  }
++  
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/views:message_box_dialog",
++  ]
++}
+ 
+   source_set("browser_command_controller") {
+     public = [ "browser_command_controller.h" ]
+@@ -820,7 +844,15 @@
+         "//chrome/browser/ui/startup/default_browser_prompt",
+       ]
+     }
+-  }
++  
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui/views/download:download",
++  ]
++}
+ 
+   source_set("browser_commands") {
+     public = [ "browser_commands.h" ]
+@@ -1083,6 +1115,14 @@
+   if (is_win && is_chrome_branded) {
+     deps += [ "//chrome/browser/win/installer_downloader:prefs" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//components/helium_services:helium_services",
++  ]
+ }
+ 
+ source_set("browser_otr_state") {
+--- a/chrome/browser/ui/download/BUILD.gn
++++ b/chrome/browser/ui/download/BUILD.gn
+@@ -59,6 +59,14 @@
+     "//ui/base:features",
+     "//ui/views",
+   ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//extensions/strings:strings",
++  ]
+ }
+ 
+ source_set("unit_tests") {
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -434,6 +434,14 @@
+     "//chrome/browser/ui/krypton_ui:buildflags",
+     "//chrome/browser/ui/krypton_ui:native_headers",
+     "//chrome/browser/ui/krypton_ui:workspace_session",
++  ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/performance_manager:performance_manager",
+   ]
+ }
+ 
+--- a/chrome/browser/ui/toolbar/BUILD.gn
++++ b/chrome/browser/ui/toolbar/BUILD.gn
+@@ -277,6 +277,16 @@
+   if (is_win || is_mac || is_linux) {
+     deps += [ "//chrome/browser/ui/startup/default_browser_prompt" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!is_android) {
++    if (!defined(deps)) {
++      deps = []
++    }
++    deps += [
++      "//components/helium_services:helium_services",
++    ]
++  }
+ }
+ 
+ source_set("test_support") {
+--- a/chrome/browser/ui/views/page_info/BUILD.gn
++++ b/chrome/browser/ui/views/page_info/BUILD.gn
+@@ -131,6 +131,14 @@
+       "//components/safe_browsing/core/browser:suspicious_site_warning_allowlist",
+     ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser:helium_noise_settings_headers",
++  ]
+ }
+ 
+ source_set("unit_tests") {
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -720,6 +720,22 @@
+     "//extensions/common",
+     "//ui/webui",
+   ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//extensions/browser:webstore_installer",
++  ]
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(public_deps)) {
++    public_deps = []
++  }
++  public_deps += [
++    "//extensions/browser:webstore_installer",
++  ]
+ }
+ 
+ if (enable_extensions_core) {
+--- a/chrome/browser/ui/webui/components/BUILD.gn
++++ b/chrome/browser/ui/webui/components/BUILD.gn
+@@ -27,6 +27,14 @@
+   if (is_chromeos) {
+     deps += [ "//components/user_manager" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//components/helium_services:helium_services",
++  ]
+ }
+ 
+ source_set("unit_tests") {
+--- a/chrome/browser/ui/webui/settings/BUILD.gn
++++ b/chrome/browser/ui/webui/settings/BUILD.gn
+@@ -455,6 +455,15 @@
+   if (enable_dice_support) {
+     deps += [ "//chrome/browser/ui/webui/cr_components/signin" ]
+   }
++
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (!defined(deps)) {
++    deps = []
++  }
++  deps += [
++    "//chrome/browser/ui:tab_modal_confirm_dialog",
++    "//components/helium_services:helium_services",
++  ]
+ }
+ 
+ source_set("test_support") {
+--- a/chrome/browser/webshare/BUILD.gn
++++ b/chrome/browser/webshare/BUILD.gn
+@@ -124,7 +124,17 @@
+         "//storage/browser",
+       ]
+     }
+-  }
++  
++  # Krypton: direct includes after Chromium 157 target modularization.
++  if (is_win) {
++    if (!defined(deps)) {
++      deps = []
++    }
++    deps += [
++      "//ui/views:views",
++    ]
++  }
++}
+ 
+   source_set("browser_tests") {
+     testonly = true
+--- a/chrome/browser/win/BUILD.gn
++++ b/chrome/browser/win/BUILD.gn
+@@ -209,3 +209,11 @@
+     "//testing/gtest",
+   ]
+ }
++
++# A declaration-only target allows lifetime code to request updater shutdown
++# without depending on the browser implementation that owns its startup call.
++if (is_win) {
++  source_set("krypton_update_service_headers") {
++    public = [ "krypton_update_service.h" ]
++  }
++}
+--- a/net/dns/BUILD.gn
++++ b/net/dns/BUILD.gn
+@@ -398,7 +398,7 @@
+   # network stack.
+   friend = [
+     # Krypton: initialize process startup consent and test the fail-closed gate.
+-    "//chrome/browser",
++    "//chrome/browser:core",
+     "//chrome/browser/ui/krypton_ui:krypton_privacy_features_tests",
+ 
+     # chrome/browser/local_discovery/service_discovery_client_mdns.h

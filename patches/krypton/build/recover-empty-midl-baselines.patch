@@ -1,0 +1,18 @@
+# Krypton: regenerate empty MIDL baselines left by pruned binaries.
+# Chromium creates zero-byte placeholders when a baseline is absent.
+# Retrying must still generate them locally, as helium-windows intends,
+# rather than passing an empty type library to GUID substitution.
+
+--- a/build/toolchain/win/midl.py
++++ b/build/toolchain/win/midl.py
+@@ -399,7 +399,9 @@
+ 
+     for source_file in common_files:
+         file_path = os.path.join(source, source_file)
+-        if not os.path.isfile(file_path):
++        # Pruned binaries leave empty placeholders. A retry must regenerate
++        # them instead of attempting GUID substitution in an empty TLB.
++        if not os.path.isfile(file_path) or os.path.getsize(file_path) == 0:
+             source_exists = False
+             if sys.platform != 'win32':
+                 print(

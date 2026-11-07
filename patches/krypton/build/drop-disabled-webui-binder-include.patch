@@ -1,0 +1,17 @@
+Subject: [Krypton] Drop a stale disabled WebUI binder include
+
+The retained disable-ai patch removes the Autofill ML registration
+and its GN dependency, but leaves an unused include in the desktop
+binder. Remove that include to preserve upstream disabled-AI behavior
+and make the generated header dependency check consistent.
+
+--- a/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
+@@ -29,7 +29,6 @@
+ #include "chrome/browser/ui/webui/access_code_cast/access_code_cast_ui.h"
+ #include "chrome/browser/ui/webui/app_service_internals/app_service_internals.mojom.h"
+ #include "chrome/browser/ui/webui/app_service_internals/app_service_internals_ui.h"
+-#include "chrome/browser/ui/webui/autofill_ml_internals/autofill_ml_internals_ui.h"
+ #include "chrome/browser/ui/webui/bookmarks/bookmarks_ui.h"
+ #include "chrome/browser/ui/webui/color_pipeline_internals/color_pipeline_internals_ui.h"
+ #include "chrome/browser/ui/webui/commerce/shopping_insights_side_panel_ui.h"

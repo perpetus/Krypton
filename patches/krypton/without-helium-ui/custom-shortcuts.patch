@@ -1,0 +1,97 @@
+# Keep Helium's custom keyboard shortcuts without Helium's layouts.
+#
+# Krypton skips Helium's browser-chrome UI (patches/skip-helium), including
+# its layout patches, which define the layout prefs and the layout-switch,
+# Ctrl+S vertical-tabs and zen-mode pin commands. Helium's shortcut list
+# refers to all of them. Drop those entries; KryptonUI owns layout switching.
+# Chromium's own vertical-tabs collapse command and every other shortcut
+# stay as Helium has them.
+
+--- a/chrome/browser/ui/browser_shortcuts/browser_shortcut_metadata.cc
++++ b/chrome/browser/ui/browser_shortcuts/browser_shortcut_metadata.cc
+@@ -12,7 +12,6 @@
+ #include "base/check.h"
+ #include "build/build_config.h"
+ #include "chrome/app/chrome_command_ids.h"
+-#include "chrome/browser/ui/helium/helium_layout_state_controller.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/prefs/pref_service.h"
+@@ -21,12 +20,6 @@
+ namespace browser_shortcuts {
+ 
+ namespace {
+-
+-bool ShouldUseVerticalCollapseLabel(const PrefService* prefs) {
+-  return prefs && prefs->GetBoolean(prefs::kVerticalCollapseShortcut) &&
+-         prefs->GetInteger(prefs::kHeliumLayout) ==
+-             std::to_underlying(HeliumLayoutType::kVertical);
+-}
+ 
+ bool ShouldUseCopyPageUrlLabel(const PrefService* prefs) {
+   return prefs && prefs->GetBoolean(prefs::kCopyPageUrlShortcut);
+@@ -202,10 +195,6 @@
+       return Label(IDS_OPEN_FILE_DIALOG_TITLE);
+     case IDC_SAVE_PAGE:
+       return Label(IDS_SAVE_PAGE);
+-    case IDC_CTRL_S_SHORTCUT:
+-      return Label(ShouldUseVerticalCollapseLabel(prefs)
+-                       ? IDS_SHORTCUT_COMMAND_TOGGLE_VERTICAL_TABS
+-                       : IDS_SAVE_PAGE);
+     case IDC_TOGGLE_VERTICAL_TABS_COLLAPSE:
+       return Label(IDS_SHORTCUT_COMMAND_TOGGLE_VERTICAL_TABS);
+     case IDC_PRINT:
+@@ -248,8 +237,6 @@
+       return Label(IDS_SHORTCUT_COMMAND_SHOW_AVATAR_MENU);
+     case IDC_SHOW_APP_MENU:
+       return Label(IDS_SHORTCUT_COMMAND_SHOW_APP_MENU);
+-    case IDC_TOGGLE_ZEN_MODE_TOP_CHROME_PIN:
+-      return Label(IDS_SHORTCUT_COMMAND_TOGGLE_ZEN_MODE_TOP_CHROME_PIN);
+     case IDC_CARET_BROWSING_TOGGLE:
+       return Label(IDS_SETTINGS_ENABLE_CARET_BROWSING_TITLE);
+     case IDC_CLEAR_BROWSING_DATA:
+@@ -264,12 +251,6 @@
+       return Label(IDS_OPENS_MANAGEMENT_PAGE);
+     case IDC_PERFORMANCE:
+       return Label(IDS_SHOW_PERFORMANCE);
+-    case IDC_BROWSER_LAYOUT_CLASSIC:
+-      return Label(IDS_SHORTCUT_COMMAND_SWITCH_TO_CLASSIC_LAYOUT);
+-    case IDC_BROWSER_LAYOUT_COMPACT:
+-      return Label(IDS_SHORTCUT_COMMAND_SWITCH_TO_COMPACT_LAYOUT);
+-    case IDC_BROWSER_LAYOUT_VERTICAL:
+-      return Label(IDS_SHORTCUT_COMMAND_SWITCH_TO_VERTICAL_LAYOUT);
+     case IDC_OPTIONS:
+       return Label(IDS_SETTINGS);
+     case IDC_HELP_PAGE_VIA_KEYBOARD:
+@@ -305,9 +286,6 @@
+ std::vector<int> GetBrowserShortcutCommandsWithoutDefault(
+     const PrefService* prefs) {
+   std::vector<int> commands;
+-  if (ShouldUseVerticalCollapseLabel(prefs)) {
+-    commands.push_back(IDC_SAVE_PAGE);
+-  }
+   commands.push_back(IDC_TOGGLE_VERTICAL_TABS_COLLAPSE);
+ 
+   commands.push_back(ShouldUseCopyPageUrlLabel(prefs) ? IDC_DEV_TOOLS_INSPECT
+@@ -339,9 +317,6 @@
+   commands.push_back(IDC_DEV_TOOLS_DEVICES);
+   commands.push_back(IDC_SHOW_MANAGEMENT_PAGE);
+   commands.push_back(IDC_PERFORMANCE);
+-  commands.push_back(IDC_BROWSER_LAYOUT_CLASSIC);
+-  commands.push_back(IDC_BROWSER_LAYOUT_COMPACT);
+-  commands.push_back(IDC_BROWSER_LAYOUT_VERTICAL);
+   commands.push_back(IDC_OPTIONS);
+   return commands;
+ }
+--- a/chrome/browser/ui/browser_shortcuts/browser_shortcut_service.cc
++++ b/chrome/browser/ui/browser_shortcuts/browser_shortcut_service.cc
+@@ -114,9 +114,6 @@
+       &BrowserShortcutService::OnCommandLabelsChanged, base::Unretained(this));
+   pref_change_registrar_.Add(::prefs::kCopyPageUrlShortcut,
+                              on_label_pref_changed);
+-  pref_change_registrar_.Add(::prefs::kHeliumLayout, on_label_pref_changed);
+-  pref_change_registrar_.Add(::prefs::kVerticalCollapseShortcut,
+-                             on_label_pref_changed);
+ 
+   LoadFromPrefs();
+   RebuildCommandCache();

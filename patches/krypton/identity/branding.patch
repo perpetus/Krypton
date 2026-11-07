@@ -1,0 +1,28 @@
+# Name the product Krypton.
+#
+# Only the product identity Chromium reads from BRANDING changes; strings
+# that Helium's patches and name substitution produce are left as Helium
+# ships them.
+
+--- a/chrome/app/theme/chromium/BRANDING
++++ b/chrome/app/theme/chromium/BRANDING
+@@ -1,10 +1,10 @@
+-COMPANY_FULLNAME=The Helium Authors
+-COMPANY_SHORTNAME=The Helium Authors
+-PRODUCT_FULLNAME=Helium
+-PRODUCT_SHORTNAME=Helium
+-PRODUCT_INSTALLER_FULLNAME=Helium Installer
+-PRODUCT_INSTALLER_SHORTNAME=Helium Installer
+-COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Helium Authors. All rights reserved.
+-MAC_BUNDLE_ID=net.imput.helium
++COMPANY_FULLNAME=Krypton Authors
++COMPANY_SHORTNAME=Krypton
++PRODUCT_FULLNAME=Krypton
++PRODUCT_SHORTNAME=Krypton
++PRODUCT_INSTALLER_FULLNAME=Krypton Installer
++PRODUCT_INSTALLER_SHORTNAME=Krypton Installer
++COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Krypton Authors. All rights reserved.
++MAC_BUNDLE_ID=org.kryptonbrowser.Krypton
+ MAC_CREATOR_CODE=Cr24
+-MAC_TEAM_ID=S4Q33XPHB4
++MAC_TEAM_ID=

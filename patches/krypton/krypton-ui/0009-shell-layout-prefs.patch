@@ -1,0 +1,99 @@
+# Krypton: keep the KryptonUI shell layout in profile prefs.
+# Every window publishes the stored layout and sidebar width to its shell and
+# follows changes, and the layout menus need their strings.
+
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -4930,6 +4930,68 @@
+         Empty Cache and Hard Reload
+       </message>
+ 
++      <!-- KryptonUI layout menus -->
++      <message name="IDS_KRYPTON_LAYOUT_MENU" desc="Menu item that opens the choices for how browser tabs and toolbars are arranged.">
++        Browser layout
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_HORIZONTAL_TABS" desc="Submenu of browser layouts that show tabs in a horizontal strip.">
++        Horizontal tabs
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_VERTICAL_TABS" desc="Submenu of browser layouts that show tabs in a vertical sidebar.">
++        Vertical tabs
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_CLASSIC" desc="Horizontal tab layout with tabs above the toolbar.">
++        Classic
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_COMPACT" desc="Horizontal tab layout with tabs and toolbar in one row.">
++        Compact
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_DYNAMIC" desc="Horizontal tab layout that adapts to the window width.">
++        Dynamic
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_SIDEBAR" desc="Vertical tab layout where the sidebar also holds the toolbar.">
++        Only sidebar
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_SIDEBAR_AND_TOOLBAR" desc="Vertical tab layout with a sidebar and a separate top toolbar.">
++        Sidebar and top toolbar
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_COLLAPSED" desc="Vertical tab layout with an icon-only sidebar and a top toolbar.">
++        Collapsed sidebar
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_SIDEBAR_RIGHT" desc="Check item that places the tab sidebar on the right side of the window.">
++        Sidebar on right
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_CENTERED_ADDRESS" desc="Check item that centers the address bar in the toolbar.">
++        Center address bar
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_MINIMAL_ADDRESS" desc="Check item that shows a reduced address bar.">
++        Minimal address bar
++      </message>
++      <message name="IDS_KRYPTON_LAYOUT_ROUNDED_FRAME" desc="Check item that rounds the corners of the page area.">
++        Rounded frame
++      </message>
++      <message name="IDS_KRYPTON_COMPACT_MENU" desc="Menu item that opens the compact mode choices, which hide browser bars until the pointer reaches them.">
++        Compact mode
++      </message>
++      <message name="IDS_KRYPTON_COMPACT_MODE" desc="Check item that turns compact mode on or off.">
++        Enable compact mode
++      </message>
++      <message name="IDS_KRYPTON_COMPACT_HIDE_SIDEBAR" desc="Compact mode choice that hides the tab bar.">
++        Hide tab bar
++      </message>
++      <message name="IDS_KRYPTON_COMPACT_HIDE_TOOLBAR" desc="Compact mode choice that hides the top toolbar.">
++        Hide top bar
++      </message>
++      <message name="IDS_KRYPTON_COMPACT_HIDE_BOTH" desc="Compact mode choice that hides both the tab bar and the top toolbar.">
++        Hide both
++      </message>
++      <message name="IDS_KRYPTON_COMPACT_PIN_TOP" desc="Check item that keeps the top toolbar visible in compact mode.">
++        Pin top bar
++      </message>
++      <message name="IDS_KRYPTON_COMPACT_PIN_SIDE" desc="Check item that keeps the tab sidebar visible in compact mode.">
++        Pin tab bar
++      </message>
++
+       <!-- Tab sharing infobar -->
+       <message name="IDS_TAB_SHARING_INFOBAR_SHARING_CURRENT_TAB_LABEL" desc="Text displayed on an infobar when current tab is being shared.">
+        Sharing this tab to <ph name="APP_NAME">$1<ex>meet.google.com</ex></ph>
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/prefs/browser_prefs.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/layout_prefs.h"
++#endif
+ 
+ #include <array>
+ #include <optional>
+@@ -1994,6 +1999,9 @@
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+                           const std::string& locale) {
+   TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  krypton_ui::RegisterProfilePrefs(registry);
++#endif
+   // User prefs. Please keep this list alphabetized.
+   AccessibilityLabelsService::RegisterProfilePrefs(registry);
+   registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);

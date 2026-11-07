@@ -1,0 +1,26 @@
+Subject: [Krypton] Opt in to the downloaded autoplay list
+
+Helium removes the bundled MEI preload list. Preserve that pruning and only
+register/load a downloaded component while the default-off startup choice is
+on. The default-off path keeps the existing registration outcome. The choice
+separately authorizes component-server requests; no bundled asset is restored.
+
+--- a/chrome/browser/component_updater/mei_preload_component_installer.cc
++++ b/chrome/browser/component_updater/mei_preload_component_installer.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/component_updater/mei_preload_component_installer.h"
++#include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <stdint.h>
+ 
+@@ -127,6 +128,8 @@
+ 
+ void RegisterMediaEngagementPreloadComponent(ComponentUpdateService* cus,
+                                              base::OnceClosure on_load) {
++  if (!krypton::privacy::IsStartupEnabled(krypton::privacy::Id::kAutoplayList))
++    return;
+   if (!base::FeatureList::IsEnabled(media::kPreloadMediaEngagementData)) {
+     return;
+   }

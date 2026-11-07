@@ -1,0 +1,48 @@
+Subject: [Krypton] Add per-window shell ownership and terminal runtime shutdown
+
+Provide adapter-owned session, deferred commands and synchronous native
+geometry without adding another message pump or drag hit-test path.
+Compile the transparent Views frame in the existing UI target; it will
+be selected when the browser service bridges replace the toolbar.
+Shut down the process-global runtime only after browser teardown, so
+closing the last window in background mode still permits reopening.
+
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1066,6 +1066,7 @@
+   }
+ 
+   deps = [
++    "//chrome/browser/ui/krypton_ui:runtime",
+     ":active_use_util",
+     ":after_startup_task_utils",
+     ":bad_message",
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_browser_main.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/module.h"
++#endif
+ 
+ #include <memory>
+ #include <string>
+@@ -2251,6 +2256,14 @@
+   restart_mode_ = browser_shutdown::ShutdownPreThreadsStop();
+   browser_process_->StartTearDown();
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Terminal runtime shutdown belongs to process teardown, not the last
++  // ordinary window close: background mode may open another shell.
++  if (auto result = krypton_ui::Module::Get().Shutdown(); !result.has_value()) {
++    LOG(ERROR) << result.error();
++  }
++#endif
++
+   publisher_host_factory_resetter_.reset();
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 

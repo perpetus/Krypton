@@ -1,0 +1,3346 @@
+# Krypton: Bounded multi-page layouts and explicit transient Glance navigation.
+# Why: KryptonUI supports four panes and a transient preview while Chromium
+# retains its native two-tab split model. Reuse ContentsContainerView and
+# native navigation/unload/session paths through optional, gated hooks.
+# Controlled by KryptonMultiPage; owned controllers and the ABI hold policy.
+
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_content_browser_client.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_features.h"
++#endif
+ #include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <algorithm>
+@@ -3102,6 +3107,11 @@
+ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+     base::CommandLine* command_line,
+     int child_process_id) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (base::FeatureList::IsEnabled(krypton_ui::kKryptonMultiPage))
++    command_line->AppendSwitch("krypton-glance");
++#endif
++
+   crash_keys::AppendStringAnnotationsCommandLineSwitch(command_line);
+ #if BUILDFLAG(IS_MAC)
+   std::unique_ptr<metrics::ClientInfo> client_info =
+--- a/chrome/browser/renderer_context_menu/BUILD.gn
++++ b/chrome/browser/renderer_context_menu/BUILD.gn
+@@ -84,6 +84,7 @@
+     "//chrome/browser/app_mode",
+     "//chrome/browser/plugins",
+     "//chrome/browser/policy",
++    "//chrome/browser/ui/krypton_ui:abi",
+     "//chrome/common",
+     "//components/krypton_privacy_features",
+     "//components/renderer_context_menu",
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -3,6 +3,14 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#include "chrome/browser/ui/krypton_ui/multi_page_commands.h"
++#include "chrome/browser/ui/krypton_ui/multi_page_menu.h"
++#include "chrome/browser/ui/krypton_ui/multi_page_session.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#endif
+ #include "components/krypton_privacy_features/privacy_features.h"
+ 
+ #include <stddef.h>
+@@ -2007,6 +2015,17 @@
+                  : IDS_CONTENT_CONTEXT_OPENLINKNEWTAB);
+     }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++    {
++      auto* krypton_view =
++          GetBrowser() ? BrowserView::GetBrowserViewForBrowser(GetBrowser())
++                       : nullptr;
++      if (params_.link_url.SchemeIsHTTPOrHTTPS() && krypton_view &&
++          krypton_view->krypton_ui() &&
++          krypton_view->krypton_ui()->MultiPageEnabled())
++        menu_model_.AddItem(krypton_ui::kOpenLinkInGlance, u"Open in Glance");
++    }
++#endif
+     if (show_open_in_new_window) {
+       AddItemWithOptionalIcon(IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW,
+                               IDS_CONTENT_CONTEXT_OPENLINKNEWWINDOW,
+@@ -2026,11 +2045,47 @@
+         auto [string_id, icon] =
+             GetOpenLinkInSplitStringAndIcon(tab, GetBrowser());
+ 
+-        if (tabs::kSplitViewHorizontalDirectAccess.Get() &&
+-            !(tab && tab->IsSplit())) {
+-          split_layout_submenu_ = std::make_unique<SplitViewLayoutMenuModel>(
+-              base::BindOnce(&RenderViewContextMenu::OpenLinkInSplitView,
+-                             base::Unretained(this)));
++        bool krypton_snap_layouts = false;
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++        if (auto* view = BrowserView::GetBrowserViewForBrowser(GetBrowser());
++            view && view->krypton_ui())
++          krypton_snap_layouts = view->krypton_ui()->SnapLayoutsEnabled();
++#endif
++        if (krypton_snap_layouts ||
++            (tabs::kSplitViewHorizontalDirectAccess.Get() &&
++             !(tab && tab->IsSplit()))) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++          if (krypton_snap_layouts) {
++            split_layout_submenu_ =
++                std::make_unique<krypton_ui::LinkSplitLayoutMenuModel>(
++                    base::BindOnce(
++                        [](RenderViewContextMenu* menu, KrSplitLayout layout) {
++                          const auto browser = menu->GetBrowser()->GetWeakPtr();
++                          const auto source =
++                              menu->source_web_contents_->GetWeakPtr();
++                          const int count =
++                              browser->GetTabStripModel()->count();
++                          menu->OpenLinkInSplitView(
++                              layout == KR_SPLIT_ROWS
++                                  ? split_tabs::SplitTabLayout::kStacked
++                                  : split_tabs::SplitTabLayout::kSideBySide);
++                          if (browser && source &&
++                              browser->GetTabStripModel()->count() > count)
++                            krypton_ui::SetMultiPageSplitLayout(source.get(),
++                                                                layout);
++                        },
++                        base::Unretained(this)),
++                    base::BindRepeating(
++                        [](RenderViewContextMenu* menu) {
++                          return menu->IsCommandIdEnabled(
++                              IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW);
++                        },
++                        base::Unretained(this)));
++          } else
++#endif
++            split_layout_submenu_ = std::make_unique<SplitViewLayoutMenuModel>(
++                base::BindOnce(&RenderViewContextMenu::OpenLinkInSplitView,
++                               base::Unretained(this)));
+           menu_model_.AddSubMenuWithStringIdAndIcon(
+               IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW, string_id,
+               split_layout_submenu_.get(),
+@@ -3505,7 +3560,26 @@
+       return navigation_allowed && params_.link_url.is_valid() &&
+              IsOpenLinkAllowedByDlp(params_.link_url);
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++    case krypton_ui::kOpenLinkInGlance: {
++      auto* krypton_view =
++          GetBrowser() ? BrowserView::GetBrowserViewForBrowser(GetBrowser())
++                       : nullptr;
++      return navigation_allowed && params_.link_url.SchemeIsHTTPOrHTTPS() &&
++             IsOpenLinkAllowedByDlp(params_.link_url) && krypton_view &&
++             krypton_view->krypton_ui() &&
++             krypton_view->krypton_ui()->MultiPageEnabled();
++    }
++#endif
+     case IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW:
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++      // Transient previews promote through Krypton's explicit Split action.
++      // Native split creation must not adopt a hidden transient child.
++      if (krypton_ui::IsTransientGlance(source_web_contents_) ||
++          krypton_ui::MultiPageSplitFull(
++              tabs::TabInterface::MaybeGetFromContents(source_web_contents_)))
++        return false;
++#endif
+       return navigation_allowed && params_.link_url.is_valid() &&
+              params_.link_url.IsStandard() &&
+              IsOpenLinkAllowedByDlp(params_.link_url);
+@@ -3806,6 +3880,23 @@
+ }
+ 
+ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (id == krypton_ui::kOpenLinkInGlance) {
++    if (!IsCommandIdEnabled(id))
++      return;
++    auto params = GetOpenURLParamsWithExtraHeaders(
++        params_.link_url, params_.frame_url, params_.frame_origin,
++        WindowOpenDisposition::NEW_FOREGROUND_TAB, ui::PAGE_TRANSITION_LINK,
++        std::string(), true);
++    params.triggering_event_info =
++        blink::mojom::TriggeringEventInfo::kFromTrustedGlanceLink;
++    source_web_contents_->OpenURL(
++        params,
++        page_load_metrics::NavigationInitiatorHolder::AttacherCallback(
++            chrome_navigation_initiator::kContextMenuOpenLink));
++    return;
++  }
++#endif
+   RenderViewContextMenuBase::ExecuteCommand(id, event_flags);
+   if (command_executed_) {
+     return;
+@@ -6051,7 +6142,18 @@
+   TabStripModel* const tab_strip_model = browser->GetTabStripModel();
+   tabs::TabInterface* const source_tab =
+       tabs::TabInterface::MaybeGetFromContents(source_web_contents_);
+-  if (source_tab && source_tab->IsSplit()) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::MultiPageSplitFull(source_tab) ||
++      krypton_ui::IsTransientGlance(source_web_contents_))
++    return;
++#endif
++  bool use_native_split = true;
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* view = BrowserView::GetBrowserViewForBrowser(browser);
++      view && view->krypton_ui())
++    use_native_split = !view->krypton_ui()->MultiPageEnabled();
++#endif
++  if (source_tab && source_tab->IsSplit() && use_native_split) {
+     // Navigate the inactive tab to the URL
+     const split_tabs::SplitTabId split_id = source_tab->GetSplit().value();
+     for (tabs::TabInterface* tab :
+@@ -6093,6 +6195,16 @@
+       return;
+     }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++    // Keep link actions in Krypton's bounded group, including its theme
++    // outline.
++    if (krypton_ui::RedirectNativeSplit(
++            source_tab, tab_strip_model->GetTabAtIndex(new_tab_index),
++            layout == split_tabs::SplitTabLayout::kStacked)) {
++      tab_strip_model->ActivateTabAt(new_tab_index);
++      return;
++    }
++#endif
+     // Create split and activate new tab.
+     tab_strip_model->AddToNewSplit(
+         {new_tab_index}, split_tabs::SplitTabVisualData(layout),
+--- a/chrome/browser/sessions/session_service_base.cc
++++ b/chrome/browser/sessions/session_service_base.cc
+@@ -1,1005 +1,1034 @@
+-// Copyright 2021 The Chromium Authors
+-// Use of this source code is governed by a BSD-style license that can be
+-// found in the LICENSE file.
+-
+-#include "chrome/browser/sessions/session_service_base.h"
+-
+-#include "chrome/browser/ui/krypton_ui/buildflags.h"
+-#if BUILDFLAG(ENABLE_KRYPTON_UI)
+-#include "chrome/browser/ui/krypton_ui/workspace_session.h"
+-#endif
+-
+-#include <stddef.h>
+-
+-#include <memory>
+-#include <set>
+-#include <utility>
+-#include <vector>
+-
+-#include "base/command_line.h"
+-#include "base/feature_list.h"
+-#include "base/functional/bind.h"
+-#include "base/functional/callback_helpers.h"
+-#include "base/strings/string_number_conversions.h"
+-#include "base/strings/to_string.h"
+-#include "base/task/sequenced_task_runner.h"
+-#include "build/build_config.h"
+-#include "chrome/browser/apps/app_service/web_contents_app_id_utils.h"
+-#include "chrome/browser/browser_process.h"
+-#include "chrome/browser/profiles/profile.h"
+-#include "chrome/browser/sessions/session_service_base_observer.h"
+-#include "chrome/browser/sessions/session_service_log.h"
+-#include "chrome/browser/sessions/session_service_utils.h"
+-#include "chrome/browser/sessions/tab_restore_service_factory.h"
+-#include "chrome/browser/tab_group_sync/tab_group_sync_service_factory.h"
+-#include "chrome/browser/ui/browser_init_state.h"
+-#include "chrome/browser/ui/browser_window.h"
+-#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+-#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
+-#include "chrome/browser/ui/startup/startup_browser_creator.h"
+-#include "chrome/browser/ui/tabs/features.h"
+-#include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
+-#include "chrome/browser/ui/tabs/tab_group_model.h"
+-#include "chrome/browser/ui/tabs/tab_strip_model.h"
+-#include "chrome/browser/ui/tabs/tab_strip_model_selection_state.h"
+-#include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
+-#include "chrome/browser/ui/ui_features.h"
+-#include "chrome/browser/ui/window_feature_controller/window_feature_controller.h"
+-#include "chrome/browser/ui/window_metadata/window_metadata_controller.h"
+-#include "components/saved_tab_groups/public/tab_group_sync_service.h"
+-#include "components/sessions/content/content_serialized_navigation_builder.h"
+-#include "components/sessions/content/session_tab_helper.h"
+-#include "components/sessions/core/command_storage_manager.h"
+-#include "components/sessions/core/session_command.h"
+-#include "components/sessions/core/session_constants.h"
+-#include "components/sessions/core/session_id.h"
+-#include "components/sessions/core/session_service_commands.h"
+-#include "components/sessions/core/session_types.h"
+-#include "components/split_tabs/split_tab_id.h"
+-#include "components/split_tabs/split_tab_visual_data.h"
+-#include "components/tab_groups/tab_group_id.h"
+-#include "components/tabs/public/split_tab_data.h"
+-#include "components/tabs/public/tab_group.h"
+-#include "content/public/browser/navigation_controller.h"
+-#include "content/public/browser/navigation_details.h"
+-#include "content/public/browser/navigation_entry.h"
+-#include "content/public/browser/session_storage_namespace_handle.h"
+-#include "ui/base/mojom/window_show_state.mojom.h"
+-
+-#if BUILDFLAG(IS_MAC)
+-#include "chrome/browser/app_controller_mac.h"
+-#endif
+-
+-#if BUILDFLAG(IS_CHROMEOS)
+-#include "chrome/browser/ui/web_applications/app_browser_controller.h"
+-#include "chrome/browser/web_applications/web_app_provider.h"
+-#include "chrome/browser/web_applications/web_app_registrar.h"
+-#endif  // BUILDFLAG(IS_CHROMEOS)
+-
+-#if BUILDFLAG(IS_OZONE)
+-#include "ui/ozone/public/ozone_platform.h"
+-#include "ui/ozone/public/platform_session_manager.h"
+-#endif
+-
+-using base::Time;
+-using content::NavigationEntry;
+-using content::WebContents;
+-using sessions::ContentSerializedNavigationBuilder;
+-using sessions::SerializedNavigationEntry;
+-
+-namespace {
+-
+-// Every kWritesPerReset commands triggers recreating the file.
+-const int kWritesPerReset = 250;
+-
+-// User data key for WebContents to derive their types.
+-const void* const kSessionServiceBaseUserDataKey =
+-    &kSessionServiceBaseUserDataKey;
+-
+-// User data key for BrowserContextData.
+-const void* const kProfileTaskRunnerKey = &kProfileTaskRunnerKey;
+-const void* const kProfileTaskRunnerKeyForApps = &kProfileTaskRunnerKeyForApps;
+-
+-// Tracks the SequencedTaskRunner that SessionService uses for a particular
+-// profile. At certain points SessionService may be destroyed, and then
+-// recreated. This class ensures that when this happens, the same
+-// SequencedTaskRunner is used. Without this, each instance would have its
+-// own SequencedTaskRunner, which is problematic as it might then be possible
+-// for the newly created SessionService to attempt to read from a file the
+-// previous SessionService was still writing to. No two instances of
+-// SessionService for a particular profile and type combination can exist at the
+-// same time, but the backend (CommandStorageBackend) is destroyed on the
+-// SequencedTaskRunner, meaning without this, it might be possible for two
+-// CommandStorageBackends to exist at the same time and attempt to use the same
+-// file.
+-class TaskRunnerData : public base::SupportsUserData::Data {
+- public:
+-  TaskRunnerData()
+-      : task_runner_(
+-            sessions::CommandStorageManager::CreateDefaultBackendTaskRunner()) {
+-  }
+-  TaskRunnerData(const TaskRunnerData&) = delete;
+-  TaskRunnerData& operator=(const TaskRunnerData&) = delete;
+-  ~TaskRunnerData() override = default;
+-
+-  static scoped_refptr<base::SequencedTaskRunner>
+-  GetBackendTaskRunnerForProfile(Profile* profile,
+-                                 SessionServiceBase::SessionServiceType type) {
+-    const void* key =
+-        type == SessionServiceBase::SessionServiceType::kAppRestore
+-            ? kProfileTaskRunnerKeyForApps
+-            : kProfileTaskRunnerKey;
+-
+-    TaskRunnerData* data =
+-        static_cast<TaskRunnerData*>(profile->GetUserData(key));
+-    if (!data) {
+-      profile->SetUserData(key, std::make_unique<TaskRunnerData>());
+-      data = static_cast<TaskRunnerData*>(profile->GetUserData(key));
+-    }
+-    return data->task_runner_;
+-  }
+-
+- private:
+-  scoped_refptr<base::SequencedTaskRunner> task_runner_;
+-};
+-
+-// SessionServiceBaseUserData
+-// -------------------------------------------------------------
+-class SessionServiceBaseUserData : public base::SupportsUserData::Data {
+- public:
+-  explicit SessionServiceBaseUserData(BrowserWindowInterface::Type type)
+-      : type_(type) {}
+-  ~SessionServiceBaseUserData() override = default;
+-  SessionServiceBaseUserData(const SessionServiceBaseUserData&) = delete;
+-  SessionServiceBaseUserData& operator=(const SessionServiceBaseUserData&) =
+-      delete;
+-
+-  BrowserWindowInterface::Type type() const { return type_; }
+-
+- private:
+-  const BrowserWindowInterface::Type type_;
+-};
+-
+-}  // namespace
+-
+-// SessionServiceBase
+-// -------------------------------------------------------------
+-// Note: This is protected as it is only intended to be called by child classes
+-SessionServiceBase::SessionServiceBase(Profile* profile,
+-                                       SessionServiceType type)
+-    : profile_(profile) {
+-  // Covert SessionServiceType to backend CSM::SessionType enum.
+-  sessions::CommandStorageManager::SessionType backend_type =
+-      type == SessionServiceType::kSessionRestore
+-          ? sessions::CommandStorageManager::SessionType::kSessionRestore
+-          : sessions::CommandStorageManager::SessionType::kAppRestore;
+-
+-  command_storage_manager_ = std::make_unique<sessions::CommandStorageManager>(
+-      backend_type, profile->GetPath(), this,
+-      g_browser_process->os_crypt_async(),
+-      TaskRunnerData::GetBackendTaskRunnerForProfile(profile, type));
+-
+-  // We should never be created when incognito.
+-  DCHECK(!profile->IsOffTheRecord());
+-  if (profile->AllowsBrowserWindows()) {
+-    browser_collection_observer_.Observe(
+-        ProfileBrowserCollection::GetForProfile(profile));
+-  }
+-}
+-
+-SessionServiceBase::~SessionServiceBase() {
+-  for (auto& observer : session_service_base_observers_) {
+-    observer.OnDestroying(this);
+-  }
+-  session_service_base_observers_.Clear();
+-  // command_storage_manager_->Save() should be called by child classes which
+-  // should have destructed the command_storage_manager.
+-  DCHECK(command_storage_manager_ == nullptr);
+-}
+-
+-void SessionServiceBase::AddObserver(SessionServiceBaseObserver* observer) {
+-  session_service_base_observers_.AddObserver(observer);
+-}
+-void SessionServiceBase::RemoveObserver(SessionServiceBaseObserver* observer) {
+-  session_service_base_observers_.RemoveObserver(observer);
+-}
+-
+-// static
+-BrowserWindowInterface::Type SessionServiceBase::GetBrowserTypeFromWebContents(
+-    content::WebContents* web_contents) {
+-  SessionServiceBaseUserData* data = static_cast<SessionServiceBaseUserData*>(
+-      web_contents->GetUserData(&kSessionServiceBaseUserDataKey));
+-
+-  // Browser tab WebContents will have the UserData set on them. However, it is
+-  // possible that WebContents that are not tabs call into this code.
+-  // In that case, data will be null and we just return TYPE_NORMAL.
+-  if (!data) {
+-    return BrowserWindowInterface::Type::TYPE_NORMAL;
+-  }
+-
+-  return data->type();
+-}
+-
+-void SessionServiceBase::SetWindowVisibleOnAllWorkspaces(
+-    SessionID window_id,
+-    bool visible_on_all_workspaces) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(sessions::CreateSetWindowVisibleOnAllWorkspacesCommand(
+-      window_id, visible_on_all_workspaces));
+-}
+-
+-void SessionServiceBase::ResetFromCurrentBrowsers() {
+-  if (is_saving_enabled_) {
+-    ScheduleResetCommands();
+-  }
+-}
+-
+-void SessionServiceBase::SetTabWindow(SessionID window_id, SessionID tab_id) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(sessions::CreateSetTabWindowCommand(window_id, tab_id));
+-}
+-
+-void SessionServiceBase::SetWindowBounds(
+-    SessionID window_id,
+-    const gfx::Rect& bounds,
+-    ui::mojom::WindowShowState show_state) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(
+-      sessions::CreateSetWindowBoundsCommand(window_id, bounds, show_state));
+-}
+-
+-void SessionServiceBase::SetWindowWorkspace(SessionID window_id,
+-                                            const std::string& workspace) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(
+-      sessions::CreateSetWindowWorkspaceCommand(window_id, workspace));
+-}
+-
+-void SessionServiceBase::SetTabIndexInWindow(SessionID window_id,
+-                                             SessionID tab_id,
+-                                             int new_index) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(
+-      sessions::CreateSetTabIndexInWindowCommand(tab_id, new_index));
+-}
+-
+-void SessionServiceBase::TabInserted(WebContents* contents) {
+-  sessions::SessionTabHelper* session_tab_helper =
+-      sessions::SessionTabHelper::FromWebContents(contents);
+-  if (!ShouldTrackChangesToWindow(session_tab_helper->window_id())) {
+-    return;
+-  }
+-  SetTabWindow(session_tab_helper->window_id(),
+-               session_tab_helper->session_id());
+-  std::string app_id = apps::GetAppIdForWebContents(contents);
+-  if (!app_id.empty()) {
+-    SetTabExtensionAppID(session_tab_helper->window_id(),
+-                         session_tab_helper->session_id(), app_id);
+-  }
+-
+-  // Record the association between the SessionStorageNamespaceHandle and the
+-  // tab.
+-  //
+-  // TODO(ajwong): This should be processing the whole map rather than
+-  // just the default. This in particular will not work for tabs with only
+-  // isolated apps which won't have a default partition.
+-  content::SessionStorageNamespaceHandle* session_storage_namespace =
+-      contents->GetController().GetDefaultSessionStorageNamespace();
+-  ScheduleCommand(sessions::CreateSessionStorageAssociatedCommand(
+-      session_tab_helper->session_id(), session_storage_namespace->id()));
+-  session_storage_namespace->SetShouldPersist(true);
+-
+-  // The tab being inserted is most likely already registered by
+-  // Browser::WebContentsCreated, but just register the UserData again.
+-  contents->SetUserData(&kSessionServiceBaseUserDataKey,
+-                        std::make_unique<SessionServiceBaseUserData>(
+-                            GetDesiredBrowserTypeForWebContents()));
+-}
+-
+-void SessionServiceBase::TabClosing(WebContents* contents) {
+-  sessions::SessionTabHelper* session_tab_helper =
+-      sessions::SessionTabHelper::FromWebContents(contents);
+-  if (ShouldDeleteSessionStorageOnTabClosing(session_tab_helper->window_id())) {
+-    content::SessionStorageNamespaceHandle* session_storage_namespace =
+-        contents->GetController().GetDefaultSessionStorageNamespace();
+-    // Allow the associated sessionStorage to get deleted; the tab close is
+-    // being committed and it won't be needed in session restore.
+-    session_storage_namespace->SetShouldPersist(false);
+-  }
+-  TabClosed(session_tab_helper->window_id(), session_tab_helper->session_id());
+-}
+-
+-void SessionServiceBase::TabRestored(WebContents* tab, bool pinned) {
+-  if (!is_saving_enabled_) {
+-    return;
+-  }
+-
+-  sessions::SessionTabHelper* session_tab_helper =
+-      sessions::SessionTabHelper::FromWebContents(tab);
+-  if (!ShouldTrackChangesToWindow(session_tab_helper->window_id())) {
+-    return;
+-  }
+-
+-  BuildCommandsForTab(session_tab_helper->window_id(), tab, -1, std::nullopt,
+-                      std::nullopt, pinned, nullptr);
+-  command_storage_manager()->StartSaveTimer();
+-}
+-
+-void SessionServiceBase::SetSelectedTabInWindow(SessionID window_id,
+-                                                int index) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  auto it = last_selected_tab_in_window_.find(window_id);
+-  if (it != last_selected_tab_in_window_.end() && it->second == index) {
+-    return;
+-  }
+-  last_selected_tab_in_window_[window_id] = index;
+-
+-  ScheduleCommand(
+-      sessions::CreateSetSelectedTabInWindowCommand(window_id, index));
+-}
+-
+-void SessionServiceBase::SetTabExtensionAppID(
+-    SessionID window_id,
+-    SessionID tab_id,
+-    const std::string& extension_app_id) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(
+-      sessions::CreateSetTabExtensionAppIDCommand(tab_id, extension_app_id));
+-}
+-
+-void SessionServiceBase::SetLastActiveTime(SessionID window_id,
+-                                           SessionID tab_id,
+-                                           base::Time last_active_time) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(
+-      sessions::CreateLastActiveTimeCommand(tab_id, last_active_time));
+-}
+-
+-void SessionServiceBase::GetLastSession(LastSessionCallback callback) {
+-  // OnGotSessionCommands maps the SessionCommands to browser state, then run
+-  // the callback.
+-  return command_storage_manager_->GetLastSessionCommands(
+-      base::BindOnce(&SessionServiceBase::OnGotSessionCommands,
+-                     weak_factory_.GetWeakPtr(), std::move(callback)));
+-}
+-
+-void SessionServiceBase::SetWindowAppName(SessionID window_id,
+-                                          const std::string& app_name) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(sessions::CreateSetWindowAppNameCommand(window_id, app_name));
+-}
+-
+-void SessionServiceBase::SetPinnedState(SessionID window_id,
+-                                        SessionID tab_id,
+-                                        bool is_pinned) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  ScheduleCommand(sessions::CreatePinnedStateCommand(tab_id, is_pinned));
+-}
+-
+-bool SessionServiceBase::ShouldUseDelayedSave() {
+-  return should_use_delayed_save_;
+-}
+-
+-void SessionServiceBase::OnWillSaveCommands() {
+-  if (!is_saving_enabled_) {
+-    // There should be no commands scheduled, otherwise data will be written,
+-    // potentially clobbering the last file.
+-    DCHECK(command_storage_manager_->pending_commands().empty());
+-    return;
+-  }
+-
+-  RebuildCommandsIfRequired();
+-  did_save_commands_at_least_once_ |=
+-      !command_storage_manager()->pending_commands().empty();
+-}
+-
+-void SessionServiceBase::OnErrorWritingSessionCommands() {
+-  LogSessionServiceWriteErrorEvent(profile_, false);
+-  rebuild_on_next_save_ = true;
+-  RebuildCommandsIfRequired();
+-}
+-
+-void SessionServiceBase::SetTabUserAgentOverride(
+-    SessionID window_id,
+-    SessionID tab_id,
+-    const sessions::SerializedUserAgentOverride& user_agent_override) {
+-  // This is overridden by session_service implementation.
+-  // We still need it here because we derive from
+-  // sessions::SessionTabHelperDelegate.
+-  NOTREACHED();
+-}
+-
+-void SessionServiceBase::SetSelectedNavigationIndex(SessionID window_id,
+-                                                    SessionID tab_id,
+-                                                    int index) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  auto it = tab_to_available_range_.find(tab_id);
+-  if (it != tab_to_available_range_.end()) {
+-    std::pair<int, int>& range = it->second;
+-    if (index < range.first || index > range.second) {
+-      // The new index is outside the range of what we've archived, schedule
+-      // a reset.
+-      ResetFromCurrentBrowsers();
+-      return;
+-    }
+-  }
+-  ScheduleCommand(
+-      sessions::CreateSetSelectedNavigationIndexCommand(tab_id, index));
+-}
+-
+-void SessionServiceBase::UpdateTabNavigation(
+-    SessionID window_id,
+-    SessionID tab_id,
+-    const SerializedNavigationEntry& navigation) {
+-  if (!ShouldTrackURLForRestore(navigation.virtual_url()) ||
+-      !ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  auto it = tab_to_available_range_.find(tab_id);
+-  if (it != tab_to_available_range_.end()) {
+-    std::pair<int, int>& range = it->second;
+-    range.first = std::min(navigation.index(), range.first);
+-    range.second = std::max(navigation.index(), range.second);
+-  }
+-  ScheduleCommand(CreateUpdateTabNavigationCommand(tab_id, navigation));
+-}
+-
+-void SessionServiceBase::TabNavigationPathPruned(SessionID window_id,
+-                                                 SessionID tab_id,
+-                                                 int index,
+-                                                 int count) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  DCHECK_GE(index, 0);
+-  DCHECK_GT(count, 0);
+-
+-  // Update the range of available indices.
+-  auto it = tab_to_available_range_.find(tab_id);
+-  if (it != tab_to_available_range_.end()) {
+-    std::pair<int, int>& range = it->second;
+-
+-    // if both range.first and range.second are also deleted.
+-    if (range.second >= index && range.second < index + count &&
+-        range.first >= index && range.first < index + count) {
+-      range.first = range.second = 0;
+-    } else {
+-      // Update range.first
+-      if (range.first >= index + count) {
+-        range.first = range.first - count;
+-      } else if (range.first >= index && range.first < index + count) {
+-        range.first = index;
+-      }
+-
+-      // Update range.second
+-      if (range.second >= index + count) {
+-        range.second = std::max(range.first, range.second - count);
+-      } else if (range.second >= index && range.second < index + count) {
+-        range.second = std::max(range.first, index - 1);
+-      }
+-    }
+-  }
+-
+-  return ScheduleCommand(
+-      sessions::CreateTabNavigationPathPrunedCommand(tab_id, index, count));
+-}
+-
+-void SessionServiceBase::TabNavigationPathEntriesDeleted(SessionID window_id,
+-                                                         SessionID tab_id) {
+-  if (!ShouldTrackChangesToWindow(window_id)) {
+-    return;
+-  }
+-
+-  // Multiple tabs might be affected by this deletion, so the rebuild is
+-  // delayed until next save.
+-  rebuild_on_next_save_ = true;
+-  command_storage_manager_->StartSaveTimer();
+-}
+-
+-#if DCHECK_IS_ON()
+-base::Value SessionServiceBase::ToDebugValue() const {
+-  base::DictValue result;
+-  result.Set("profile", base::ToString(profile_.get()));
+-  if (command_storage_manager_) {
+-    result.Set("command_storage_manager",
+-               command_storage_manager_->ToDebugValue());
+-  }
+-  for (const auto& [id, range] : tab_to_available_range_) {
+-    base::DictValue* range_dict =
+-        result.EnsureDict("tab_to_available_range")
+-            ->EnsureDict(base::NumberToString(id.id()));
+-    range_dict->Set("first", range.first);
+-    range_dict->Set("second", range.first);
+-  }
+-  result.Set("rebuild_on_next_save", rebuild_on_next_save_);
+-  for (const auto& [id, tab_index] : last_selected_tab_in_window_) {
+-    result.EnsureDict("last_selected_tab_in_window")
+-        ->Set(base::NumberToString(id.id()), tab_index);
+-  }
+-  for (const SessionID& window_tracking : windows_tracking_) {
+-    result.EnsureList("windows_tracking")
+-        ->Append(base::NumberToString(window_tracking.id()));
+-  }
+-  result.Set("is_saving_enabled", is_saving_enabled_);
+-  result.Set("did_save_commands_at_least_once",
+-             did_save_commands_at_least_once_);
+-  return base::Value(std::move(result));
+-}
+-#endif  // DCHECK_IS_ON()
+-
+-void SessionServiceBase::DestroyCommandStorageManager() {
+-  command_storage_manager_.reset(nullptr);
+-}
+-
+-void SessionServiceBase::RemoveUnusedRestoreWindows(
+-    std::vector<std::unique_ptr<sessions::SessionWindow>>* window_list) {
+-  auto i = window_list->begin();
+-  while (i != window_list->end()) {
+-    sessions::SessionWindow* window = i->get();
+-    if (!ShouldRestoreWindowOfType(window->type)) {
+-      i = window_list->erase(i);
+-    } else {
+-      ++i;
+-    }
+-  }
+-}
+-
+-void SessionServiceBase::OnBrowserActivated(BrowserWindowInterface* browser) {
+-  if (ShouldTrackBrowser(browser)) {
+-    ScheduleCommand(
+-        sessions::CreateSetActiveWindowCommand(browser->GetSessionID()));
+-  }
+-}
+-
+-void SessionServiceBase::OnGotSessionCommands(
+-    LastSessionCallback callback,
+-    std::vector<std::unique_ptr<sessions::SessionCommand>> commands,
+-    sessions::CommandStorageReadStatus status) {
+-  std::vector<std::unique_ptr<sessions::SessionWindow>> valid_windows;
+-  SessionID active_window_id = SessionID::InvalidValue();
+-  std::string platform_session_id;
+-  std::set<SessionID> discarded_window_ids;
+-
+-  const sessions::SessionReplayResult replay_result =
+-      sessions::RestoreSessionFromCommands(
+-          commands, &valid_windows, &active_window_id, &platform_session_id,
+-          &discarded_window_ids);
+-  RemoveUnusedRestoreWindows(&valid_windows);
+-
+-  InitializePlatformSessionIfNeeded(platform_session_id, discarded_window_ids);
+-
+-  std::move(callback).Run(std::move(valid_windows), active_window_id, status,
+-                          replay_result);
+-}
+-
+-void SessionServiceBase::BuildCommandsForTab(
+-    SessionID window_id,
+-    WebContents* tab,
+-    int index_in_window,
+-    std::optional<tab_groups::TabGroupId> group,
+-    std::optional<split_tabs::SplitTabId> split,
+-    bool is_pinned,
+-    IdToRange* tab_to_available_range) {
+-  DCHECK(tab);
+-  DCHECK(window_id.is_valid());
+-
+-  sessions::SessionTabHelper* session_tab_helper =
+-      sessions::SessionTabHelper::FromWebContents(tab);
+-  const SessionID session_id(session_tab_helper->session_id());
+-  command_storage_manager()->AppendRebuildCommand(
+-      sessions::CreateSetTabWindowCommand(window_id, session_id));
+-#if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  std::map<std::string, std::string> krypton_tab_data;
+-  krypton_ui::AddWorkspaceSessionData(tab, krypton_tab_data);
+-  for (const auto& [key, value] : krypton_tab_data) {
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateAddTabExtraDataCommand(session_id, key, value));
+-  }
+-#endif
+-
+-  const int current_index = tab->GetController().GetCurrentEntryIndex();
+-  const int min_index =
+-      std::max(current_index - sessions::gMaxPersistNavigationCount, 0);
+-  const int max_index =
+-      std::min(current_index + sessions::gMaxPersistNavigationCount,
+-               tab->GetController().GetEntryCount());
+-  const int pending_index = tab->GetController().GetPendingEntryIndex();
+-  if (tab_to_available_range) {
+-    (*tab_to_available_range)[session_id] =
+-        std::pair<int, int>(min_index, max_index);
+-  }
+-
+-  command_storage_manager()->AppendRebuildCommand(
+-      sessions::CreateLastActiveTimeCommand(session_id,
+-                                            tab->GetLastActiveTime()));
+-
+-  // TODO(stahon@microsoft.com) This might be movable to SessionService
+-  // when Chrome OS uses AppSessionService for app restores.
+-  // For now it needs to stay to support SessionService restoring apps.
+-  std::string app_id = apps::GetAppIdForWebContents(tab);
+-  if (!app_id.empty()) {
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateSetTabExtensionAppIDCommand(session_id, app_id));
+-  }
+-
+-  for (int i = min_index; i < max_index; ++i) {
+-    NavigationEntry* entry = (i == pending_index)
+-                                 ? tab->GetController().GetPendingEntry()
+-                                 : tab->GetController().GetEntryAtIndex(i);
+-    DCHECK(entry);
+-    if (ShouldTrackURLForRestore(entry->GetVirtualURL()) &&
+-        !entry->IsInitialEntry()) {
+-      // Don't try to persist initial NavigationEntry, as it is not actually
+-      // associated with any navigation and will just result in about:blank on
+-      // session restore.
+-      const SerializedNavigationEntry navigation =
+-          ContentSerializedNavigationBuilder::FromNavigationEntry(i, entry);
+-      command_storage_manager()->AppendRebuildCommand(
+-          CreateUpdateTabNavigationCommand(session_id, navigation));
+-    }
+-  }
+-  command_storage_manager()->AppendRebuildCommand(
+-      sessions::CreateSetSelectedNavigationIndexCommand(session_id,
+-                                                        current_index));
+-
+-  if (index_in_window != -1) {
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateSetTabIndexInWindowCommand(session_id,
+-                                                   index_in_window));
+-  }
+-
+-  if (is_pinned) {
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreatePinnedStateCommand(session_id, true));
+-  }
+-
+-  // Record the association between the sessionStorage namespace and the tab.
+-  content::SessionStorageNamespaceHandle* session_storage_namespace =
+-      tab->GetController().GetDefaultSessionStorageNamespace();
+-  ScheduleCommand(sessions::CreateSessionStorageAssociatedCommand(
+-      session_tab_helper->session_id(), session_storage_namespace->id()));
+-}
+-
+-void SessionServiceBase::BuildCommandsForBrowser(
+-    BrowserWindowInterface* browser,
+-    IdToRange* tab_to_available_range,
+-    std::set<SessionID>* windows_to_track) {
+-  DCHECK(is_saving_enabled_);
+-  DCHECK(browser);
+-  DCHECK(browser->GetSessionID().is_valid());
+-
+-  command_storage_manager()->AppendRebuildCommand(
+-      sessions::CreateSetWindowBoundsCommand(
+-          browser->GetSessionID(), browser->GetWindow()->GetRestoredBounds(),
+-          browser->GetWindow()->GetRestoredState()));
+-
+-  command_storage_manager()->AppendRebuildCommand(
+-      sessions::CreateSetWindowTypeCommand(
+-          browser->GetSessionID(),
+-          WindowTypeForBrowserType(browser->GetType())));
+-
+-  if (!BrowserInitState::From(browser)->create_params().app_name.empty()) {
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateSetWindowAppNameCommand(
+-            browser->GetSessionID(),
+-            BrowserInitState::From(browser)->create_params().app_name));
+-  }
+-
+-  if (!WindowMetadataController::From(browser)->user_title().empty()) {
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateSetWindowUserTitleCommand(
+-            browser->GetSessionID(),
+-            WindowMetadataController::From(browser)->user_title()));
+-  }
+-
+-  command_storage_manager()->AppendRebuildCommand(
+-      sessions::CreateSetWindowWorkspaceCommand(
+-          browser->GetSessionID(),
+-          BrowserWindow::FromBrowser(browser)->GetWorkspace()));
+-
+-  command_storage_manager()->AppendRebuildCommand(
+-      sessions::CreateSetWindowVisibleOnAllWorkspacesCommand(
+-          browser->GetSessionID(),
+-          BrowserWindow::FromBrowser(browser)->IsVisibleOnAllWorkspaces()));
+-
+-  command_storage_manager()->AppendRebuildCommand(
+-      sessions::CreateSetSelectedTabInWindowCommand(
+-          browser->GetSessionID(),
+-          browser->GetTabStripModel()->active_index()));
+-
+-  // Set the visual data for each tab group.
+-  TabStripModel* tab_strip = browser->GetTabStripModel();
+-  if (tab_strip->SupportsTabGroups()) {
+-    TabGroupModel* group_model = tab_strip->group_model();
+-    tab_groups::TabGroupSyncService* tab_group_service =
+-        tab_groups::TabGroupSyncServiceFactory::GetForProfile(
+-            browser->GetProfile());
+-
+-    for (const tab_groups::TabGroupId& group_id :
+-         group_model->ListTabGroups()) {
+-      const tab_groups::TabGroupVisualData* visual_data =
+-          group_model->GetTabGroup(group_id)->visual_data();
+-
+-      std::optional<std::string> saved_guid;
+-      if (tab_group_service) {
+-        const std::optional<tab_groups::SavedTabGroup> saved_group =
+-            tab_group_service->GetGroup(group_id);
+-        if (saved_group.has_value()) {
+-          saved_guid = saved_group->saved_guid().AsLowercaseString();
+-        }
+-      }
+-
+-      command_storage_manager()->AppendRebuildCommand(
+-          sessions::CreateTabGroupMetadataUpdateCommand(group_id, visual_data,
+-                                                        std::move(saved_guid)));
+-    }
+-  }
+-
+-  for (split_tabs::SplitTabId split_id : tab_strip->ListSplits()) {
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateSplitTabDataUpdateCommand(
+-            split_id, tab_strip->GetSplitData(split_id)->visual_data()));
+-  }
+-
+-  if (base::FeatureList::IsEnabled(features::kTabGroupsFocusing) &&
+-      tab_strip->SupportsTabGroups()) {
+-    std::optional<tab_groups::TabGroupId> focused_group =
+-        tab_strip->GetFocusedGroup();
+-    if (focused_group.has_value()) {
+-      command_storage_manager()->AppendRebuildCommand(
+-          sessions::CreateAddWindowExtraDataCommand(
+-              browser->GetSessionID(),
+-              tabs::TabStripModelSelectionState::kFocusedTabGroupIdKey,
+-              focused_group->ToString()));
+-    }
+-  }
+-
+-  if (const auto* const controller =
+-          tabs::VerticalTabStripStateController::From(browser)) {
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateAddWindowExtraDataCommand(
+-            browser->GetSessionID(),
+-            tabs::VerticalTabStripStateController::kCollapsedKey,
+-            base::ToString(controller->IsCollapsed())));
+-    command_storage_manager()->AppendRebuildCommand(
+-        sessions::CreateAddWindowExtraDataCommand(
+-            browser->GetSessionID(),
+-            tabs::VerticalTabStripStateController::kUncollapsedWidthKey,
+-            base::NumberToString(controller->GetUncollapsedWidth())));
+-  }
+-
+-  int index = 0;
+-  for (const tabs::TabInterface* tab_interface : *tab_strip) {
+-    WebContents* tab = tab_interface->GetContents();
+-    DCHECK(tab);
+-    const std::optional<tab_groups::TabGroupId> group_id =
+-        tab_strip->GetTabGroupForTab(index);
+-    const std::optional<split_tabs::SplitTabId> split_id =
+-        tab_strip->GetSplitForTab(index);
+-
+-    BuildCommandsForTab(browser->GetSessionID(), tab, index, group_id, split_id,
+-                        tab_interface->IsPinned(), tab_to_available_range);
+-
+-    index++;
+-  }
+-
+-  windows_to_track->insert(browser->GetSessionID());
+-}
+-
+-void SessionServiceBase::BuildCommandsFromBrowsers(
+-    IdToRange* tab_to_available_range,
+-    std::set<SessionID>* windows_to_track) {
+-  DCHECK(is_saving_enabled_);
+-  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+-      [this, tab_to_available_range,
+-       windows_to_track](BrowserWindowInterface* browser) {
+-        // Make sure the browser has tabs and a window. When a browser is closed
+-        // the destructor is not necessarily run immediately. This means it's
+-        // possible for us to get a handle to a browser that is about to be
+-        // removed. If the tab count is 0 or the window is NULL, the browser is
+-        // about to be deleted, so we ignore it.
+-        if (ShouldTrackBrowser(browser) &&
+-            browser->GetTabStripModel()->count() && browser->GetWindow()) {
+-          BuildCommandsForBrowser(browser, tab_to_available_range,
+-                                  windows_to_track);
+-        }
+-        return true;
+-      });
+-}
+-
+-void SessionServiceBase::ScheduleCommand(
+-    std::unique_ptr<sessions::SessionCommand> command) {
+-  if (!is_saving_enabled_) {
+-    return;
+-  }
+-
+-  DCHECK(command);
+-  if (ReplacePendingCommand(command_storage_manager_.get(), &command)) {
+-    return;
+-  }
+-
+-  bool is_closing_command = IsClosingCommand(command.get());
+-  command_storage_manager_->ScheduleCommand(std::move(command));
+-  // Don't schedule a reset on tab closed/window closed. Otherwise we may
+-  // lose tabs/windows we want to restore from if we exit right after this.
+-  if (!command_storage_manager_->pending_reset() &&
+-      command_storage_manager_->commands_since_reset() >= kWritesPerReset &&
+-      !is_closing_command) {
+-    ScheduleResetCommands();
+-  }
+-  DidScheduleCommand();
+-}
+-
+-bool SessionServiceBase::ShouldTrackChangesToWindow(SessionID window_id) const {
+-  return windows_tracking_.contains(window_id);
+-}
+-
+-bool SessionServiceBase::ShouldTrackBrowser(
+-    BrowserWindowInterface* browser) const {
+-  if (browser->GetProfile() != profile()) {
+-    return false;
+-  }
+-
+-  if (BrowserInitState::From(browser)->omit_from_session_restore()) {
+-    return false;
+-  }
+-
+-  // Never track app popup windows that do not have a trusted source (i.e.
+-  // popup windows spawned by an app). If this logic changes, be sure to also
+-  // change SessionRestoreImpl::CreateRestoredBrowser().
+-  if ((browser->GetType() == BrowserWindowInterface::TYPE_APP ||
+-       browser->GetType() == BrowserWindowInterface::TYPE_APP_POPUP) &&
+-      !WindowFeatureController::From(browser)->IsTrustedSource()) {
+-    return false;
+-  }
+-
+-#if BUILDFLAG(IS_CHROMEOS)
+-  // Windows that are auto-started and prevented from closing are exempted from
+-  // tracking for session restore to prevent multiple unclosable open instances
+-  // of the same app.
+-  web_app::AppBrowserController* app_controller =
+-      web_app::AppBrowserController::From(browser);
+-  web_app::WebAppProvider* provider =
+-      web_app::WebAppProvider::GetForWebApps(profile());
+-  // Checking for close prevention does not require an `AppLock` and
+-  // therefore `registrar_unsafe()` is safe to use.
+-  if (app_controller && provider &&
+-      provider->registrar_unsafe().IsPreventCloseEnabled(
+-          app_controller->app_id())) {
+-    return false;
+-  }
+-#endif  // #if BUILDFLAG(IS_CHROMEOS)
+-
+-  return ShouldRestoreWindowOfType(
+-      WindowTypeForBrowserType(browser->GetType()));
+-}
+-
+-bool SessionServiceBase::ShouldDeleteSessionStorageOnTabClosing(
+-    SessionID window_id) const {
+-  return true;
+-}
+-
+-sessions::CommandStorageManager*
+-SessionServiceBase::GetCommandStorageManagerForTest() {
+-  return command_storage_manager_.get();
+-}
+-
+-void SessionServiceBase::SetAvailableRangeForTest(
+-    SessionID tab_id,
+-    const std::pair<int, int>& range) {
+-  tab_to_available_range_[tab_id] = range;
+-}
+-
+-bool SessionServiceBase::GetAvailableRangeForTest(SessionID tab_id,
+-                                                  std::pair<int, int>* range) {
+-  auto i = tab_to_available_range_.find(tab_id);
+-  if (i == tab_to_available_range_.end()) {
+-    return false;
+-  }
+-
+-  *range = i->second;
+-  return true;
+-}
+-
+-void SessionServiceBase::SetSavingEnabled(bool enabled) {
+-  if (is_saving_enabled_ == enabled) {
+-    return;
+-  }
+-  is_saving_enabled_ = enabled;
+-  if (!is_saving_enabled_) {
+-    // Transitioning from enabled to disabled should happen very early on,
+-    // before any commands are actually written. If commands are written, then
+-    // the purpose of disabling will have failed (because by writing some
+-    // commands the previous session is going to be lost on exit).
+-    DCHECK(!did_save_commands_at_least_once_);
+-    command_storage_manager()->ClearPendingCommands();
+-  } else {
+-    ScheduleResetCommands();
+-  }
+-}
+-
+-std::optional<std::string> SessionServiceBase::GetPlatformSessionId() {
+-  InitializePlatformSessionIfNeeded(/*restored_platform_session_id=*/{},
+-                                    /*discarded_window_ids=*/{});
+-  return platform_session_id_;
+-}
+-
+-void SessionServiceBase::SetPlatformSessionIdForTesting(const std::string& id) {
+-  platform_session_id_ = id;
+-  ScheduleCommand(sessions::CreateSetPlatformSessionIdCommand(
+-      platform_session_id_.value()));
+-}
+-
+-void SessionServiceBase::InitializePlatformSessionIfNeeded(
+-    const std::string& restored_platform_session_id,
+-    const std::set<SessionID>& discarded_window_ids) {
+-#if BUILDFLAG(IS_OZONE)
+-  ui::OzonePlatform* platform = ui::OzonePlatform::GetInstance();
+-  if (!platform->GetPlatformRuntimeProperties().supports_session_management ||
+-      platform_session_id_.has_value()) {
+-    return;
+-  }
+-
+-  DCHECK(platform->GetSessionManager());
+-  ui::PlatformSessionManager* session_manager = platform->GetSessionManager();
+-  const bool should_restore = !restored_platform_session_id.empty();
+-
+-  // TODO(crbug.com/352081012): Support post-crash restore reason.
+-  std::optional<std::string> actual_platform_session_id =
+-      should_restore ? session_manager->RestoreSession(
+-                           restored_platform_session_id,
+-                           ui::PlatformSessionManager::RestoreReason::kLaunch)
+-                     : platform->GetSessionManager()->CreateSession();
+-
+-  if (actual_platform_session_id.has_value()) {
+-    DVLOG(1) << "Successfully initialized platform session."
+-             << " session_service=" << this
+-             << " session_id=" << actual_platform_session_id.value()
+-             << " discarded_windows=" << discarded_window_ids.size();
+-    platform_session_id_ = std::move(actual_platform_session_id);
+-
+-    for (const SessionID& session_id : discarded_window_ids) {
+-      session_manager->RemoveWindow(platform_session_id_.value(),
+-                                    session_id.id());
+-    }
+-
+-    ScheduleCommand(sessions::CreateSetPlatformSessionIdCommand(
+-        platform_session_id_.value()));
+-  }
+-#endif
+-}
++// Copyright 2021 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/sessions/session_service_base.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_session.h"
++#include "chrome/browser/ui/krypton_ui/workspace_session.h"
++#endif
++
++#include <stddef.h>
++
++#include <memory>
++#include <set>
++#include <utility>
++#include <vector>
++
++#include "base/command_line.h"
++#include "base/feature_list.h"
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/to_string.h"
++#include "base/task/sequenced_task_runner.h"
++#include "build/build_config.h"
++#include "chrome/browser/apps/app_service/web_contents_app_id_utils.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/sessions/session_service_base_observer.h"
++#include "chrome/browser/sessions/session_service_log.h"
++#include "chrome/browser/sessions/session_service_utils.h"
++#include "chrome/browser/sessions/tab_restore_service_factory.h"
++#include "chrome/browser/tab_group_sync/tab_group_sync_service_factory.h"
++#include "chrome/browser/ui/browser_init_state.h"
++#include "chrome/browser/ui/browser_window.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
++#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
++#include "chrome/browser/ui/startup/startup_browser_creator.h"
++#include "chrome/browser/ui/tabs/features.h"
++#include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
++#include "chrome/browser/ui/tabs/tab_group_model.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/tabs/tab_strip_model_selection_state.h"
++#include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
++#include "chrome/browser/ui/ui_features.h"
++#include "chrome/browser/ui/window_feature_controller/window_feature_controller.h"
++#include "chrome/browser/ui/window_metadata/window_metadata_controller.h"
++#include "components/saved_tab_groups/public/tab_group_sync_service.h"
++#include "components/sessions/content/content_serialized_navigation_builder.h"
++#include "components/sessions/content/session_tab_helper.h"
++#include "components/sessions/core/command_storage_manager.h"
++#include "components/sessions/core/session_command.h"
++#include "components/sessions/core/session_constants.h"
++#include "components/sessions/core/session_id.h"
++#include "components/sessions/core/session_service_commands.h"
++#include "components/sessions/core/session_types.h"
++#include "components/split_tabs/split_tab_id.h"
++#include "components/split_tabs/split_tab_visual_data.h"
++#include "components/tab_groups/tab_group_id.h"
++#include "components/tabs/public/split_tab_data.h"
++#include "components/tabs/public/tab_group.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/navigation_details.h"
++#include "content/public/browser/navigation_entry.h"
++#include "content/public/browser/session_storage_namespace_handle.h"
++#include "ui/base/mojom/window_show_state.mojom.h"
++
++#if BUILDFLAG(IS_MAC)
++#include "chrome/browser/app_controller_mac.h"
++#endif
++
++#if BUILDFLAG(IS_CHROMEOS)
++#include "chrome/browser/ui/web_applications/app_browser_controller.h"
++#include "chrome/browser/web_applications/web_app_provider.h"
++#include "chrome/browser/web_applications/web_app_registrar.h"
++#endif  // BUILDFLAG(IS_CHROMEOS)
++
++#if BUILDFLAG(IS_OZONE)
++#include "ui/ozone/public/ozone_platform.h"
++#include "ui/ozone/public/platform_session_manager.h"
++#endif
++
++using base::Time;
++using content::NavigationEntry;
++using content::WebContents;
++using sessions::ContentSerializedNavigationBuilder;
++using sessions::SerializedNavigationEntry;
++
++namespace {
++
++// Every kWritesPerReset commands triggers recreating the file.
++const int kWritesPerReset = 250;
++
++// User data key for WebContents to derive their types.
++const void* const kSessionServiceBaseUserDataKey =
++    &kSessionServiceBaseUserDataKey;
++
++// User data key for BrowserContextData.
++const void* const kProfileTaskRunnerKey = &kProfileTaskRunnerKey;
++const void* const kProfileTaskRunnerKeyForApps = &kProfileTaskRunnerKeyForApps;
++
++// Tracks the SequencedTaskRunner that SessionService uses for a particular
++// profile. At certain points SessionService may be destroyed, and then
++// recreated. This class ensures that when this happens, the same
++// SequencedTaskRunner is used. Without this, each instance would have its
++// own SequencedTaskRunner, which is problematic as it might then be possible
++// for the newly created SessionService to attempt to read from a file the
++// previous SessionService was still writing to. No two instances of
++// SessionService for a particular profile and type combination can exist at the
++// same time, but the backend (CommandStorageBackend) is destroyed on the
++// SequencedTaskRunner, meaning without this, it might be possible for two
++// CommandStorageBackends to exist at the same time and attempt to use the same
++// file.
++class TaskRunnerData : public base::SupportsUserData::Data {
++ public:
++  TaskRunnerData()
++      : task_runner_(
++            sessions::CommandStorageManager::CreateDefaultBackendTaskRunner()) {
++  }
++  TaskRunnerData(const TaskRunnerData&) = delete;
++  TaskRunnerData& operator=(const TaskRunnerData&) = delete;
++  ~TaskRunnerData() override = default;
++
++  static scoped_refptr<base::SequencedTaskRunner>
++  GetBackendTaskRunnerForProfile(Profile* profile,
++                                 SessionServiceBase::SessionServiceType type) {
++    const void* key =
++        type == SessionServiceBase::SessionServiceType::kAppRestore
++            ? kProfileTaskRunnerKeyForApps
++            : kProfileTaskRunnerKey;
++
++    TaskRunnerData* data =
++        static_cast<TaskRunnerData*>(profile->GetUserData(key));
++    if (!data) {
++      profile->SetUserData(key, std::make_unique<TaskRunnerData>());
++      data = static_cast<TaskRunnerData*>(profile->GetUserData(key));
++    }
++    return data->task_runner_;
++  }
++
++ private:
++  scoped_refptr<base::SequencedTaskRunner> task_runner_;
++};
++
++// SessionServiceBaseUserData
++// -------------------------------------------------------------
++class SessionServiceBaseUserData : public base::SupportsUserData::Data {
++ public:
++  explicit SessionServiceBaseUserData(BrowserWindowInterface::Type type)
++      : type_(type) {}
++  ~SessionServiceBaseUserData() override = default;
++  SessionServiceBaseUserData(const SessionServiceBaseUserData&) = delete;
++  SessionServiceBaseUserData& operator=(const SessionServiceBaseUserData&) =
++      delete;
++
++  BrowserWindowInterface::Type type() const { return type_; }
++
++ private:
++  const BrowserWindowInterface::Type type_;
++};
++
++}  // namespace
++
++// SessionServiceBase
++// -------------------------------------------------------------
++// Note: This is protected as it is only intended to be called by child classes
++SessionServiceBase::SessionServiceBase(Profile* profile,
++                                       SessionServiceType type)
++    : profile_(profile) {
++  // Covert SessionServiceType to backend CSM::SessionType enum.
++  sessions::CommandStorageManager::SessionType backend_type =
++      type == SessionServiceType::kSessionRestore
++          ? sessions::CommandStorageManager::SessionType::kSessionRestore
++          : sessions::CommandStorageManager::SessionType::kAppRestore;
++
++  command_storage_manager_ = std::make_unique<sessions::CommandStorageManager>(
++      backend_type, profile->GetPath(), this,
++      g_browser_process->os_crypt_async(),
++      TaskRunnerData::GetBackendTaskRunnerForProfile(profile, type));
++
++  // We should never be created when incognito.
++  DCHECK(!profile->IsOffTheRecord());
++  if (profile->AllowsBrowserWindows()) {
++    browser_collection_observer_.Observe(
++        ProfileBrowserCollection::GetForProfile(profile));
++  }
++}
++
++SessionServiceBase::~SessionServiceBase() {
++  for (auto& observer : session_service_base_observers_) {
++    observer.OnDestroying(this);
++  }
++  session_service_base_observers_.Clear();
++  // command_storage_manager_->Save() should be called by child classes which
++  // should have destructed the command_storage_manager.
++  DCHECK(command_storage_manager_ == nullptr);
++}
++
++void SessionServiceBase::AddObserver(SessionServiceBaseObserver* observer) {
++  session_service_base_observers_.AddObserver(observer);
++}
++void SessionServiceBase::RemoveObserver(SessionServiceBaseObserver* observer) {
++  session_service_base_observers_.RemoveObserver(observer);
++}
++
++// static
++BrowserWindowInterface::Type SessionServiceBase::GetBrowserTypeFromWebContents(
++    content::WebContents* web_contents) {
++  SessionServiceBaseUserData* data = static_cast<SessionServiceBaseUserData*>(
++      web_contents->GetUserData(&kSessionServiceBaseUserDataKey));
++
++  // Browser tab WebContents will have the UserData set on them. However, it is
++  // possible that WebContents that are not tabs call into this code.
++  // In that case, data will be null and we just return TYPE_NORMAL.
++  if (!data) {
++    return BrowserWindowInterface::Type::TYPE_NORMAL;
++  }
++
++  return data->type();
++}
++
++void SessionServiceBase::SetWindowVisibleOnAllWorkspaces(
++    SessionID window_id,
++    bool visible_on_all_workspaces) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(sessions::CreateSetWindowVisibleOnAllWorkspacesCommand(
++      window_id, visible_on_all_workspaces));
++}
++
++void SessionServiceBase::ResetFromCurrentBrowsers() {
++  if (is_saving_enabled_) {
++    ScheduleResetCommands();
++  }
++}
++
++void SessionServiceBase::SetTabWindow(SessionID window_id, SessionID tab_id) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(sessions::CreateSetTabWindowCommand(window_id, tab_id));
++}
++
++void SessionServiceBase::SetWindowBounds(
++    SessionID window_id,
++    const gfx::Rect& bounds,
++    ui::mojom::WindowShowState show_state) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(
++      sessions::CreateSetWindowBoundsCommand(window_id, bounds, show_state));
++}
++
++void SessionServiceBase::SetWindowWorkspace(SessionID window_id,
++                                            const std::string& workspace) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(
++      sessions::CreateSetWindowWorkspaceCommand(window_id, workspace));
++}
++
++void SessionServiceBase::SetTabIndexInWindow(SessionID window_id,
++                                             SessionID tab_id,
++                                             int new_index) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(
++      sessions::CreateSetTabIndexInWindowCommand(tab_id, new_index));
++}
++
++void SessionServiceBase::TabInserted(WebContents* contents) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::IsTransientGlance(contents))
++    return;
++#endif
++
++  sessions::SessionTabHelper* session_tab_helper =
++      sessions::SessionTabHelper::FromWebContents(contents);
++  if (!ShouldTrackChangesToWindow(session_tab_helper->window_id())) {
++    return;
++  }
++  SetTabWindow(session_tab_helper->window_id(),
++               session_tab_helper->session_id());
++  std::string app_id = apps::GetAppIdForWebContents(contents);
++  if (!app_id.empty()) {
++    SetTabExtensionAppID(session_tab_helper->window_id(),
++                         session_tab_helper->session_id(), app_id);
++  }
++
++  // Record the association between the SessionStorageNamespaceHandle and the
++  // tab.
++  //
++  // TODO(ajwong): This should be processing the whole map rather than
++  // just the default. This in particular will not work for tabs with only
++  // isolated apps which won't have a default partition.
++  content::SessionStorageNamespaceHandle* session_storage_namespace =
++      contents->GetController().GetDefaultSessionStorageNamespace();
++  ScheduleCommand(sessions::CreateSessionStorageAssociatedCommand(
++      session_tab_helper->session_id(), session_storage_namespace->id()));
++  session_storage_namespace->SetShouldPersist(true);
++
++  // The tab being inserted is most likely already registered by
++  // Browser::WebContentsCreated, but just register the UserData again.
++  contents->SetUserData(&kSessionServiceBaseUserDataKey,
++                        std::make_unique<SessionServiceBaseUserData>(
++                            GetDesiredBrowserTypeForWebContents()));
++}
++
++void SessionServiceBase::TabClosing(WebContents* contents) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::IsTransientGlance(contents))
++    return;
++#endif
++  sessions::SessionTabHelper* session_tab_helper =
++      sessions::SessionTabHelper::FromWebContents(contents);
++  if (ShouldDeleteSessionStorageOnTabClosing(session_tab_helper->window_id())) {
++    content::SessionStorageNamespaceHandle* session_storage_namespace =
++        contents->GetController().GetDefaultSessionStorageNamespace();
++    // Allow the associated sessionStorage to get deleted; the tab close is
++    // being committed and it won't be needed in session restore.
++    session_storage_namespace->SetShouldPersist(false);
++  }
++  TabClosed(session_tab_helper->window_id(), session_tab_helper->session_id());
++}
++
++void SessionServiceBase::TabRestored(WebContents* tab, bool pinned) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::IsTransientGlance(tab))
++    return;
++#endif
++
++  if (!is_saving_enabled_) {
++    return;
++  }
++
++  sessions::SessionTabHelper* session_tab_helper =
++      sessions::SessionTabHelper::FromWebContents(tab);
++  if (!ShouldTrackChangesToWindow(session_tab_helper->window_id())) {
++    return;
++  }
++
++  BuildCommandsForTab(session_tab_helper->window_id(), tab, -1, std::nullopt,
++                      std::nullopt, pinned, nullptr);
++  command_storage_manager()->StartSaveTimer();
++}
++
++void SessionServiceBase::SetSelectedTabInWindow(SessionID window_id,
++                                                int index) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  auto it = last_selected_tab_in_window_.find(window_id);
++  if (it != last_selected_tab_in_window_.end() && it->second == index) {
++    return;
++  }
++  last_selected_tab_in_window_[window_id] = index;
++
++  ScheduleCommand(
++      sessions::CreateSetSelectedTabInWindowCommand(window_id, index));
++}
++
++void SessionServiceBase::SetTabExtensionAppID(
++    SessionID window_id,
++    SessionID tab_id,
++    const std::string& extension_app_id) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(
++      sessions::CreateSetTabExtensionAppIDCommand(tab_id, extension_app_id));
++}
++
++void SessionServiceBase::SetLastActiveTime(SessionID window_id,
++                                           SessionID tab_id,
++                                           base::Time last_active_time) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(
++      sessions::CreateLastActiveTimeCommand(tab_id, last_active_time));
++}
++
++void SessionServiceBase::GetLastSession(LastSessionCallback callback) {
++  // OnGotSessionCommands maps the SessionCommands to browser state, then run
++  // the callback.
++  return command_storage_manager_->GetLastSessionCommands(
++      base::BindOnce(&SessionServiceBase::OnGotSessionCommands,
++                     weak_factory_.GetWeakPtr(), std::move(callback)));
++}
++
++void SessionServiceBase::SetWindowAppName(SessionID window_id,
++                                          const std::string& app_name) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(sessions::CreateSetWindowAppNameCommand(window_id, app_name));
++}
++
++void SessionServiceBase::SetPinnedState(SessionID window_id,
++                                        SessionID tab_id,
++                                        bool is_pinned) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  ScheduleCommand(sessions::CreatePinnedStateCommand(tab_id, is_pinned));
++}
++
++bool SessionServiceBase::ShouldUseDelayedSave() {
++  return should_use_delayed_save_;
++}
++
++void SessionServiceBase::OnWillSaveCommands() {
++  if (!is_saving_enabled_) {
++    // There should be no commands scheduled, otherwise data will be written,
++    // potentially clobbering the last file.
++    DCHECK(command_storage_manager_->pending_commands().empty());
++    return;
++  }
++
++  RebuildCommandsIfRequired();
++  did_save_commands_at_least_once_ |=
++      !command_storage_manager()->pending_commands().empty();
++}
++
++void SessionServiceBase::OnErrorWritingSessionCommands() {
++  LogSessionServiceWriteErrorEvent(profile_, false);
++  rebuild_on_next_save_ = true;
++  RebuildCommandsIfRequired();
++}
++
++void SessionServiceBase::SetTabUserAgentOverride(
++    SessionID window_id,
++    SessionID tab_id,
++    const sessions::SerializedUserAgentOverride& user_agent_override) {
++  // This is overridden by session_service implementation.
++  // We still need it here because we derive from
++  // sessions::SessionTabHelperDelegate.
++  NOTREACHED();
++}
++
++void SessionServiceBase::SetSelectedNavigationIndex(SessionID window_id,
++                                                    SessionID tab_id,
++                                                    int index) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  auto it = tab_to_available_range_.find(tab_id);
++  if (it != tab_to_available_range_.end()) {
++    std::pair<int, int>& range = it->second;
++    if (index < range.first || index > range.second) {
++      // The new index is outside the range of what we've archived, schedule
++      // a reset.
++      ResetFromCurrentBrowsers();
++      return;
++    }
++  }
++  ScheduleCommand(
++      sessions::CreateSetSelectedNavigationIndexCommand(tab_id, index));
++}
++
++void SessionServiceBase::UpdateTabNavigation(
++    SessionID window_id,
++    SessionID tab_id,
++    const SerializedNavigationEntry& navigation) {
++  if (!ShouldTrackURLForRestore(navigation.virtual_url()) ||
++      !ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  auto it = tab_to_available_range_.find(tab_id);
++  if (it != tab_to_available_range_.end()) {
++    std::pair<int, int>& range = it->second;
++    range.first = std::min(navigation.index(), range.first);
++    range.second = std::max(navigation.index(), range.second);
++  }
++  ScheduleCommand(CreateUpdateTabNavigationCommand(tab_id, navigation));
++}
++
++void SessionServiceBase::TabNavigationPathPruned(SessionID window_id,
++                                                 SessionID tab_id,
++                                                 int index,
++                                                 int count) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  DCHECK_GE(index, 0);
++  DCHECK_GT(count, 0);
++
++  // Update the range of available indices.
++  auto it = tab_to_available_range_.find(tab_id);
++  if (it != tab_to_available_range_.end()) {
++    std::pair<int, int>& range = it->second;
++
++    // if both range.first and range.second are also deleted.
++    if (range.second >= index && range.second < index + count &&
++        range.first >= index && range.first < index + count) {
++      range.first = range.second = 0;
++    } else {
++      // Update range.first
++      if (range.first >= index + count) {
++        range.first = range.first - count;
++      } else if (range.first >= index && range.first < index + count) {
++        range.first = index;
++      }
++
++      // Update range.second
++      if (range.second >= index + count) {
++        range.second = std::max(range.first, range.second - count);
++      } else if (range.second >= index && range.second < index + count) {
++        range.second = std::max(range.first, index - 1);
++      }
++    }
++  }
++
++  return ScheduleCommand(
++      sessions::CreateTabNavigationPathPrunedCommand(tab_id, index, count));
++}
++
++void SessionServiceBase::TabNavigationPathEntriesDeleted(SessionID window_id,
++                                                         SessionID tab_id) {
++  if (!ShouldTrackChangesToWindow(window_id)) {
++    return;
++  }
++
++  // Multiple tabs might be affected by this deletion, so the rebuild is
++  // delayed until next save.
++  rebuild_on_next_save_ = true;
++  command_storage_manager_->StartSaveTimer();
++}
++
++#if DCHECK_IS_ON()
++base::Value SessionServiceBase::ToDebugValue() const {
++  base::DictValue result;
++  result.Set("profile", base::ToString(profile_.get()));
++  if (command_storage_manager_) {
++    result.Set("command_storage_manager",
++               command_storage_manager_->ToDebugValue());
++  }
++  for (const auto& [id, range] : tab_to_available_range_) {
++    base::DictValue* range_dict =
++        result.EnsureDict("tab_to_available_range")
++            ->EnsureDict(base::NumberToString(id.id()));
++    range_dict->Set("first", range.first);
++    range_dict->Set("second", range.first);
++  }
++  result.Set("rebuild_on_next_save", rebuild_on_next_save_);
++  for (const auto& [id, tab_index] : last_selected_tab_in_window_) {
++    result.EnsureDict("last_selected_tab_in_window")
++        ->Set(base::NumberToString(id.id()), tab_index);
++  }
++  for (const SessionID& window_tracking : windows_tracking_) {
++    result.EnsureList("windows_tracking")
++        ->Append(base::NumberToString(window_tracking.id()));
++  }
++  result.Set("is_saving_enabled", is_saving_enabled_);
++  result.Set("did_save_commands_at_least_once",
++             did_save_commands_at_least_once_);
++  return base::Value(std::move(result));
++}
++#endif  // DCHECK_IS_ON()
++
++void SessionServiceBase::DestroyCommandStorageManager() {
++  command_storage_manager_.reset(nullptr);
++}
++
++void SessionServiceBase::RemoveUnusedRestoreWindows(
++    std::vector<std::unique_ptr<sessions::SessionWindow>>* window_list) {
++  auto i = window_list->begin();
++  while (i != window_list->end()) {
++    sessions::SessionWindow* window = i->get();
++    if (!ShouldRestoreWindowOfType(window->type)) {
++      i = window_list->erase(i);
++    } else {
++      ++i;
++    }
++  }
++}
++
++void SessionServiceBase::OnBrowserActivated(BrowserWindowInterface* browser) {
++  if (ShouldTrackBrowser(browser)) {
++    ScheduleCommand(
++        sessions::CreateSetActiveWindowCommand(browser->GetSessionID()));
++  }
++}
++
++void SessionServiceBase::OnGotSessionCommands(
++    LastSessionCallback callback,
++    std::vector<std::unique_ptr<sessions::SessionCommand>> commands,
++    sessions::CommandStorageReadStatus status) {
++  std::vector<std::unique_ptr<sessions::SessionWindow>> valid_windows;
++  SessionID active_window_id = SessionID::InvalidValue();
++  std::string platform_session_id;
++  std::set<SessionID> discarded_window_ids;
++
++  const sessions::SessionReplayResult replay_result =
++      sessions::RestoreSessionFromCommands(
++          commands, &valid_windows, &active_window_id, &platform_session_id,
++          &discarded_window_ids);
++  RemoveUnusedRestoreWindows(&valid_windows);
++
++  InitializePlatformSessionIfNeeded(platform_session_id, discarded_window_ids);
++
++  std::move(callback).Run(std::move(valid_windows), active_window_id, status,
++                          replay_result);
++}
++
++void SessionServiceBase::BuildCommandsForTab(
++    SessionID window_id,
++    WebContents* tab,
++    int index_in_window,
++    std::optional<tab_groups::TabGroupId> group,
++    std::optional<split_tabs::SplitTabId> split,
++    bool is_pinned,
++    IdToRange* tab_to_available_range) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::IsTransientGlance(tab))
++    return;
++#endif
++
++  DCHECK(tab);
++  DCHECK(window_id.is_valid());
++
++  sessions::SessionTabHelper* session_tab_helper =
++      sessions::SessionTabHelper::FromWebContents(tab);
++  const SessionID session_id(session_tab_helper->session_id());
++  command_storage_manager()->AppendRebuildCommand(
++      sessions::CreateSetTabWindowCommand(window_id, session_id));
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  std::map<std::string, std::string> krypton_tab_data;
++  krypton_ui::AddWorkspaceSessionData(tab, krypton_tab_data);
++  for (const auto& [key, value] : krypton_tab_data) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateAddTabExtraDataCommand(session_id, key, value));
++  }
++#endif
++
++  const int current_index = tab->GetController().GetCurrentEntryIndex();
++  const int min_index =
++      std::max(current_index - sessions::gMaxPersistNavigationCount, 0);
++  const int max_index =
++      std::min(current_index + sessions::gMaxPersistNavigationCount,
++               tab->GetController().GetEntryCount());
++  const int pending_index = tab->GetController().GetPendingEntryIndex();
++  if (tab_to_available_range) {
++    (*tab_to_available_range)[session_id] =
++        std::pair<int, int>(min_index, max_index);
++  }
++
++  command_storage_manager()->AppendRebuildCommand(
++      sessions::CreateLastActiveTimeCommand(session_id,
++                                            tab->GetLastActiveTime()));
++
++  // TODO(stahon@microsoft.com) This might be movable to SessionService
++  // when Chrome OS uses AppSessionService for app restores.
++  // For now it needs to stay to support SessionService restoring apps.
++  std::string app_id = apps::GetAppIdForWebContents(tab);
++  if (!app_id.empty()) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateSetTabExtensionAppIDCommand(session_id, app_id));
++  }
++
++  for (int i = min_index; i < max_index; ++i) {
++    NavigationEntry* entry = (i == pending_index)
++                                 ? tab->GetController().GetPendingEntry()
++                                 : tab->GetController().GetEntryAtIndex(i);
++    DCHECK(entry);
++    if (ShouldTrackURLForRestore(entry->GetVirtualURL()) &&
++        !entry->IsInitialEntry()) {
++      // Don't try to persist initial NavigationEntry, as it is not actually
++      // associated with any navigation and will just result in about:blank on
++      // session restore.
++      const SerializedNavigationEntry navigation =
++          ContentSerializedNavigationBuilder::FromNavigationEntry(i, entry);
++      command_storage_manager()->AppendRebuildCommand(
++          CreateUpdateTabNavigationCommand(session_id, navigation));
++    }
++  }
++  command_storage_manager()->AppendRebuildCommand(
++      sessions::CreateSetSelectedNavigationIndexCommand(session_id,
++                                                        current_index));
++
++  if (index_in_window != -1) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateSetTabIndexInWindowCommand(session_id,
++                                                   index_in_window));
++  }
++
++  if (is_pinned) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreatePinnedStateCommand(session_id, true));
++  }
++
++  // Record the association between the sessionStorage namespace and the tab.
++  content::SessionStorageNamespaceHandle* session_storage_namespace =
++      tab->GetController().GetDefaultSessionStorageNamespace();
++  ScheduleCommand(sessions::CreateSessionStorageAssociatedCommand(
++      session_tab_helper->session_id(), session_storage_namespace->id()));
++}
++
++void SessionServiceBase::BuildCommandsForBrowser(
++    BrowserWindowInterface* browser,
++    IdToRange* tab_to_available_range,
++    std::set<SessionID>* windows_to_track) {
++  DCHECK(is_saving_enabled_);
++  DCHECK(browser);
++  DCHECK(browser->GetSessionID().is_valid());
++
++  command_storage_manager()->AppendRebuildCommand(
++      sessions::CreateSetWindowBoundsCommand(
++          browser->GetSessionID(), browser->GetWindow()->GetRestoredBounds(),
++          browser->GetWindow()->GetRestoredState()));
++
++  command_storage_manager()->AppendRebuildCommand(
++      sessions::CreateSetWindowTypeCommand(
++          browser->GetSessionID(),
++          WindowTypeForBrowserType(browser->GetType())));
++
++  if (!BrowserInitState::From(browser)->create_params().app_name.empty()) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateSetWindowAppNameCommand(
++            browser->GetSessionID(),
++            BrowserInitState::From(browser)->create_params().app_name));
++  }
++
++  if (!WindowMetadataController::From(browser)->user_title().empty()) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateSetWindowUserTitleCommand(
++            browser->GetSessionID(),
++            WindowMetadataController::From(browser)->user_title()));
++  }
++
++  command_storage_manager()->AppendRebuildCommand(
++      sessions::CreateSetWindowWorkspaceCommand(
++          browser->GetSessionID(),
++          BrowserWindow::FromBrowser(browser)->GetWorkspace()));
++
++  command_storage_manager()->AppendRebuildCommand(
++      sessions::CreateSetWindowVisibleOnAllWorkspacesCommand(
++          browser->GetSessionID(),
++          BrowserWindow::FromBrowser(browser)->IsVisibleOnAllWorkspaces()));
++
++  command_storage_manager()->AppendRebuildCommand(
++      sessions::CreateSetSelectedTabInWindowCommand(
++          browser->GetSessionID(),
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++          krypton_ui::GlanceSessionParent(
++              browser->GetTabStripModel()->GetActiveWebContents())
++              ? browser->GetTabStripModel()->GetIndexOfWebContents(
++                    krypton_ui::GlanceSessionParent(
++                        browser->GetTabStripModel()->GetActiveWebContents()))
++              : browser->GetTabStripModel()->active_index()));
++#else
++          browser->GetTabStripModel()->active_index()));
++#endif
++
++  // Set the visual data for each tab group.
++  TabStripModel* tab_strip = browser->GetTabStripModel();
++  if (tab_strip->SupportsTabGroups()) {
++    TabGroupModel* group_model = tab_strip->group_model();
++    tab_groups::TabGroupSyncService* tab_group_service =
++        tab_groups::TabGroupSyncServiceFactory::GetForProfile(
++            browser->GetProfile());
++
++    for (const tab_groups::TabGroupId& group_id :
++         group_model->ListTabGroups()) {
++      const tab_groups::TabGroupVisualData* visual_data =
++          group_model->GetTabGroup(group_id)->visual_data();
++
++      std::optional<std::string> saved_guid;
++      if (tab_group_service) {
++        const std::optional<tab_groups::SavedTabGroup> saved_group =
++            tab_group_service->GetGroup(group_id);
++        if (saved_group.has_value()) {
++          saved_guid = saved_group->saved_guid().AsLowercaseString();
++        }
++      }
++
++      command_storage_manager()->AppendRebuildCommand(
++          sessions::CreateTabGroupMetadataUpdateCommand(group_id, visual_data,
++                                                        std::move(saved_guid)));
++    }
++  }
++
++  for (split_tabs::SplitTabId split_id : tab_strip->ListSplits()) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateSplitTabDataUpdateCommand(
++            split_id, tab_strip->GetSplitData(split_id)->visual_data()));
++  }
++
++  if (base::FeatureList::IsEnabled(features::kTabGroupsFocusing) &&
++      tab_strip->SupportsTabGroups()) {
++    std::optional<tab_groups::TabGroupId> focused_group =
++        tab_strip->GetFocusedGroup();
++    if (focused_group.has_value()) {
++      command_storage_manager()->AppendRebuildCommand(
++          sessions::CreateAddWindowExtraDataCommand(
++              browser->GetSessionID(),
++              tabs::TabStripModelSelectionState::kFocusedTabGroupIdKey,
++              focused_group->ToString()));
++    }
++  }
++
++  if (const auto* const controller =
++          tabs::VerticalTabStripStateController::From(browser)) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateAddWindowExtraDataCommand(
++            browser->GetSessionID(),
++            tabs::VerticalTabStripStateController::kCollapsedKey,
++            base::ToString(controller->IsCollapsed())));
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateAddWindowExtraDataCommand(
++            browser->GetSessionID(),
++            tabs::VerticalTabStripStateController::kUncollapsedWidthKey,
++            base::NumberToString(controller->GetUncollapsedWidth())));
++  }
++
++  int index = 0;
++  for (const tabs::TabInterface* tab_interface : *tab_strip) {
++    WebContents* tab = tab_interface->GetContents();
++    DCHECK(tab);
++    const std::optional<tab_groups::TabGroupId> group_id =
++        tab_strip->GetTabGroupForTab(index);
++    const std::optional<split_tabs::SplitTabId> split_id =
++        tab_strip->GetSplitForTab(index);
++
++    BuildCommandsForTab(browser->GetSessionID(), tab, index, group_id, split_id,
++                        tab_interface->IsPinned(), tab_to_available_range);
++
++    index++;
++  }
++
++  windows_to_track->insert(browser->GetSessionID());
++}
++
++void SessionServiceBase::BuildCommandsFromBrowsers(
++    IdToRange* tab_to_available_range,
++    std::set<SessionID>* windows_to_track) {
++  DCHECK(is_saving_enabled_);
++  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
++      [this, tab_to_available_range,
++       windows_to_track](BrowserWindowInterface* browser) {
++        // Make sure the browser has tabs and a window. When a browser is closed
++        // the destructor is not necessarily run immediately. This means it's
++        // possible for us to get a handle to a browser that is about to be
++        // removed. If the tab count is 0 or the window is NULL, the browser is
++        // about to be deleted, so we ignore it.
++        if (ShouldTrackBrowser(browser) &&
++            browser->GetTabStripModel()->count() && browser->GetWindow()) {
++          BuildCommandsForBrowser(browser, tab_to_available_range,
++                                  windows_to_track);
++        }
++        return true;
++      });
++}
++
++void SessionServiceBase::ScheduleCommand(
++    std::unique_ptr<sessions::SessionCommand> command) {
++  if (!is_saving_enabled_) {
++    return;
++  }
++
++  DCHECK(command);
++  if (ReplacePendingCommand(command_storage_manager_.get(), &command)) {
++    return;
++  }
++
++  bool is_closing_command = IsClosingCommand(command.get());
++  command_storage_manager_->ScheduleCommand(std::move(command));
++  // Don't schedule a reset on tab closed/window closed. Otherwise we may
++  // lose tabs/windows we want to restore from if we exit right after this.
++  if (!command_storage_manager_->pending_reset() &&
++      command_storage_manager_->commands_since_reset() >= kWritesPerReset &&
++      !is_closing_command) {
++    ScheduleResetCommands();
++  }
++  DidScheduleCommand();
++}
++
++bool SessionServiceBase::ShouldTrackChangesToWindow(SessionID window_id) const {
++  return windows_tracking_.contains(window_id);
++}
++
++bool SessionServiceBase::ShouldTrackBrowser(
++    BrowserWindowInterface* browser) const {
++  if (browser->GetProfile() != profile()) {
++    return false;
++  }
++
++  if (BrowserInitState::From(browser)->omit_from_session_restore()) {
++    return false;
++  }
++
++  // Never track app popup windows that do not have a trusted source (i.e.
++  // popup windows spawned by an app). If this logic changes, be sure to also
++  // change SessionRestoreImpl::CreateRestoredBrowser().
++  if ((browser->GetType() == BrowserWindowInterface::TYPE_APP ||
++       browser->GetType() == BrowserWindowInterface::TYPE_APP_POPUP) &&
++      !WindowFeatureController::From(browser)->IsTrustedSource()) {
++    return false;
++  }
++
++#if BUILDFLAG(IS_CHROMEOS)
++  // Windows that are auto-started and prevented from closing are exempted from
++  // tracking for session restore to prevent multiple unclosable open instances
++  // of the same app.
++  web_app::AppBrowserController* app_controller =
++      web_app::AppBrowserController::From(browser);
++  web_app::WebAppProvider* provider =
++      web_app::WebAppProvider::GetForWebApps(profile());
++  // Checking for close prevention does not require an `AppLock` and
++  // therefore `registrar_unsafe()` is safe to use.
++  if (app_controller && provider &&
++      provider->registrar_unsafe().IsPreventCloseEnabled(
++          app_controller->app_id())) {
++    return false;
++  }
++#endif  // #if BUILDFLAG(IS_CHROMEOS)
++
++  return ShouldRestoreWindowOfType(
++      WindowTypeForBrowserType(browser->GetType()));
++}
++
++bool SessionServiceBase::ShouldDeleteSessionStorageOnTabClosing(
++    SessionID window_id) const {
++  return true;
++}
++
++sessions::CommandStorageManager*
++SessionServiceBase::GetCommandStorageManagerForTest() {
++  return command_storage_manager_.get();
++}
++
++void SessionServiceBase::SetAvailableRangeForTest(
++    SessionID tab_id,
++    const std::pair<int, int>& range) {
++  tab_to_available_range_[tab_id] = range;
++}
++
++bool SessionServiceBase::GetAvailableRangeForTest(SessionID tab_id,
++                                                  std::pair<int, int>* range) {
++  auto i = tab_to_available_range_.find(tab_id);
++  if (i == tab_to_available_range_.end()) {
++    return false;
++  }
++
++  *range = i->second;
++  return true;
++}
++
++void SessionServiceBase::SetSavingEnabled(bool enabled) {
++  if (is_saving_enabled_ == enabled) {
++    return;
++  }
++  is_saving_enabled_ = enabled;
++  if (!is_saving_enabled_) {
++    // Transitioning from enabled to disabled should happen very early on,
++    // before any commands are actually written. If commands are written, then
++    // the purpose of disabling will have failed (because by writing some
++    // commands the previous session is going to be lost on exit).
++    DCHECK(!did_save_commands_at_least_once_);
++    command_storage_manager()->ClearPendingCommands();
++  } else {
++    ScheduleResetCommands();
++  }
++}
++
++std::optional<std::string> SessionServiceBase::GetPlatformSessionId() {
++  InitializePlatformSessionIfNeeded(/*restored_platform_session_id=*/{},
++                                    /*discarded_window_ids=*/{});
++  return platform_session_id_;
++}
++
++void SessionServiceBase::SetPlatformSessionIdForTesting(const std::string& id) {
++  platform_session_id_ = id;
++  ScheduleCommand(sessions::CreateSetPlatformSessionIdCommand(
++      platform_session_id_.value()));
++}
++
++void SessionServiceBase::InitializePlatformSessionIfNeeded(
++    const std::string& restored_platform_session_id,
++    const std::set<SessionID>& discarded_window_ids) {
++#if BUILDFLAG(IS_OZONE)
++  ui::OzonePlatform* platform = ui::OzonePlatform::GetInstance();
++  if (!platform->GetPlatformRuntimeProperties().supports_session_management ||
++      platform_session_id_.has_value()) {
++    return;
++  }
++
++  DCHECK(platform->GetSessionManager());
++  ui::PlatformSessionManager* session_manager = platform->GetSessionManager();
++  const bool should_restore = !restored_platform_session_id.empty();
++
++  // TODO(crbug.com/352081012): Support post-crash restore reason.
++  std::optional<std::string> actual_platform_session_id =
++      should_restore ? session_manager->RestoreSession(
++                           restored_platform_session_id,
++                           ui::PlatformSessionManager::RestoreReason::kLaunch)
++                     : platform->GetSessionManager()->CreateSession();
++
++  if (actual_platform_session_id.has_value()) {
++    DVLOG(1) << "Successfully initialized platform session."
++             << " session_service=" << this
++             << " session_id=" << actual_platform_session_id.value()
++             << " discarded_windows=" << discarded_window_ids.size();
++    platform_session_id_ = std::move(actual_platform_session_id);
++
++    for (const SessionID& session_id : discarded_window_ids) {
++      session_manager->RemoveWindow(platform_session_id_.value(),
++                                    session_id.id());
++    }
++
++    ScheduleCommand(sessions::CreateSetPlatformSessionIdCommand(
++        platform_session_id_.value()));
++  }
++#endif
++}
+--- a/chrome/browser/sessions/session_tab_helper_factory.cc
++++ b/chrome/browser/sessions/session_tab_helper_factory.cc
+@@ -2,7 +2,11 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #include "components/sessions/content/session_tab_helper.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_session.h"
++#endif
+ 
+ #include "chrome/browser/buildflags.h"
+ #include "chrome/common/buildflags.h"
+@@ -26,6 +30,11 @@
+ #if BUILDFLAG(ENABLE_SESSION_SERVICE)
+ sessions::SessionTabHelperDelegate* GetSessionTabHelperDelegate(
+     content::WebContents* web_contents) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::IsTransientGlance(web_contents))
++    return nullptr;
++#endif
++
+   // With AppSessionService, we now need to know if the WebContents
+   // belongs to an AppSessionService or SessionService.
+   if (IsRelevantToAppSessionService(web_contents)) {
+--- a/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc
++++ b/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/bookmarks/bookmark_utils_desktop.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_commands.h"
++#endif
+ 
+ #include <iterator>
+ #include <numeric>
+@@ -310,6 +315,12 @@
+     if (opened_web_contents_index == TabStripModel::kNoTab) {
+       return;
+     }
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++    if (krypton_ui::RedirectNativeSplit(
++            model->GetActiveTab(),
++            model->GetTabAtIndex(opened_web_contents_index), false))
++      return;
++#endif
+     model->AddToNewSplit(
+         {opened_web_contents_index}, split_tabs::SplitTabVisualData(),
+         split_tabs::SplitTabCreatedSource::kBookmarkContextMenu);
+--- a/chrome/browser/ui/browser_commands.cc
++++ b/chrome/browser/ui/browser_commands.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/browser_commands.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_commands.h"
++#endif
+ 
+ #include <algorithm>
+ #include <memory>
+@@ -1792,6 +1797,14 @@
+   duplicated_tab_indices.erase(std::find(duplicated_tab_indices.begin(),
+                                          duplicated_tab_indices.end(),
+                                          active_index));
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::RedirectNativeSplit(
++          model->GetActiveTab(),
++          model->GetTabAtIndex(duplicated_tab_indices[0]),
++          model->GetSplitData(split)->visual_data()->split_layout() ==
++              split_tabs::SplitTabLayout::kStacked))
++    return;
++#endif
+   model->AddToNewSplit(duplicated_tab_indices,
+                        split_tabs::SplitTabVisualData(
+                            *(model->GetSplitData(split)->visual_data())),
+@@ -1835,6 +1848,13 @@
+ void NewSplitTab(BrowserWindowInterface* browser,
+                  split_tabs::SplitTabLayout layout,
+                  split_tabs::SplitTabCreatedSource source) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Krypton windows choose a split's pages in KryptonUI's chooser; Chromium's
++  // split new tab page only completes its own two-tab split.
++  if (krypton_ui::ShowMultiPageSplitChooser(browser)) {
++    return;
++  }
++#endif
+   TabStripModel* const tab_strip_model = browser->GetTabStripModel();
+   const int active_index = tab_strip_model->active_index();
+   // In Incognito or Enterprise Isolated modes, we can't show the regular Split
+--- a/chrome/browser/ui/browser_tab_strip_model_delegate.cc
++++ b/chrome/browser/ui/browser_tab_strip_model_delegate.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/browser_tab_strip_model_delegate.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_commands.h"
++#endif
+ 
+ #include <stddef.h>
+ 
+@@ -393,6 +398,16 @@
+   if (indices.empty()) {
+     chrome::NewSplitTab(browser_, layout, source);
+   } else {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++    auto* model = browser_->GetTabStripModel();
++    if ((indices.size() == 1u || indices.size() == 2u) &&
++        krypton_ui::RedirectNativeSplit(
++            model->GetTabAtIndex(indices.size() == 1u ? model->active_index()
++                                                      : indices[0]),
++            model->GetTabAtIndex(indices.back()),
++            layout == split_tabs::SplitTabLayout::kStacked))
++      return;
++#endif
+     browser_->GetTabStripModel()->AddToNewSplit(
+         indices, split_tabs::SplitTabVisualData(layout), source);
+   }
+--- a/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
++++ b/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
+@@ -12,6 +12,7 @@
+       "browser_web_contents_delegate.h",
+     ]
+     deps = [
++      "//chrome/browser/ui/krypton_ui:abi",
+       "//base",
+       "//chrome/browser:file_select_helper",
+       "//chrome/browser:repost_form_warning_controller",
+--- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
++++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
+@@ -3,6 +3,13 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#include "chrome/browser/ui/krypton_ui/multi_page_controller.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#endif
+ 
+ #include "base/check_deref.h"
+ #include "base/metrics/histogram_macros.h"
+@@ -542,6 +549,26 @@
+                                   std::move(navigation_handle_callback));
+   }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (params.triggering_event_info ==
++          blink::mojom::TriggeringEventInfo::kFromTrustedGlanceLink &&
++      source && params.url.SchemeIsHTTPOrHTTPS() && params.user_gesture) {
++    auto* view = BrowserView::GetBrowserViewForBrowser(&*browser_);
++    NavigateParams glance_params(&*browser_, params.url, params.transition);
++    glance_params.FillNavigateParamsFromOpenURLParams(params);
++    glance_params.source_contents = source;
++    if (view && view->krypton_ui() && view->krypton_ui()->MultiPageEnabled())
++      return view->krypton_ui()->OpenGlance(
++          glance_params, std::move(navigation_handle_callback));
++    // An experimental renderer paired with an older module retains Alt-link's
++    // normal download behavior, using Chromium's original navigation metadata.
++    glance_params.disposition = WindowOpenDisposition::SAVE_TO_DISK;
++    const auto handle = Navigate(&glance_params);
++    if (handle && navigation_handle_callback)
++      std::move(navigation_handle_callback).Run(*handle);
++    return glance_params.navigated_or_inserted_contents;
++  }
++#endif
+   // If the source is already split, navigate the other pane instead of
+   // creating a new tab. Return |source| so that WebContentsImpl::OpenURL()
+   // sees new_contents == this and skips the DidOpenRequestedURL notification,
+@@ -871,6 +898,10 @@
+     bool* proceed_to_fire_unload) {
+   unload_controller_->BeforeUnloadFired(web_contents, proceed,
+                                         proceed_to_fire_unload);
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (!proceed)
++    krypton_ui::MultiPageBeforeUnloadResult(web_contents, proceed);
++#endif
+ }
+ 
+ bool BrowserWebContentsDelegate::ShouldFocusLocationBarByDefault(
+--- a/chrome/browser/ui/navigator/browser_navigator.cc
++++ b/chrome/browser/ui/navigator/browser_navigator.cc
+@@ -3,6 +3,12 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_commands.h"
++#include "chrome/browser/ui/krypton_ui/multi_page_session.h"
++#endif
+ 
+ #include <algorithm>
+ #include <memory>
+@@ -740,6 +746,11 @@
+         params->browser->GetTabStripModel()->GetActiveWebContents();
+   }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (params->krypton_glance && params->contents_to_insert)
++    krypton_ui::SetTransientGlance(params->contents_to_insert.get(), true,
++                                   params->source_contents);
++#endif
+   WebContents* contents_to_navigate_or_insert =
+       params->contents_to_insert.get();
+   if (params->switch_to_singleton_tab) {
+@@ -937,6 +948,11 @@
+             tabs::TabInterface::MaybeGetFromContents(params->source_contents));
+       }
+       contents_to_navigate_or_insert = tab_to_insert->GetContents();
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++      if (params->krypton_glance)
++        krypton_ui::SetTransientGlance(contents_to_navigate_or_insert, true,
++                                       params->source_contents);
++#endif
+ 
+       apps::SetAppIdForWebContents(params->browser->GetProfile(),
+                                    contents_to_navigate_or_insert,
+@@ -1046,9 +1062,12 @@
+       if (new_tab_index != TabStripModel::kNoTab && active_tab &&
+           active_tab != new_tab && !active_tab->IsSplit() &&
+           (!source_tab || !source_tab->IsSplit())) {
+-        tab_strip_model->AddToNewSplit(
+-            {new_tab_index}, split_tabs::SplitTabVisualData(),
+-            split_tabs::SplitTabCreatedSource::kLinkClick);
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++        if (!krypton_ui::RedirectNativeSplit(active_tab, new_tab, false))
++#endif
++          tab_strip_model->AddToNewSplit(
++              {new_tab_index}, split_tabs::SplitTabVisualData(),
++              split_tabs::SplitTabCreatedSource::kLinkClick);
+       }
+       if (new_tab) {
+         // AddToNewSplit() makes the split contiguous and gives the new tab the
+--- a/chrome/browser/ui/navigator/browser_navigator_params.h
++++ b/chrome/browser/ui/navigator/browser_navigator_params.h
+@@ -92,6 +92,10 @@
+   NavigateParams(NavigateParams&& params);
+ 
+   ~NavigateParams();
++
++  // Krypton: explicit transient intent; never derived from download
++  // disposition.
++  bool krypton_glance = false;
+ 
+   // Copies fields from |params| struct to |nav_params| struct.
+   void FillNavigateParamsFromOpenURLParams(
+--- a/chrome/browser/ui/sessions/session_service_browser_helper.cc
++++ b/chrome/browser/ui/sessions/session_service_browser_helper.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/sessions/session_service_browser_helper.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_session.h"
++#endif
+ 
+ #include "base/check_deref.h"
+ #include "base/time/time.h"
+@@ -27,6 +31,14 @@
+ #include "content/public/browser/web_contents.h"
+ 
+ namespace {
++int SessionActiveIndex(TabStripModel& model) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* parent =
++          krypton_ui::GlanceSessionParent(model.GetActiveWebContents()))
++    return model.GetIndexOfWebContents(parent);
++#endif
++  return model.active_index();
++}
+ 
+ void UpdateTabGroupSessionMetadata(Profile& profile,
+                                    TabStripModel& tab_strip_model,
+@@ -99,7 +111,7 @@
+         SessionServiceBase* service = GetSessionService();
+         if (service) {
+           service->TabInserted(contents.contents);
+-          int new_active_index = tab_strip_model->active_index();
++          int new_active_index = SessionActiveIndex(*tab_strip_model);
+           if (contents.index < new_active_index) {
+             service->SetSelectedTabInWindow(session_id_, new_active_index);
+           }
+@@ -119,7 +131,7 @@
+           SessionServiceBase* service_existing = GetSessionServiceIfExisting();
+           if (service_existing) {
+             service_existing->SetSelectedTabInWindow(
+-                session_id_, tab_strip_model->active_index());
++                session_id_, SessionActiveIndex(*tab_strip_model));
+           }
+           SyncHistoryWithTabs(0);
+         }
+@@ -144,7 +156,7 @@
+       SyncHistoryWithTabs(replace->index);
+       if (session_service) {
+         session_service->TabInserted(replace->new_contents);
+-        int new_active_index = tab_strip_model->active_index();
++        int new_active_index = SessionActiveIndex(*tab_strip_model);
+         if (replace->index < new_active_index) {
+           session_service->SetSelectedTabInWindow(session_id_,
+                                                   new_active_index);
+@@ -172,10 +184,16 @@
+   SessionServiceBase* service = GetSessionServiceIfExisting();
+   if (service && !tab_strip_model->closing_all()) {
+     service->SetSelectedTabInWindow(session_id_,
+-                                    tab_strip_model->active_index());
++                                    SessionActiveIndex(*tab_strip_model));
+     service->SetLastActiveTime(
+         session_id_,
+-        sessions::SessionTabHelper::IdForTab(selection.new_contents),
++        sessions::SessionTabHelper::IdForTab(
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++            krypton_ui::GlanceSessionParent(selection.new_contents)
++                ? krypton_ui::GlanceSessionParent(selection.new_contents)
++                :
++#endif
++                selection.new_contents.get()),
+         base::Time::Now());
+   }
+ }
+@@ -296,7 +314,11 @@
+            tab_strip_model_->GetTabAtIndex(index));
+        it != tab_strip_model_->end(); ++it) {
+     content::WebContents* web_contents = it->GetContents();
+-    if (web_contents) {
++    if (web_contents
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++        && !krypton_ui::IsTransientGlance(web_contents)
++#endif
++    ) {
+       SessionID tab_id = sessions::SessionTabHelper::IdForTab(web_contents);
+       if (service) {
+         service->SetPinnedState(session_id_, tab_id, it->IsPinned());
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -384,6 +384,7 @@
+     ]
+ 
+     deps = [
++      "//chrome/browser/ui/krypton_ui:abi",
+       ":tab_group",
+       ":tab_model",
+       ":tab_strip",
+--- a/chrome/browser/ui/tabs/tab_strip_model.cc
++++ b/chrome/browser/ui/tabs/tab_strip_model.cc
+@@ -3,6 +3,12 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_controller.h"
++#include "chrome/browser/ui/krypton_ui/multi_page_session.h"
++#endif
+ 
+ #include <algorithm>
+ #include <cstddef>
+@@ -996,7 +1002,11 @@
+   // database.
+ 
+   std::optional<SessionID> id;
+-  if (create_historical_tab) {
++  if (create_historical_tab
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++      && !krypton_ui::IsTransientGlance(tab->GetContents())
++#endif
++  ) {
+     id = delegate_->CreateHistoricalTab(tab->GetContents());
+   }
+ 
+@@ -1385,6 +1395,11 @@
+ 
+ void TabStripModel::CloseWebContents(content::WebContents* contents,
+                                      uint32_t close_types) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (!krypton_ui::AllowMultiPageClose(contents))
++    return;
++#endif
++
+   ReentrancyCheck::ValidateNotReentrant(&reentrancy_guard_);
+ 
+   CHECK(contents);
+@@ -1478,6 +1493,14 @@
+ }
+ 
+ int TabStripModel::SetTabPinned(int index, bool pinned) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (ContainsIndex(index)) {
++    auto* tab = GetTabAtIndex(index);
++    if (krypton_ui::PinMultiPageGroup(tab, pinned))
++      return GetIndexOfTab(tab);
++  }
++#endif
++
+   ReentrancyCheck reentrancy_check(&reentrancy_guard_);
+   CHECK(ContainsIndex(index));
+ 
+@@ -2006,6 +2029,11 @@
+ void TabStripModel::UpdateTabInSplit(tabs::TabInterface* split_tab,
+                                      int update_index,
+                                      SplitUpdateType update_type) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (ContainsIndex(update_index))
++    krypton_ui::ReleaseMultiPageMemberForNativeSplit(
++        GetTabAtIndex(update_index));
++#endif
+   ReentrancyCheck reentrancy_check(&reentrancy_guard_);
+ 
+   tabs::TabInterface* update_tab = GetTabAtIndex(update_index);
+@@ -2046,6 +2074,14 @@
+     std::vector<int> indices,
+     split_tabs::SplitTabVisualData visual_data,
+     split_tabs::SplitTabCreatedSource source) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Transfer custom membership before entering the native mutation guard.
++  if (indices.size() == 1u && ContainsIndex(active_index()))
++    krypton_ui::ReleaseMultiPageMemberForNativeSplit(GetActiveTab());
++  for (int index : indices)
++    if (ContainsIndex(index))
++      krypton_ui::ReleaseMultiPageMemberForNativeSplit(GetTabAtIndex(index));
++#endif
+   ReentrancyCheck reentrancy_check(&reentrancy_guard_);
+ 
+   CHECK(indices.size() == 1u || indices.size() == 2u)
+@@ -2089,6 +2125,11 @@
+ void TabStripModel::RestoreSplit(split_tabs::SplitTabId split_id,
+                                  const std::vector<int>& indices,
+                                  split_tabs::SplitTabVisualData visual_data) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  for (int index : indices)
++    if (ContainsIndex(index))
++      krypton_ui::ReleaseMultiPageMemberForNativeSplit(GetTabAtIndex(index));
++#endif
+   ReentrancyCheck reentrancy_check(&reentrancy_guard_);
+   CHECK(std::ranges::is_sorted(indices));
+   CHECK_EQ(indices.size(), 2u);
+@@ -4201,6 +4242,21 @@
+   for (content::WebContents* contents : items) {
+     tabs::TabInterface* tab = GetTabForWebContents(contents);
+     if (IsTabClosable(tab)) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++      // Retain the live preview before visibility/detach notifications and
++      // renderer fast shutdown. Chromium still owns unload confirmation.
++      if (krypton_ui::ShouldAnimateGlanceClose(contents)) {
++        if (!contents->GetClosedByUserGesture())
++          contents->SetClosedByUserGesture(close_types &
++                                           TabCloseTypes::CLOSE_USER_GESTURE);
++        if (RunUnloadListenerBeforeClosing(contents)) {
++          TabCloseTypesData::CreateForWebContents(contents, close_types);
++          continue;
++        }
++        if (krypton_ui::DeferGlanceDestruction(contents))
++          continue;
++      }
++#endif
+       filtered_items.push_back(contents);
+     } else {
+       for (auto& observer : observers_) {
+@@ -4419,6 +4475,15 @@
+     const tabs::TabStripModelSelectionState& new_model,
+     TabStripModelObserver::ChangeReason reason,
+     bool triggered_by_other_operation) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // A preview departure is committed only after Chromium confirms unload.
++  // This hook only queues work; it never reenters the model's mutation guard.
++  if (!krypton_ui::AllowMultiPageSelection(GetActiveTab(),
++                                           new_model.active_tab()))
++    return TabStripSelectionChange(GetActiveTab(),
++                                   selection_model_.GetListSelectionModel());
++#endif
++
+   bool exited_focus = false;
+   if (std::optional<tab_groups::TabGroupId> focused_group = GetFocusedGroup();
+       focused_group.has_value()) {
+@@ -4443,8 +4508,19 @@
+ 
+   if (selection_model_.active_tab() && new_model.active_tab() &&
+       selection_model_.active_tab() != new_model.active_tab()) {
+-    if (GetActiveTab()->IsSplit() &&
+-        GetActiveTab()->GetSplit() == new_model.active_tab()->GetSplit()) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++    const auto visibility = krypton_ui::MultiPageSelectionVisibility(
++        GetActiveTab(), new_model.active_tab());
++    if (visibility.handled) {
++      static_cast<tabs::TabModel*>(GetActiveTab())
++          ->WillDeactivate(base::PassKey<TabStripModel>());
++      for (size_t i = 0; i < visibility.count; ++i)
++        static_cast<tabs::TabModel*>(visibility.hidden[i])
++            ->WillBecomeHidden(base::PassKey<TabStripModel>());
++    } else
++#endif
++        if (GetActiveTab()->IsSplit() &&
++            GetActiveTab()->GetSplit() == new_model.active_tab()->GetSplit()) {
+       // When switching between two tabs in a split, neither enters the
+       // background but one becomes deactivated.
+       static_cast<tabs::TabModel*>(GetActiveTab())
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -3312,6 +3312,7 @@
+     "//chrome/browser:browser_public_dependencies",
+   ]
+   deps = [
++    "//chrome/browser/ui/krypton_ui:abi",
+     ":browser_view_header",
+     ":contents_container_view",
+     ":contents_separator",
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -7,6 +7,7 @@
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+ #include "chrome/browser/ui/krypton_ui/browser_adapter.h"
+ #include "chrome/browser/ui/krypton_ui/contents_layout.h"
++#include "chrome/browser/ui/krypton_ui/multi_page_controller.h"
+ #include "chrome/browser/ui/krypton_ui/native_location_bar.h"
+ #include "chrome/browser/ui/krypton_ui/native_toolbar.h"
+ #include "ui/views/controls/message_box_view.h"
+@@ -1363,6 +1364,19 @@
+ }
+ 
+ gfx::Rect BrowserView::GetFindBarBoundingBox() const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_ && krypton_ui_->multi_page() &&
++      krypton_ui_->multi_page()->active()) {
++    auto* contents = multi_contents_view_->GetActiveContentsView();
++    const auto contents_bounds =
++        contents->ConvertRectToWidget(contents->GetLocalBounds());
++    if (!contents_bounds.IsEmpty())
++      return contents_bounds;
++    // A newly attached pane can be queried before its first native layout.
++    return multi_contents_view_->ConvertRectToWidget(
++        krypton_ui_->multi_page()->ActiveBounds());
++  }
++#endif
+   gfx::Rect contents_bounds = multi_contents_view_->ConvertRectToWidget(
+       multi_contents_view_->GetLocalBounds());
+ 
+@@ -2131,6 +2145,13 @@
+                                      content::WebContents* new_contents,
+                                      int index,
+                                      int reason) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  const bool krypton_tab_change =
++      krypton_ui_ && krypton_ui_->PrepareMultiPageSelection(new_contents);
++#else
++  constexpr bool krypton_tab_change = false;
++#endif
++
+   DCHECK(new_contents);
+   TRACE_EVENT0("ui", "BrowserView::OnActiveTabChanged");
+   views::WebView* active_contents_view = GetActiveContentsWebView();
+@@ -2152,7 +2173,7 @@
+   // the WebContents window.
+   bool change_tab_contents =
+       active_contents_view->web_contents() != new_contents &&
+-      !tab_change_in_split_view;
++      !tab_change_in_split_view && !krypton_tab_change;
+ 
+   bool will_restore_focus = !browser_->GetTabStripModel()->closing_all() &&
+                             GetWidget()->IsVisible() &&
+@@ -2204,7 +2225,8 @@
+   // When switching tabs within a split, we want to layout to be done
+   // asynchronously in order to ensure the input events are triggered at the
+   // expected position.
+-  UpdateUIForContents(new_contents, !tab_change_in_split_view);
++  UpdateUIForContents(new_contents,
++                      !tab_change_in_split_view && !krypton_tab_change);
+ 
+   if (!IsFullscreen() || !tab_change_in_split_view) {
+     RevealTopContainerIfNeeded();
+@@ -3656,6 +3678,12 @@
+ }
+ 
+ WebContentsModalDialogHost* BrowserView::GetWebContentsModalDialogHost() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_ && krypton_ui_->multi_page() &&
++      krypton_ui_->multi_page()->active())
++    return multi_contents_view_->GetActiveContentsContainerView()
++        ->web_contents_modal_dialog_host();
++#endif
+   return GetBrowserViewLayout()->GetWebContentsModalDialogHost();
+ }
+ 
+@@ -4686,6 +4714,19 @@
+ }
+ 
+ std::vector<ContentsWebView*> BrowserView::GetAllVisibleContentsWebViews() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_ && krypton_ui_->multi_page() &&
++      krypton_ui_->multi_page()->active()) {
++    std::vector<ContentsWebView*> result;
++    multi_contents_view_->ExecuteOnEachVisibleContentsView(base::BindRepeating(
++        [](std::vector<ContentsWebView*>* result, ContentsWebView* view) {
++          result->push_back(view);
++        },
++        &result));
++    return result;
++  }
++#endif
++
+   std::vector<ContentsWebView*> contents_views;
+   contents_views.push_back(multi_contents_view_->GetActiveContentsView());
+   ContentsWebView* inactive_contents_view =
+@@ -5745,6 +5786,12 @@
+ }
+ 
+ bool BrowserView::MaybeUpdateSplitView(content::WebContents* contents) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_ && krypton_ui_->multi_page() &&
++      krypton_ui_->multi_page()->active())
++    return false;
++#endif
++
+   const bool current_state = multi_contents_view_->IsInSplitView();
+   const tabs::TabInterface* const new_tab =
+       contents ? tabs::TabInterface::GetFromContents(contents) : nullptr;
+@@ -5768,6 +5815,24 @@
+ }
+ 
+ bool BrowserView::MaybeUpdateDevtools(content::WebContents* contents) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_ && krypton_ui_->multi_page() &&
++      krypton_ui_->multi_page()->active()) {
++    auto* controller = DevtoolsUIController::From(browser_.get());
++    if (!controller)
++      return false;
++    bool updated = false;
++    multi_contents_view_->ExecuteOnEachVisibleContentsView(base::BindRepeating(
++        [](DevtoolsUIController* controller, bool* updated,
++           ContentsWebView* pane) {
++          if (pane->web_contents())
++            *updated |= controller->UpdateDevtools(pane->web_contents(), false);
++        },
++        controller, &updated));
++    return updated;
++  }
++#endif
++
+   const tabs::TabInterface* const new_tab =
+       contents ? tabs::TabInterface::GetFromContents(contents) : nullptr;
+   auto* devtools_ui_controller = DevtoolsUIController::From(browser_.get());
+--- a/chrome/browser/ui/views/frame/multi_contents_view.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_view.cc
+@@ -19,6 +19,17 @@
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/view_ids.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#include "chrome/browser/ui/krypton_ui/multi_page_controller.h"
++namespace {
++krypton_ui::MultiPageController* KryptonContents(BrowserView* browser) {
++  auto* adapter = browser->krypton_ui();
++  auto* controller = adapter ? adapter->multi_page() : nullptr;
++  return controller && controller->active() ? controller : nullptr;
++}
++}  // namespace
++#endif
+ #include "chrome/browser/ui/views/frame/contents_container_view.h"
+ #include "chrome/browser/ui/views/frame/contents_separator.h"
+ #include "chrome/browser/ui/views/frame/contents_web_view.h"
+@@ -135,41 +146,8 @@
+   lens_overlay_view->SetLayoutManager(std::make_unique<views::FillLayout>());
+   lens_overlay_view_ = AddChildView(std::move(lens_overlay_view));
+ 
+-  for (auto& contents_container_view : contents_container_views_) {
+-    auto& view_map = container_focusable_map_[contents_container_view];
+-
+-    auto* contents_view = contents_container_view->contents_view();
+-    view_map[contents_view->GetClassName()] = contents_view;
+-
+-    contents_focused_subscriptions_.push_back(
+-        contents_view->AddWebContentsFocusedCallback(base::BindRepeating(
+-            &MultiContentsView::OnWebContentsFocused, base::Unretained(this))));
+-
+-    if (auto* footer = contents_container_view->new_tab_footer_view()) {
+-      view_map[footer->GetClassName()] = footer;
+-      contents_focused_subscriptions_.push_back(
+-          footer->AddWebContentsFocusedCallback(base::BindRepeating(
+-              &MultiContentsView::OnNtpFooterFocused, base::Unretained(this))));
+-    }
+-
+-    if (auto* actor_overlay =
+-            contents_container_view->actor_overlay_web_view()) {
+-      view_map[actor_overlay->GetClassName()] = actor_overlay;
+-      contents_focused_subscriptions_.push_back(
+-          actor_overlay->AddWebContentsFocusedCallback(
+-              base::BindRepeating(&MultiContentsView::OnActorOverlayFocused,
+-                                  base::Unretained(this))));
+-    }
+-
+-    if (auto* read_anything_overlay =
+-            contents_container_view->read_anything_immersive_overlay_view()) {
+-      view_map[read_anything_overlay->GetClassName()] = read_anything_overlay;
+-      contents_focused_subscriptions_.push_back(
+-          read_anything_overlay->AddWebViewFocusedCallback(base::BindRepeating(
+-              &MultiContentsView::OnReadAnythingOverlayFocused,
+-              base::Unretained(this), contents_container_view)));
+-    }
+-  }
++  for (auto& container : contents_container_views_)
++    RegisterContentsContainer(container);
+ 
+   is_drag_drop_pref_enabled_ =
+       browser_view_->GetProfile()->GetPrefs()->GetBoolean(
+@@ -198,6 +176,63 @@
+   RemoveAllChildViews();
+ }
+ 
++void MultiContentsView::RegisterContentsContainer(
++    ContentsContainerView* container) {
++  auto& view_map = container_focusable_map_[container];
++
++  auto* contents_view = container->contents_view();
++  view_map[contents_view->GetClassName()] = contents_view;
++
++  contents_focused_subscriptions_.push_back(
++      contents_view->AddWebContentsFocusedCallback(base::BindRepeating(
++          &MultiContentsView::OnWebContentsFocused, base::Unretained(this))));
++
++  if (auto* footer = container->new_tab_footer_view()) {
++    view_map[footer->GetClassName()] = footer;
++    contents_focused_subscriptions_.push_back(
++        footer->AddWebContentsFocusedCallback(base::BindRepeating(
++            &MultiContentsView::OnNtpFooterFocused, base::Unretained(this))));
++  }
++
++  if (auto* actor_overlay = container->actor_overlay_web_view()) {
++    view_map[actor_overlay->GetClassName()] = actor_overlay;
++    contents_focused_subscriptions_.push_back(
++        actor_overlay->AddWebContentsFocusedCallback(
++            base::BindRepeating(&MultiContentsView::OnActorOverlayFocused,
++                                base::Unretained(this))));
++  }
++
++  if (auto* read_anything_overlay =
++          container->read_anything_immersive_overlay_view()) {
++    view_map[read_anything_overlay->GetClassName()] = read_anything_overlay;
++    contents_focused_subscriptions_.push_back(
++        read_anything_overlay->AddWebViewFocusedCallback(base::BindRepeating(
++            &MultiContentsView::OnReadAnythingOverlayFocused,
++            base::Unretained(this), container)));
++  }
++}
++
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++ContentsContainerView* MultiContentsView::AddKryptonContentsContainer() {
++  // Keep lazily added pages underneath existing divider and pane controls.
++  // Glance explicitly raises its transient container and toolbar when open.
++  auto* container =
++      AddChildViewAt(std::make_unique<ContentsContainerView>(browser_view_),
++                     GetIndexOf(resize_area_).value());
++  contents_container_views_.push_back(container);
++  RegisterContentsContainer(container);
++  container->SetVisible(false);
++  return container;
++}
++void MultiContentsView::HideKryptonNativeSplitChrome() {
++  resize_area_->SetVisible(false);
++  // A native pair can be transferred into a Krypton group. Remove its old
++  // border and mini toolbar before applying the shared theme-aware outline.
++  for (auto& container : contents_container_views_)
++    container->UpdateBorderAndOverlay(false, false, false);
++}
++#endif
++
+ ContentsWebView* MultiContentsView::GetActiveContentsView() const {
+   return GetActiveContentsContainerView()->contents_view();
+ }
+@@ -208,11 +243,21 @@
+ 
+ ContentsContainerView* MultiContentsView::GetActiveContentsContainerView()
+     const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* controller = KryptonContents(browser_view_))
++    return controller->ActiveContainer();
++#endif
++
+   return contents_container_views_[active_index_];
+ }
+ 
+ ContentsContainerView* MultiContentsView::GetInactiveContentsContainerView()
+     const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* controller = KryptonContents(browser_view_))
++    return controller->InactiveContainer();
++#endif
++
+   return contents_container_views_[GetInactiveIndex()];
+ }
+ 
+@@ -362,6 +407,18 @@
+ 
+ void MultiContentsView::ExecuteOnEachVisibleContentsView(
+     base::RepeatingCallback<void(ContentsWebView*)> callback) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* controller = KryptonContents(browser_view_)) {
++    auto* active = controller->ActiveContainer();
++    if (active->GetVisible())
++      callback.Run(active->contents_view());
++    for (auto& container : contents_container_views_)
++      if (container != active && container->GetVisible())
++        callback.Run(container->contents_view());
++    return;
++  }
++#endif
++
+   for (auto& contents_container_view : contents_container_views_) {
+     if (contents_container_view->GetVisible()) {
+       callback.Run(contents_container_view->contents_view());
+@@ -446,6 +503,13 @@
+ }
+ 
+ void MultiContentsView::OnWebContentsFocused(views::WebView* web_view) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* controller = KryptonContents(browser_view_)) {
++    controller->ScheduleFocus(web_view->web_contents());
++    return;
++  }
++#endif
++
+   if (IsInSplitView()) {
+     // Check whether the widget is visible as otherwise during browser hide,
+     // inactive web contents gets focus. See crbug.com/419335827
+@@ -457,6 +521,18 @@
+ }
+ 
+ void MultiContentsView::OnActorOverlayFocused(views::WebView* web_view) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* controller = KryptonContents(browser_view_)) {
++    for (auto& container : contents_container_views_) {
++      if (container->actor_overlay_web_view() == web_view) {
++        controller->ScheduleFocus(container->contents_view()->web_contents());
++        break;
++      }
++    }
++    return;
++  }
++#endif
++
+   if (IsInSplitView() && GetWidget()->IsVisible()) {
+     for (auto& contents_container_view : contents_container_views_) {
+       if (contents_container_view->actor_overlay_web_view() &&
+@@ -471,6 +547,18 @@
+ }
+ 
+ void MultiContentsView::OnNtpFooterFocused(views::WebView* web_view) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* controller = KryptonContents(browser_view_)) {
++    for (auto& container : contents_container_views_) {
++      if (container->new_tab_footer_view() == web_view) {
++        controller->ScheduleFocus(container->contents_view()->web_contents());
++        break;
++      }
++    }
++    return;
++  }
++#endif
++
+   if (IsInSplitView() && GetWidget()->IsVisible()) {
+     for (auto& contents_container_view : contents_container_views_) {
+       if (contents_container_view->new_tab_footer_view() &&
+@@ -487,6 +575,13 @@
+ void MultiContentsView::OnReadAnythingOverlayFocused(
+     ContentsContainerView* container,
+     views::WebView* web_view) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* controller = KryptonContents(browser_view_)) {
++    controller->ScheduleFocus(container->contents_view()->web_contents());
++    return;
++  }
++#endif
++
+   if (IsInSplitView() && GetWidget()->IsVisible()) {
+     if (GetInactiveContentsContainerView() == container) {
+       delegate_->WebContentsFocused(container->contents_view()->web_contents());
+@@ -520,6 +615,17 @@
+   available_space =
+       CalculateSeparatorLayouts(available_space, layouts.child_layouts);
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* controller = KryptonContents(browser_view_)) {
++    layouts.child_layouts.emplace_back(resize_area_.get(), false, gfx::Rect());
++    controller->AppendLayout(available_space, layouts);
++    layouts.child_layouts.emplace_back(lens_overlay_view_.get(),
++                                       lens_overlay_view_->GetVisible(),
++                                       gfx::Rect(width, height));
++    layouts.host_size = gfx::Size(width, height);
++    return layouts;
++  }
++#endif
+   if (IsInSplitView()) {
+     available_space.Inset(split_view_insets_);
+   }
+--- a/chrome/browser/ui/views/frame/multi_contents_view.h
++++ b/chrome/browser/ui/views/frame/multi_contents_view.h
+@@ -12,6 +12,7 @@
+ #include "base/functional/callback_forward.h"
+ #include "base/gtest_prod_util.h"
+ #include "base/memory/raw_ptr.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #include "chrome/browser/ui/tabs/split_tab_highlight_controller.h"
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/views/frame/contents_container_view.h"
+@@ -215,12 +216,22 @@
+     return background_view_;
+   }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Krypton owns bounded custom groups without changing SplitTabCollection.
++  ContentsContainerView* GetKryptonNativeContainer(size_t index) const {
++    return contents_container_views_.at(index).get();
++  }
++  ContentsContainerView* AddKryptonContentsContainer();
++  void HideKryptonNativeSplitChrome();
++#endif
++
+   MultiContentsViewDelegate* delegate_for_testing() { return delegate_.get(); }
+ 
+   const FocusableViewMap* GetFocusableViewsMapFor(
+       const ContentsContainerView* container) const;
+ 
+  private:
++  void RegisterContentsContainer(ContentsContainerView* container);
+   FRIEND_TEST_ALL_PREFIXES(MultiContentsViewBrowserTest, DropTargetLayout);
+   FRIEND_TEST_ALL_PREFIXES(MultiContentsViewBrowserTest,
+                            LeadingSeparatorLayout);
+--- a/chrome/browser/ui/views/frame/multi_contents_view_delegate.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_view_delegate.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/frame/multi_contents_view_delegate.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/multi_page_commands.h"
++#endif
+ 
+ #include "chrome/browser/sessions/session_service.h"
+ #include "chrome/browser/sessions/session_service_factory.h"
+@@ -137,6 +142,14 @@
+ 
+   // Create a split with the previously active tab, which should be before or
+   // after the newly created tab.
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::RedirectNativeSplit(
++          active_tab,
++          tabs::TabInterface::GetFromContents(
++              params.navigated_or_inserted_contents),
++          split_data.split_layout() == split_tabs::SplitTabLayout::kStacked))
++    return;
++#endif
+   tab_strip_model_->AddToNewSplit(
+       {new_tab_idx +
+        (side == MultiContentsDropTargetView::DropSide::START ? 1 : -1)},
+@@ -168,8 +181,13 @@
+       new_tab_idx, std::move(detached_tab),
+       active_tab->IsPinned() ? AddTabTypes::ADD_PINNED : AddTabTypes::ADD_NONE,
+       active_tab->GetGroup());
+-  tab_strip_model_->AddToNewSplit(
+-      {inserted_tab_idx}, split_data,
+-      split_tabs::SplitTabCreatedSource::kDragAndDropTab);
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (!krypton_ui::RedirectNativeSplit(
++          active_tab, tab_strip_model_->GetTabAtIndex(inserted_tab_idx),
++          split_data.split_layout() == split_tabs::SplitTabLayout::kStacked))
++#endif
++    tab_strip_model_->AddToNewSplit(
++        {inserted_tab_idx}, split_data,
++        split_tabs::SplitTabCreatedSource::kDragAndDropTab);
+   tab_strip_model_->ActivateTabAt(inserted_tab_idx);
+ }
+--- a/content/renderer/render_frame_impl.cc
++++ b/content/renderer/render_frame_impl.cc
+@@ -5827,6 +5827,13 @@
+   // process: DownloadURL handles downloads, OpenURL handles all navigations
+   // that will end up in a different tab/window, and BeginNavigation handles
+   // everything else.
++  // Krypton: the trusted event marker is carried through the existing OpenURL
++  // metadata. HTTP(S) only, and only in explicitly enabled renderer processes.
++  if (info->triggering_event_info ==
++          blink::mojom::TriggeringEventInfo::kFromTrustedGlanceLink &&
++      base::CommandLine::ForCurrentProcess()->HasSwitch("krypton-glance") &&
++      url.SchemeIsHTTPOrHTTPS())
++    info->navigation_policy = blink::kWebNavigationPolicyNewForegroundTab;
+   if (info->navigation_policy == blink::kWebNavigationPolicyDownload) {
+     mojo::PendingRemote<blink::mojom::BlobURLToken> blob_url_token =
+         CloneBlobURLToken(info->blob_url_token);
+--- a/third_party/blink/public/mojom/frame/triggering_event_info.mojom
++++ b/third_party/blink/public/mojom/frame/triggering_event_info.mojom
+@@ -15,4 +15,7 @@
+ 
+   // The navigation was triggered via a JS event with isTrusted() == false.
+   kFromUntrustedEvent,
++  // Krypton: a trusted, unmodified Alt-left-click on an HTTP(S) HTML link.
++  // Download disposition alone must never imply Glance intent.
++  kFromTrustedGlanceLink,
+ };
+--- a/third_party/blink/renderer/core/html/html_anchor_element.cc
++++ b/third_party/blink/renderer/core/html/html_anchor_element.cc
+@@ -398,6 +398,7 @@
+     ResourceRequest request,
+     NavigationPolicy navigation_policy,
+     bool is_trusted,
++    bool is_glance_alt_link,
+     base::TimeTicks platform_time_stamp,
+     KURL completed_url) {
+   LocalDOMWindow* window = GetDocument().domWindow();
+@@ -426,8 +427,10 @@
+                                                      completed_url, *window);
+ 
+   frame_request.SetTriggeringEventInfo(
+-      is_trusted ? mojom::blink::TriggeringEventInfo::kFromTrustedEvent
+-                 : mojom::blink::TriggeringEventInfo::kFromUntrustedEvent);
++      is_glance_alt_link
++          ? mojom::blink::TriggeringEventInfo::kFromTrustedGlanceLink
++      : is_trusted ? mojom::blink::TriggeringEventInfo::kFromTrustedEvent
++                   : mojom::blink::TriggeringEventInfo::kFromUntrustedEvent);
+   frame_request.SetInputStartTime(platform_time_stamp);
+ 
+   Frame* target_frame =
+@@ -539,6 +542,10 @@
+   base::OnceClosure navigate_closure = blink::BindOnce(
+       &HTMLAnchorElementBase::NavigateToHyperlink, WrapWeakPersistent(this),
+       std::move(request), navigation_policy, event.isTrusted(),
++      event.isTrusted() && event.altKey() && !event.ctrlKey() &&
++          !event.metaKey() && !event.shiftKey() && event.button() == 0 &&
++          (completed_url.ProtocolIs("http") ||
++           completed_url.ProtocolIs("https")),
+       event.PlatformTimeStamp(), std::move(completed_url));
+ 
+   if (navigation_policy == kNavigationPolicyDownload) {
+--- a/third_party/blink/renderer/core/html/html_anchor_element.h
++++ b/third_party/blink/renderer/core/html/html_anchor_element.h
+@@ -121,6 +121,7 @@
+   void NavigateToHyperlink(ResourceRequest,
+                            NavigationPolicy,
+                            bool is_trusted,
++                           bool is_glance_alt_link,
+                            base::TimeTicks platform_time_stamp,
+                            KURL);
+   void HandleClick(MouseEvent&);
+--- a/third_party/blink/renderer/core/loader/document_loader.cc
++++ b/third_party/blink/renderer/core/loader/document_loader.cc
+@@ -1737,8 +1737,10 @@
+   UserNavigationInvolvement involvement = UserNavigationInvolvement::kNone;
+   if (is_browser_initiated) {
+     involvement = UserNavigationInvolvement::kBrowserUI;
+-  } else if (triggering_event_info ==
+-             mojom::blink::TriggeringEventInfo::kFromTrustedEvent) {
++  } else if ((triggering_event_info ==
++                  mojom::blink::TriggeringEventInfo::kFromTrustedEvent ||
++              triggering_event_info ==
++                  mojom::blink::TriggeringEventInfo::kFromTrustedGlanceLink)) {
+     involvement = UserNavigationInvolvement::kActivation;
+   }
+ 
+--- a/third_party/blink/renderer/core/loader/frame_loader.cc
++++ b/third_party/blink/renderer/core/loader/frame_loader.cc
+@@ -937,8 +937,10 @@
+     auto* params = MakeGarbageCollected<NavigateEventDispatchParams>(
+         url, NavigateEventType::kCrossDocument, frame_load_type);
+     params->source_element = request.GetSourceElement();
+-    if (request.GetTriggeringEventInfo() ==
+-        mojom::blink::TriggeringEventInfo::kFromTrustedEvent) {
++    if ((request.GetTriggeringEventInfo() ==
++             mojom::blink::TriggeringEventInfo::kFromTrustedEvent ||
++         request.GetTriggeringEventInfo() ==
++             mojom::blink::TriggeringEventInfo::kFromTrustedGlanceLink)) {
+       params->involvement = UserNavigationInvolvement::kActivation;
+     }
+     if (frame_->DomWindow()->navigation()->DispatchNavigateEvent(params) !=

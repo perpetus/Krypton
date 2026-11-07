@@ -1,0 +1,363 @@
+Subject: [Krypton] Monochrome Chromium Settings in light and dark mode
+
+The user requested a Vercel-style black-and-white Settings page rather than
+Helium's accent-colored WebUI. Scope neutral color tokens to Settings and
+restyle its existing cards, navigation and search field. Keep native control
+behavior, semantic error colors, and system high-contrast colors. Use local
+fonts without network requests. All resources already exist, so no GRIT IDs,
+browser C++ changes, or native KryptonUI changes are needed.
+
+--- a/chrome/browser/resources/settings/settings.html
++++ b/chrome/browser/resources/settings/settings.html
+@@ -1,5 +1,5 @@
+ <!doctype html>
+-<html dir="$i18n{textdirection}" lang="$i18n{language}" class="loading"
++<html krypton-settings-theme dir="$i18n{textdirection}" lang="$i18n{language}" class="loading"
+     $i18n{webuiRefresh2026} $i18n{settingsRefresh2026} $i18n{roundedIconsAttribute} $i18n{webuiRoundedIconsAttribute}>
+ <head>
+   <meta charset="utf-8">
+@@ -39,7 +39,22 @@
+       font-family: 'Google Sans', Roboto, sans-serif;
+     }
+ </if>
+-  </style>
++  
++    /* Krypton monochrome: paint the requested scheme before modules load. */
++    @media (forced-colors: none) {
++      html[krypton-settings-theme],
++      html[krypton-settings-theme][webui-refresh-2026],
++      html[krypton-settings-theme][settings-refresh-2026] {
++        background: light-dark(#fff, #000);
++        color: light-dark(#171717, #ededed);
++      }
++
++      html[krypton-settings-theme] body {
++        font-family: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
++      }
++    }
++
++    </style>
+ </head>
+ <body>
+   <link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
+--- a/chrome/browser/resources/settings/settings_columned_section_lit.css
++++ b/chrome/browser/resources/settings/settings_columned_section_lit.css
+@@ -113,3 +113,12 @@
+     }
+   }
+ }
++
++/* Krypton monochrome: older Settings versions use a literal blue here. */
++@media (forced-colors: none) {
++  .settings-columned-section .description-header,
++  :host-context([webui-refresh-2026])
++      .settings-columned-section .description-header {
++    color: var(--krypton-settings-foreground);
++  }
++}
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.css
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.css
+@@ -103,3 +103,41 @@
+   transition-delay: 0ms;
+   opacity: 0;
+ }
++
++    
++      /* Krypton monochrome: neutral navigation in both Settings variants. */
++      @media (forced-colors: none) {
++        #menu {
++          color: var(--krypton-settings-secondary);
++        }
++
++        .cr-nav-menu-item,
++        :host-context([settings-refresh-2026]) .cr-nav-menu-item {
++          border-radius: 6px;
++          --cr-nav-menu-item-color: var(--krypton-settings-secondary);
++          --cr-nav-menu-item-color-selected: var(--krypton-settings-foreground);
++          --cr-nav-menu-item-background-color-hover:
++              var(--krypton-settings-hover);
++          --cr-nav-menu-item-background-color-selected:
++              var(--krypton-settings-selected);
++          --cr-nav-menu-item-icon-color: var(--krypton-settings-secondary);
++          --cr-nav-menu-item-icon-color-hover: var(--krypton-settings-foreground);
++          --cr-nav-menu-item-icon-color-selected:
++              var(--krypton-settings-foreground);
++        }
++
++        .cr-nav-menu-item:focus,
++        :host-context([settings-refresh-2026]) .cr-nav-menu-item:focus {
++          border-radius: 6px;
++        }
++
++        .cr-nav-menu-item:focus-visible {
++          outline: 2px solid var(--krypton-settings-foreground);
++          outline-offset: 2px;
++        }
++
++        .menu-separator {
++          border-bottom: 1px solid var(--krypton-settings-border);
++        }
++      }
++
+--- a/chrome/browser/resources/settings/settings_page/settings_section.css
++++ b/chrome/browser/resources/settings/settings_page/settings_section.css
+@@ -68,3 +68,17 @@
+     border: var(--cr-border-hcm);
+   }
+ }
++
++/* Krypton monochrome: distinguish existing cards with a single fine border. */
++@media (forced-colors: none) {
++  #card {
++    border: 1px solid var(--krypton-settings-border);
++    box-shadow: none;
++  }
++
++  #header #title {
++    color: var(--krypton-settings-foreground);
++    font-weight: 600;
++    letter-spacing: -.2px;
++  }
++}
+--- a/chrome/browser/resources/settings/settings_page/settings_subpage.css
++++ b/chrome/browser/resources/settings/settings_page/settings_subpage.css
+@@ -107,3 +107,12 @@
+   /* Keep normal icon spacing from subpage-title-extra controls. */
+   margin-inline-start: 16px;
+ }
++
++/* Krypton monochrome: subpages retain their existing card ownership. */
++@media (forced-colors: none) {
++  :host(:not(.multi-card)) {
++    border: 1px solid var(--krypton-settings-border);
++    border-radius: 8px;
++    box-shadow: none;
++  }
++}
+--- a/chrome/browser/resources/settings/settings_shared_lit.css
++++ b/chrome/browser/resources/settings/settings_shared_lit.css
+@@ -384,3 +384,26 @@
+ .flex {
+   flex: 1;
+ }
++
++/* Krypton monochrome: reuse Chromium's controls and existing section layout. */
++@media (forced-colors: none) {
++  :host,
++  :host-context([settings-refresh-2026]) {
++    --cr-card-border-radius: 8px;
++    --cr-card-shadow: none;
++  }
++
++  cr-button {
++    border-radius: 6px;
++  }
++
++  .md-select {
++    border-radius: 6px;
++    --md-select-bg-color: var(--krypton-settings-surface);
++    --md-select-option-bg-color: var(--krypton-settings-surface);
++  }
++
++  a[href] {
++    text-underline-offset: 3px;
++  }
++}
+--- a/chrome/browser/resources/settings/settings_ui/settings_ui.css
++++ b/chrome/browser/resources/settings/settings_ui/settings_ui.css
+@@ -111,3 +111,38 @@
+     padding: 0 3px;
+   }
+ }
++
++    
++      /* Krypton monochrome: a quiet header and an outlined search field. */
++      @media (forced-colors: none) {
++        :host {
++          background: var(--krypton-settings-page);
++          color: var(--krypton-settings-foreground);
++        }
++
++        cr-toolbar {
++          background: var(--krypton-settings-page);
++          border-bottom: 1px solid var(--krypton-settings-border);
++          color: var(--krypton-settings-foreground);
++          --cr-toolbar-header-font-weight: 600;
++          --cr-toolbar-search-field-background: var(--krypton-settings-surface);
++          --cr-toolbar-search-field-border-radius: 6px;
++          --cr-toolbar-search-field-input-text-color:
++              var(--krypton-settings-foreground);
++          --iron-icon-fill-color: var(--krypton-settings-secondary);
++        }
++
++        cr-toolbar::part(search-field),
++        :host-context([settings-refresh-2026]) cr-toolbar::part(search-field) {
++          border: 1px solid var(--krypton-settings-border);
++          border-radius: 6px;
++          box-sizing: border-box;
++          height: 36px;
++          padding: 4px 10px;
++        }
++
++        cr-toolbar::part(search-field):focus-within {
++          border-color: var(--krypton-settings-foreground);
++        }
++      }
++
+--- a/chrome/browser/resources/settings/settings_vars.css
++++ b/chrome/browser/resources/settings/settings_vars.css
+@@ -51,3 +51,154 @@
+     --color-settings-radio-card-selected: Highlight;
+   }
+ }
++
++/* Krypton monochrome: scope the palette to Settings, ahead of the dynamic
++ * html:not(#z) color-provider stylesheet. Keep system colors in HCM. */
++@media (forced-colors: none) {
++  html[krypton-settings-theme]:not(#z) {
++    --krypton-settings-page: #fff;
++    --krypton-settings-surface: #fff;
++    --krypton-settings-foreground: #171717;
++    --krypton-settings-secondary: #666;
++    --krypton-settings-disabled: #999;
++    --krypton-settings-border: #e5e5e5;
++    --krypton-settings-outline: #a3a3a3;
++    --krypton-settings-hover: #f5f5f5;
++    --krypton-settings-selected: #ebebeb;
++    --krypton-settings-on-primary: #fff;
++    --krypton-settings-state-hover: rgb(0 0 0 / 5%);
++    --krypton-settings-state-ripple: rgb(0 0 0 / 12%);
++
++    --md-background-color: var(--krypton-settings-page);
++    --iron-icon-fill-color: var(--krypton-settings-secondary);
++    --cr-primary-text-color: var(--krypton-settings-foreground);
++    --cr-secondary-text-color: var(--krypton-settings-secondary);
++    --cr-title-text-color: var(--krypton-settings-foreground);
++    --cr-link-color: var(--krypton-settings-foreground);
++    --cr-checked-color: var(--krypton-settings-foreground);
++    --cr-focus-outline-color: var(--krypton-settings-foreground);
++    --cr-focus-outline-inverse-color: var(--krypton-settings-on-primary);
++    --cr-card-background-color: var(--krypton-settings-surface);
++    --cr-card-border-radius: 8px;
++    --cr-card-shadow: none;
++    --cr-separator-color: var(--krypton-settings-border);
++    --cr-scrollable-border-color: var(--krypton-settings-border);
++    --cr-menu-background-color: var(--krypton-settings-surface);
++    --cr-menu-background-focus-color: var(--krypton-settings-hover);
++    --cr-focused-item-color: var(--krypton-settings-selected);
++    --cr-form-field-label-color: var(--krypton-settings-secondary);
++    --cr-hover-background-color: var(--krypton-settings-state-hover);
++    --cr-hover-on-subtle-background-color: var(--krypton-settings-state-hover);
++    --cr-hover-on-prominent-background-color: rgb(127 127 127 / 16%);
++    --cr-active-background-color: var(--krypton-settings-state-ripple);
++    --cr-active-on-primary-background-color: rgb(127 127 127 / 24%);
++    --cr-active-neutral-on-subtle-background-color:
++        var(--krypton-settings-state-ripple);
++
++    --color-primary-foreground: var(--krypton-settings-foreground);
++    --color-secondary-foreground: var(--krypton-settings-secondary);
++    --color-link-foreground-default: var(--krypton-settings-foreground);
++    --color-link-foreground-visited: var(--krypton-settings-secondary);
++    --color-icon: var(--krypton-settings-secondary);
++    --color-sys-primary: var(--krypton-settings-foreground);
++    --color-sys-on-primary: var(--krypton-settings-on-primary);
++    --color-sys-primary-container: var(--krypton-settings-selected);
++    --color-sys-on-primary-container: var(--krypton-settings-foreground);
++    --color-sys-secondary-container: var(--krypton-settings-selected);
++    --color-sys-on-secondary-container: var(--krypton-settings-foreground);
++    --color-sys-surface: var(--krypton-settings-surface);
++    --color-sys-on-surface: var(--krypton-settings-foreground);
++    --color-sys-on-surface-variant: var(--krypton-settings-secondary);
++    --color-sys-outline: var(--krypton-settings-outline);
++    --color-sys-divider: var(--krypton-settings-border);
++    --color-sys-state-focus-ring: var(--krypton-settings-foreground);
++    --color-sys-state-hover: var(--krypton-settings-state-hover);
++    --color-sys-state-hover-on-subtle: var(--krypton-settings-state-hover);
++    --color-sys-state-ripple-neutral-on-subtle:
++        var(--krypton-settings-state-ripple);
++    --color-webui-page-background: var(--krypton-settings-page);
++    --color-webui-card-background: var(--krypton-settings-surface);
++    --color-webui-dialog-background: var(--krypton-settings-surface);
++    --color-webui-dialog-container-background: var(--krypton-settings-surface);
++    --color-settings-webui-page-background: var(--krypton-settings-page);
++    --color-settings-section-background: var(--krypton-settings-surface);
++    --color-settings-title-text: var(--krypton-settings-foreground);
++    --color-settings-nav-menu-item-background: var(--krypton-settings-selected);
++    --color-settings-nav-menu-item-foreground: var(--krypton-settings-secondary);
++    --color-settings-nav-menu-item-foreground-selected:
++        var(--krypton-settings-foreground);
++    --color-settings-nav-menu-item-icon: var(--krypton-settings-secondary);
++    --color-settings-radio-card-selected: var(--krypton-settings-selected);
++    --color-settings-info-card-background: var(--krypton-settings-hover);
++    --color-settings-columned-section-description-header:
++        var(--krypton-settings-foreground);
++    --color-nav-menu-item: var(--krypton-settings-secondary);
++    --color-nav-menu-item-selected: var(--krypton-settings-foreground);
++    --color-nav-menu-item-background-hover: var(--krypton-settings-hover);
++    --color-nav-menu-item-background-selected: var(--krypton-settings-selected);
++
++    --color-button-background-prominent: var(--krypton-settings-foreground);
++    --color-button-foreground-prominent: var(--krypton-settings-on-primary);
++    --color-button-background-tonal: var(--krypton-settings-selected);
++    --color-button-foreground-tonal: var(--krypton-settings-foreground);
++    --color-button-foreground: var(--krypton-settings-foreground);
++    --color-button-border: var(--krypton-settings-border);
++    --color-button-background-prominent-disabled: var(--krypton-settings-hover);
++    --color-button-background-tonal-disabled: var(--krypton-settings-hover);
++    --color-button-foreground-disabled: var(--krypton-settings-disabled);
++    --color-button-border-disabled: var(--krypton-settings-border);
++    --color-checkbox-foreground-checked: var(--krypton-settings-foreground);
++    --color-checkbox-foreground-unchecked: var(--krypton-settings-secondary);
++    --color-checkbox-check: var(--krypton-settings-on-primary);
++    --color-radio-button-foreground-checked: var(--krypton-settings-foreground);
++    --color-radio-button-foreground-unchecked: var(--krypton-settings-secondary);
++    --color-radio-foreground-disabled: var(--krypton-settings-disabled);
++    --color-toggle-button-track-on: var(--krypton-settings-foreground);
++    --color-toggle-button-thumb-on: var(--krypton-settings-on-primary);
++    --color-toggle-button-thumb-on-hover: var(--krypton-settings-selected);
++    --color-toggle-button-track-off: var(--krypton-settings-border);
++    --color-toggle-button-thumb-off: var(--krypton-settings-secondary);
++    --color-toggle-button-track-on-disabled: var(--krypton-settings-hover);
++    --color-toggle-button-thumb-on-disabled: var(--krypton-settings-disabled);
++    --color-toggle-button-thumb-off-disabled: var(--krypton-settings-disabled);
++    --color-textfield-filled-background: var(--krypton-settings-hover);
++    --color-textfield-filled-underline: var(--krypton-settings-border);
++    --color-textfield-filled-underline-focused: var(--krypton-settings-foreground);
++    --color-textfield-foreground-label: var(--krypton-settings-secondary);
++    --color-textfield-foreground-icon: var(--krypton-settings-secondary);
++    --color-textfield-foreground-placeholder: var(--krypton-settings-secondary);
++    --color-textfield-background-disabled: var(--krypton-settings-hover);
++    --color-textfield-foreground-disabled: var(--krypton-settings-disabled);
++    --color-combobox-container-outline: var(--krypton-settings-border);
++    --color-combobox-background-disabled: var(--krypton-settings-hover);
++    --color-comboxbox-ink-drop-hovered: var(--krypton-settings-hover);
++    --color-toolbar-search-field-background: var(--krypton-settings-surface);
++    --color-toolbar-search-field-background-hover: var(--krypton-settings-hover);
++    --color-toolbar-search-field-foreground: var(--krypton-settings-foreground);
++    --color-toolbar-search-field-text-color: var(--krypton-settings-foreground);
++    --color-toolbar-search-field-foreground-placeholder:
++        var(--krypton-settings-secondary);
++    --color-toolbar-search-field-icon: var(--krypton-settings-secondary);
++    --color-side-panel-textfield-border: var(--krypton-settings-border);
++    --search-highlight-hit-background-color: var(--krypton-settings-selected);
++    --search-highlight-hit-color: var(--krypton-settings-foreground);
++    --search-highlight-hit-font-weight: 600;
++  }
++}
++
++@media (prefers-color-scheme: dark) and (forced-colors: none) {
++  html[krypton-settings-theme]:not(#z) {
++    --krypton-settings-page: #000;
++    --krypton-settings-surface: #0a0a0a;
++    --krypton-settings-foreground: #ededed;
++    --krypton-settings-secondary: #a1a1a1;
++    --krypton-settings-disabled: #666;
++    --krypton-settings-border: #262626;
++    --krypton-settings-outline: #666;
++    --krypton-settings-hover: #141414;
++    --krypton-settings-selected: #1f1f1f;
++    --krypton-settings-on-primary: #0a0a0a;
++    --krypton-settings-state-hover: rgb(255 255 255 / 6%);
++    --krypton-settings-state-ripple: rgb(255 255 255 / 14%);
++  }
++}

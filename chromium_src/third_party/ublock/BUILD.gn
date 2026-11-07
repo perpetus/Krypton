@@ -1,0 +1,56 @@
+# Copyright 2025 The Helium Authors
+# You can use, redistribute, and/or modify this source code under
+# the terms of the GPL-3.0 license that can be found in the LICENSE file.
+
+import("//ui/webui/resources/tools/generate_grd.gni")
+import("//tools/grit/grit_rule.gni")
+
+file_list = "$target_gen_dir/files.json"
+compressed_assets = "$target_gen_dir/compressed_assets.grdp"
+generated_grd = "$target_gen_dir/ublock_resources.grd"
+
+action("generate_file_list") {
+    script = "generate_file_list.py"
+    args = [
+        rebase_path("."),
+        rebase_path(file_list),
+        rebase_path(compressed_assets),
+        rebase_path(root_gen_dir),
+    ]
+    inputs = [
+        "manifest.json",
+        "generate_file_list.py",
+        "//ui/webui/resources/tools/generate_grd.py",
+    ]
+    outputs = [ file_list, compressed_assets ]
+}
+
+generate_grd("ublock_grd") {
+    out_grd = generated_grd
+
+    grd_prefix = "ublock"
+    resource_path_prefix = "ublock"
+
+    manifest_files = [ file_list ]
+    grdp_files = [ compressed_assets ]
+    deps = [":generate_file_list"]
+}
+
+grit("ublock") {
+    source = generated_grd
+
+    # Required because the .grd is generated.
+    enable_input_discovery_for_gn_analyze = false
+    use_brotli = true
+
+    output_dir = "$target_gen_dir/resources"
+
+    outputs = [
+        "grit/ublock_resources.h",
+        "grit/ublock_resources_map.cc",
+        "grit/ublock_resources_map.h",
+        "ublock_resources.pak"
+    ]
+
+    deps = [":ublock_grd"]
+}

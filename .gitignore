@@ -1,0 +1,50 @@
+# Generated Chromium checkout, downloads, validation subset and staged
+# resources. Everything under build/ is reproducible from this repository.
+/build/
+out/
+*.pyc
+__pycache__/
+logs/
+*.log
+.vscode/
+.idea/
+.serena/
+
+# Local command history and build-run reports.
+/rtk/
+/siso_result.json
+
+# Local agent handoffs, credentials and machine-specific build artifacts.
+/.agents/
+/.codex/
+/.t3/
+/.env
+/.env.*
+!/.env.example
+/docs/build-agent-handoff.md
+*.pdb
+*.obj
+*.ilk
+*.ipdb
+*.iobj
+*.dmp
+*.dump
+*.pfx
+*.p12
+*-private.key
+*private*.pem
+
+# Helium is the only retained browser-source submodule.
+/upstream/*
+!/upstream/helium-windows/
+
+# Internal documentation stays local; public legal notices remain included.
+/docs/
+*.md
+!/README.md
+!/CREDITS.md
+!/THIRD_PARTY_NOTICES.md
+!**/NOTICE.md
+!**/*NOTICE*.md
+!**/LICENSE.md
+!**/COPYING.md
