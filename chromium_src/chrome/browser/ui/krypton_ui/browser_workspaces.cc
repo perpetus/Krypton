@@ -6,8 +6,10 @@
 
 #include "base/auto_reset.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,14 +18,12 @@
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/browser/ui/accelerator_utils.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/browser_actions.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/chrome_pages.h"
-#include "chrome/browser/ui/krypton_ui/action_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/browser_adapter.h"
 #include "chrome/browser/ui/krypton_ui/essential_prefs.h"
 #include "chrome/browser/ui/krypton_ui/layout_menus.h"
@@ -35,13 +35,14 @@
 #include "chrome/browser/ui/krypton_ui/sidebar_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/site_customization.h"
 #include "chrome/browser/ui/krypton_ui/site_data_menu_model.h"
+#include "chrome/browser/ui/krypton_ui/site_info_menu.h"
+#include "chrome/browser/ui/krypton_ui/site_permissions.h"
 #include "chrome/browser/ui/krypton_ui/workspace_close.h"
 #include "chrome/browser/ui/krypton_ui/workspace_menu.h"
 #include "chrome/browser/ui/krypton_ui/workspace_session.h"
 #include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
-#include "chrome/browser/ui/toolbar/app_menu_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/site_data/page_specific_site_data_dialog.h"
 #include "chrome/grit/generated_resources.h"
@@ -50,15 +51,67 @@
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/clear_site_data_utils.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/actions/actions.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/color/color_id.h"
 #include "ui/color/color_provider.h"
+#include "ui/menus/simple_menu_model.h"
+#include "url/origin.h"
 
 namespace krypton_ui {
 namespace {
+class SiteToolsOverflow final : public ui::SimpleMenuModel,
+                                public ui::SimpleMenuModel::Delegate {
+ public:
+  enum Command {
+    kClearSiteData = 0x6c200000,
+    kManageExtensions,
+    kAddExtensions,
+    kAllSiteSettings,
+    kConfirmClearSiteData,
+    kCancel,
+  };
+  using Enabled = base::RepeatingCallback<bool(Command)>;
+  using Invoke = base::RepeatingCallback<void(Command)>;
+
+  SiteToolsOverflow(std::u16string origin, Enabled enabled, Invoke invoke)
+      : SimpleMenuModel(this),
+        enabled_(std::move(enabled)),
+        invoke_(std::move(invoke)) {
+    AddSubMenu(kClearSiteData, u"Clear cookies and site data\u2026",
+               &confirmation_);
+    AddSeparator(ui::NORMAL_SEPARATOR);
+    AddItemWithStringId(kManageExtensions, IDS_MANAGE_EXTENSIONS);
+    AddItem(kAddExtensions, u"Add Extensions");
+    AddSeparator(ui::NORMAL_SEPARATOR);
+    AddItem(kAllSiteSettings, u"All Site Settings");
+    confirmation_.AddTitle(origin);
+    confirmation_.AddTitle(
+        u"Cookies and site data will be removed. You may be signed out.");
+    confirmation_.AddItem(kConfirmClearSiteData, u"Clear data");
+    confirmation_.AddItemWithStringId(kCancel, IDS_CANCEL);
+  }
+
+  bool IsCommandIdEnabled(int command) const override {
+    return command >= kClearSiteData && command <= kCancel &&
+           enabled_.Run(static_cast<Command>(command));
+  }
+  void ExecuteCommand(int command, int event_flags) override {
+    if (IsCommandIdEnabled(command) && command != kCancel)
+      invoke_.Run(static_cast<Command>(command));
+  }
+
+ private:
+  const Enabled enabled_;
+  const Invoke invoke_;
+  ui::SimpleMenuModel confirmation_{this};
+};
+
 BrowserAdapter* WorkspaceAdapter(const TabStripModel& model) {
   const auto* active = model.GetActiveTab();
   auto* browser = active ? active->GetBrowserWindowInterface() : nullptr;
@@ -294,6 +347,24 @@ void BrowserAdapter::OnEssentialsChanged() {
     params.user_gesture = false;
     Navigate(&params);
   }
+  // Apply the shared catalog order without selecting a tab or changing focus.
+  // Chromium retains its pinned-tab boundaries and all ordinary-tab ordering.
+  auto* model = browser_->GetTabStripModel();
+  int destination = 0;
+  for (const auto& entry : catalog.items) {
+    tabs::TabInterface* essential = nullptr;
+    for (auto* tab : *model)
+      if (EssentialForTab(tab->GetContents()) == entry.id) {
+        essential = tab;
+        break;
+      }
+    if (!essential)
+      continue;
+    if (model->GetIndexOfTab(essential) != destination)
+      model->MoveWebContentsAt(model->GetIndexOfTab(essential), destination,
+                               false);
+    destination = model->GetIndexOfTab(essential) + 1;
+  }
   PublishSelection();
 }
 
@@ -446,6 +517,8 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateContextMenu(
   if (kind == KR_MENU_SITE_DATA) {
     return CreateSiteDataMenu(*target);
   }
+  if (kind == KR_MENU_SECURITY)
+    return CreateSiteInfoMenu(*browser_, *target);
   if (kind == KR_MENU_TAB) {
     auto can_move = base::BindRepeating(
         [](base::WeakPtr<BrowserAdapter> owner,
@@ -560,11 +633,15 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateSiteDataMenu(
   auto owner = weak_factory_.GetWeakPtr();
   auto tab = target.GetWeakPtr();
   const auto url = target.GetContents()->GetVisibleURL();
+  const auto document =
+      target.GetContents()->GetPrimaryMainFrame()->GetWeakDocumentPtr();
   auto state = base::BindRepeating(
       [](base::WeakPtr<BrowserAdapter> owner,
          base::WeakPtr<tabs::TabInterface> tab,
+         const content::WeakDocumentPtr& document,
          const GURL& url) -> std::optional<SiteDataMenuModel::State> {
         if (!owner || !tab || owner->closed_ ||
+            !document.AsRenderFrameHostIfValid() ||
             owner->browser_->GetActiveTabInterface() != tab.get() ||
             tab->GetContents()->GetVisibleURL() != url) {
           return std::nullopt;
@@ -595,7 +672,7 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateSiteDataMenu(
         }
         return state;
       },
-      owner, tab, url);
+      owner, tab, document, url);
   std::vector<SiteDataMenuModel::Action> actions;
   const auto add = [&](int command, actions::ActionId id, int label) {
     auto* action = actions::ActionManager::Get().FindAction(
@@ -607,21 +684,76 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateSiteDataMenu(
   };
   add(IDC_BOOKMARK_THIS_TAB, kActionBookmarkThisTab, IDS_BOOKMARK_THIS_TAB);
   add(IDC_SHARING_HUB, kActionSharingHub, IDS_SHARING_HUB_TOOLTIP);
-  auto browser_tools = std::make_unique<AppMenuModel>(
-      AcceleratorProviderForBrowser(&*browser_), &*browser_);
-  browser_tools->Init();
-  std::unique_ptr<ui::MenuModel> more = std::move(browser_tools);
-  if (site_customization_) {
-    std::vector<ActionMenuModel::Submenu> extras;
-    extras.push_back(
-        {0x6d620003, u"Workspaces", CreateWorkspaceMenu(active_space_)});
-    extras.push_back(
-        {0x6d620001, u"Workspace routing", site_customization_->RoutingMenu()});
-    extras.push_back(
-        {0x6d620002, u"Site boosts", site_customization_->BoostMenu()});
-    more =
-        std::make_unique<ActionMenuModel>(std::move(more), std::move(extras));
-  }
+  auto more = std::make_unique<SiteToolsOverflow>(
+      base::UTF8ToUTF16(url::Origin::Create(url).Serialize()),
+      base::BindRepeating(
+          [](base::WeakPtr<BrowserAdapter> owner,
+             SiteDataMenuModel::ReadState state,
+             SiteToolsOverflow::Command command) {
+            const auto current = state.Run();
+            if (!current)
+              return false;
+            switch (command) {
+              case SiteToolsOverflow::kManageExtensions:
+                return chrome::IsCommandEnabled(&*owner->browser_,
+                                                IDC_MANAGE_EXTENSIONS);
+              case SiteToolsOverflow::kAddExtensions:
+                return chrome::IsCommandEnabled(
+                    &*owner->browser_,
+                    IDC_EXTENSIONS_SUBMENU_VISIT_CHROME_WEB_STORE);
+              case SiteToolsOverflow::kCancel:
+                return true;
+              default:
+                return current->site_available;
+            }
+          },
+          owner, state),
+      base::BindRepeating(
+          [](base::WeakPtr<BrowserAdapter> owner,
+             SiteDataMenuModel::ReadState state, const GURL& url,
+             SiteToolsOverflow::Command command) {
+            if (!state.Run())
+              return;
+            switch (command) {
+              case SiteToolsOverflow::kConfirmClearSiteData:
+                content::ClearSiteData(
+                    owner->browser_->GetProfile()->GetWeakPtr(),
+                    /*storage_partition_config=*/std::nullopt,
+                    url::Origin::Create(url),
+                    {content::ClearSiteDataType::kCookies,
+                     content::ClearSiteDataType::kStorage},
+                    /*storage_buckets_to_remove=*/{},
+                    /*avoid_closing_connections=*/false,
+                    /*cookie_partition_key=*/std::nullopt,
+                    /*storage_key=*/std::nullopt,
+                    /*partitioned_state_allowed_only=*/false,
+                    base::DoNothing());
+                break;
+              case SiteToolsOverflow::kManageExtensions:
+                chrome::ExecuteCommand(&*owner->browser_,
+                                       IDC_MANAGE_EXTENSIONS);
+                break;
+              case SiteToolsOverflow::kAddExtensions:
+                chrome::ExecuteCommand(
+                    &*owner->browser_,
+                    IDC_EXTENSIONS_SUBMENU_VISIT_CHROME_WEB_STORE);
+                break;
+              case SiteToolsOverflow::kAllSiteSettings:
+                if (const auto* api = owner->session_.api();
+                    KR_HAS_SLOT(api, KrShellUI, show_site_permissions) &&
+                    api->show_site_permissions) {
+                  const auto origin = url::Origin::Create(url).Serialize();
+                  api->show_site_permissions(api->self,
+                                             {origin.data(), origin.size()});
+                } else {
+                  chrome::ShowSiteSettings(&*owner->browser_, url);
+                }
+                break;
+              default:
+                break;
+            }
+          },
+          owner, state, url));
   return std::make_unique<SiteDataMenuModel>(
       actions,
       extensions_ ? extensions_->CreateMenu(NativeExtensions::kMenuAction, true)
@@ -688,8 +820,20 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateSiteDataMenu(
                 break;
               }
               case SiteDataMenuModel::kSiteSettings:
-                chrome::ShowSiteSettings(&*owner->browser_,
-                                         tab->GetContents()->GetVisibleURL());
+                if (const auto* api = owner->session_.api();
+                    api && tab->GetContents()
+                               ->GetLastCommittedURL()
+                               .SchemeIsHTTPOrHTTPS()) {
+                  const auto origin =
+                      url::Origin::Create(
+                          tab->GetContents()->GetLastCommittedURL())
+                          .Serialize();
+                  api->show_site_permissions(api->self,
+                                             {origin.data(), origin.size()});
+                } else {
+                  chrome::ShowSiteSettings(&*owner->browser_,
+                                           tab->GetContents()->GetVisibleURL());
+                }
                 break;
               case SiteDataMenuModel::kProtection:
                 ShowPageSpecificSiteDataDialog(tab->GetContents());

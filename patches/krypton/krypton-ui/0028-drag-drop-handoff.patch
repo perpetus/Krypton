@@ -1,0 +1,13 @@
+# Keep a web-content URL drag revealed while its pointer enters a XAML island.
+# Terminal drag-ended handling still clears state; no focus or capture changes.
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -3570,7 +3570,7 @@
+ void BrowserView::PreHandleDragExit() {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+   if (krypton_ui_)
+-    krypton_ui_->UrlDragChanged({}, false);
++    krypton_ui_->UrlDragExited();
+ #endif
+   if (multi_contents_view_->IsDragAndDropEnabled()) {
+     multi_contents_view_->drop_target_controller().OnWebContentsDragExit();

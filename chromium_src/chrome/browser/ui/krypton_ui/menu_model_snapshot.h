@@ -39,6 +39,7 @@ class MenuModelSnapshot final : public ui::MenuModelDelegate {
           const ui::ImageModel&)>;
   // Returns a static UTF-8 symbol glyph for a source command id, or empty.
   using GlyphTable = std::string_view (*)(int command_id);
+  using KeepOpen = bool (*)(int command_id);
   using PanelRow = MenuPanelRow;
 
   MenuModelSnapshot(
@@ -54,7 +55,9 @@ class MenuModelSnapshot final : public ui::MenuModelDelegate {
       ui::MenuModel& model,
       const ui::ColorProvider* colors = nullptr,
       GlyphTable glyphs = nullptr,
-      base::span<const int> root_commands = {});
+      base::span<const int> root_commands = {},
+      KeepOpen keep_open = nullptr);
+  [[nodiscard]] bool KeepsOpen(int32_t command) const;
   void Clear();
   [[nodiscard]] bool valid() const { return valid_; }
   [[nodiscard]] base::span<const KrMenu> menus() const;
@@ -139,6 +142,7 @@ class MenuModelSnapshot final : public ui::MenuModelDelegate {
   raw_ptr<const ui::ColorProvider> colors_ = nullptr;
   // Set only while Capture runs.
   GlyphTable glyphs_ = nullptr;
+  KeepOpen keep_open_ = nullptr;
   base::span<const int> root_commands_;
   const base::RepeatingClosure invalidated_;
   std::vector<MenuData> data_;

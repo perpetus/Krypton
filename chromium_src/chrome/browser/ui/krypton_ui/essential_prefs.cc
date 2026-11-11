@@ -94,4 +94,25 @@ bool RemoveEssential(PrefService& prefs, uint64_t id) {
   Write(prefs, catalog);
   return true;
 }
+bool ReorderEssentials(PrefService& prefs, std::span<const uint64_t> order) {
+  auto catalog = ReadEssentials(prefs);
+  if (order.size() != catalog.items.size())
+    return false;
+  auto reordered = catalog.items;
+  for (size_t index = 0; index < order.size(); ++index) {
+    const auto found = std::find_if(
+        reordered.begin() + index, reordered.end(),
+        [&](const Essential& item) { return item.id == order[index]; });
+    if (found == reordered.end())
+      return false;
+    std::rotate(reordered.begin() + index, found, found + 1);
+  }
+  if (std::equal(
+          catalog.items.begin(), catalog.items.end(), reordered.begin(),
+          [](const Essential& a, const Essential& b) { return a.id == b.id; }))
+    return true;
+  catalog.items = std::move(reordered);
+  Write(prefs, catalog);
+  return true;
+}
 }  // namespace krypton_ui

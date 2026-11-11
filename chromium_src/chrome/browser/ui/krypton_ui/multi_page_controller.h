@@ -52,6 +52,7 @@ class PaneOutline;
 class MultiPageMenuModel;
 class GlanceControlsView;
 class GlanceBackdrop;
+class GlanceGenie;
 
 struct MultiPageVisibilityChange {
   bool handled = false;
@@ -89,6 +90,12 @@ class MultiPageController {
   // The module resolved a new outline colour for the focused page.
   void OutlineChanged();
   void ExpandPane(KrTabId tab, KrSplitGroupId group, uint64_t revision);
+  bool BeginPaneDrag(KrTabId tab, KrSplitGroupId group, uint64_t revision);
+  bool UpdatePaneDrag(KrTabId tab,
+                      KrSplitGroupId group,
+                      uint64_t revision,
+                      gfx::Point screen);
+  void CancelPaneDrag(KrTabId tab, KrSplitGroupId group, uint64_t revision);
   void DropPane(KrTabId tab,
                 KrSplitGroupId group,
                 uint64_t revision,
@@ -174,10 +181,17 @@ class MultiPageController {
   void PublishGlance();
   void BindVisible(tabs::TabInterface* selected);
   void EnsureChrome();
+  void ClearPaneDrag();
+  std::optional<size_t> PaneDropIndex(KrTabId tab,
+                                      KrSplitGroupId group,
+                                      uint64_t revision,
+                                      gfx::Point screen) const;
   void ScheduleGlancePresentation(ContentsContainerView* parent,
                                   gfx::Size size);
   void FinishGlanceOpen(KrGlanceState expected);
   void AnimateGlanceCard(bool opening, base::OnceClosure complete = {});
+  // Ends a running magic lamp in its final state and runs its completion.
+  void CancelGlanceGenie();
   void FinishGlanceClose(KrGlanceState expected,
                          base::WeakPtr<content::WebContents> contents);
   void UpdateGlanceParent(ContentsContainerView* parent,
@@ -197,6 +211,14 @@ class MultiPageController {
   std::array<size_t, 4> pane_containers_{};
   std::array<raw_ptr<PaneDivider>, 3> dividers_{};
   raw_ptr<PaneOutline> outline_ = nullptr;
+  raw_ptr<PaneOutline> drop_outline_ = nullptr;
+  struct PaneDrag {
+    KrTabId tab;
+    KrSplitGroupId group;
+    uint64_t revision;
+    std::optional<size_t> target;
+  };
+  std::optional<PaneDrag> pane_drag_;
   std::array<raw_ptr<PaneHeader>, 4> pane_controls_{};
   std::array<std::unique_ptr<MultiPageMenuModel>, 4> pane_menus_;
   std::array<base::ScopedClosureRunner, 4> pane_menu_leases_;
@@ -233,6 +255,7 @@ class MultiPageController {
   bool glance_fast_resize_before_ = false;
   raw_ptr<ContentsContainerView> desired_glance_parent_ = nullptr;
   gfx::Size desired_glance_parent_size_;
+  std::unique_ptr<GlanceGenie> glance_genie_;
   base::WeakPtrFactory<MultiPageController> weak_factory_{this};
 };
 

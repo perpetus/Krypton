@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -28,5 +29,6 @@ std::optional<uint64_t> SaveEssential(PrefService& prefs,
                                       uint64_t id,
                                       std::string url);
 bool RemoveEssential(PrefService& prefs, uint64_t id);
+bool ReorderEssentials(PrefService& prefs, std::span<const uint64_t> order);
 }  // namespace krypton_ui
 #endif

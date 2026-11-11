@@ -64,3 +64,12 @@ krypton/chromium-157/native-build-targets.patch
 krypton/chromium-157/production-dependencies.patch
 krypton/chromium-157/drop-unused-service-includes.patch
 krypton/build/windows-optimized-thinlto.patch
+
+# Site customization and native permission/site-info integration use the 157
+# build target layout above.
+krypton/krypton-ui/0024-site-styles.patch
+krypton/krypton-ui/0025-native-boost-colors.patch
+krypton/krypton-ui/0026-permissions-url-drop.patch
+krypton/krypton-ui/0027-site-info-winui.patch
+krypton/krypton-ui/0028-drag-drop-handoff.patch
+krypton/krypton-ui/0029-transparent-new-tab-page.patch

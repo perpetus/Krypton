@@ -11,6 +11,27 @@
 
 import("//build/buildflag_header.gni")
 import("//chrome/browser/ui/krypton_ui/features.gni")
+
+# A private, statically linked Google Zucchini tool for the native updater.
+# Reuse the browser's configured libraries without rebuilding the browser.
+if (is_win) {
+  executable("krypton_patch") {
+    output_name = "KryptonPatch"
+    sources = [
+      "//components/zucchini/main_utils.cc",
+      "//components/zucchini/main_utils.h",
+      "//components/zucchini/zucchini_commands.cc",
+      "//components/zucchini/zucchini_commands.h",
+      "//components/zucchini/zucchini_main.cc",
+    ]
+    deps = [
+      "//base",
+      "//build/win:default_exe_manifest",
+      "//components/zucchini:zucchini_io",
+      "//components/zucchini:zucchini_lib",
+    ]
+  }
+}
 import("//testing/test.gni")
 
 buildflag_header("buildflags") {
@@ -385,6 +406,8 @@ source_set("native_headers") {
       "sidebar_media.h",
       "sidebar_services.h",
       "site_customization.h",
+      "site_info_menu.h",
+      "site_permissions.h",
       "workspace_close.h",
     ]
     public_deps += [
@@ -416,7 +439,10 @@ source_set("native_headers") {
       "//chrome/browser/ui/views/frame:toolbar_button_provider",
       "//chrome/browser/ui/views/toolbar",
       "//chrome/browser/ui/views/toolbar:app_menu_control",
+      "//components/content_settings/core/browser",
       "//components/omnibox/browser",
+      "//components/page_info",
+      "//components/permissions",
       "//components/prefs",
       "//components/renderer_context_menu",
       "//components/user_data_importer/common",
@@ -463,6 +489,9 @@ source_set("native_windows") {
       "sidebar_media.cc",
       "sidebar_services.cc",
       "site_customization.cc",
+      "site_info_menu.cc",
+      "site_permissions.cc",
+      "url_drop.cc",
     ]
     deps = [
       ":native_headers",
@@ -475,10 +504,12 @@ source_set("native_windows") {
       "//chrome/app/theme:theme_resources",
       "//chrome/browser:browser_process",
       "//chrome/browser:browser_public_dependencies",
+      "//chrome/browser:helium_noise_settings_headers",
       "//chrome/browser:primitives",
       "//chrome/browser/actor/ui:actor_overlay_web_view",
       "//chrome/browser/app_mode",
       "//chrome/browser/browsing_data",
+      "//chrome/browser/content_settings",
       "//chrome/browser/desktop_to_mobile_promos:utils",
       "//chrome/browser/devtools",
       "//chrome/browser/enterprise",
@@ -665,7 +696,9 @@ source_set("native_windows") {
       "//chrome/common:mojo_bindings",
       "//chrome/common:non_code_constants",
       "//components/autofill/core/common:features",
+      "//components/browsing_data/content",
       "//components/collaboration/public",
+      "//components/content_settings/browser/ui",
       "//components/content_settings/core/common:features",
       "//components/enterprise/buildflags",
       "//components/favicon/content",
@@ -685,10 +718,12 @@ source_set("native_windows") {
       "//components/sessions",
       "//components/split_tabs",
       "//components/startup_metric_utils",
+      "//components/strings",
       "//components/sync/service",
       "//components/tabs:enum",
       "//components/tabs:public",
       "//components/translate/core/browser",
+      "//components/url_formatter",
       "//components/user_data_importer/common",
       "//components/user_education/common",
       "//components/user_education/common:features",

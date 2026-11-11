@@ -113,11 +113,13 @@ base::expected<void, std::string> MenuModelSnapshot::Capture(
     ui::MenuModel& model,
     const ui::ColorProvider* colors,
     GlyphTable glyphs,
-    base::span<const int> root_commands) {
+    base::span<const int> root_commands,
+    KeepOpen keep_open) {
   Clear();
   const base::AutoReset<raw_ptr<const ui::ColorProvider>> scoped_colors(
       &colors_, colors);
   const base::AutoReset<GlyphTable> scoped_glyphs(&glyphs_, glyphs);
+  const base::AutoReset<KeepOpen> scoped_keep_open(&keep_open_, keep_open);
   const base::AutoReset<base::span<const int>> scoped_commands(&root_commands_,
                                                                root_commands);
   std::vector<SourceItem> path;
@@ -280,6 +282,8 @@ MenuModelSnapshot::CaptureItem(ui::MenuModel& model, size_t index) {
   metadata.struct_size = sizeof(KrMenuItemMetadata);
   metadata.source_type = type;
   metadata.source_command_id = result.value.command_id;
+  if (keep_open_ && keep_open_(metadata.source_command_id))
+    result.value.flags |= KR_MENU_ITEM_KEEP_OPEN;
   metadata.source_index = index;
   metadata.source_button_type = -1;
   metadata.radio_group = model.GetGroupIdAt(index);
@@ -491,6 +495,14 @@ void MenuModelSnapshot::AddCommand(ItemData& item, Command command) {
   CHECK_LT(next_command_, std::numeric_limits<int32_t>::max());
   item.value.command_id = ++next_command_;
   commands_.emplace(next_command_, std::move(command));
+}
+
+bool MenuModelSnapshot::KeepsOpen(int32_t command) const {
+  for (const auto& menu : data_)
+    for (const auto& item : menu.data)
+      if (item.value.command_id == command)
+        return (item.value.flags & KR_MENU_ITEM_KEEP_OPEN) != 0;
+  return false;
 }
 
 base::OnceClosure MenuModelSnapshot::CaptureCommand(uint32_t request_id,

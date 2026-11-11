@@ -146,6 +146,9 @@ void NativeBackdrop::Rebuild(gfx::Size size) const {
           SkTileMode::kClamp);
     }
     paints_[index].setShader(std::move(shader));
+    // Keep quantization contours out of the exposed New Tab Page backdrop.
+    // Skia dithers on the raster/GPU path without an animated noise overlay.
+    paints_[index].setDither(true);
   }
 }
 

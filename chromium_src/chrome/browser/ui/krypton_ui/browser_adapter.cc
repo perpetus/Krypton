@@ -35,6 +35,7 @@
 #include "chrome/browser/image_editor/screenshot_flow.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -61,6 +62,7 @@
 #include "chrome/browser/ui/krypton_ui/privacy_features_bridge.h"
 #include "chrome/browser/ui/krypton_ui/sidebar_services.h"
 #include "chrome/browser/ui/krypton_ui/site_data_menu_model.h"
+#include "chrome/browser/ui/krypton_ui/site_permissions.h"
 #include "chrome/browser/ui/krypton_ui/workspace_session.h"
 #include "chrome/browser/ui/page_info/page_info_dialog.h"
 #include "chrome/browser/ui/performance_controls/tab_resource_usage_collector.h"
@@ -71,10 +73,14 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/frame/contents_container_view.h"
+#include "chrome/browser/ui/views/frame/contents_web_view.h"
+#include "chrome/browser/ui/views/frame/multi_contents_view.h"
 #include "chrome/browser/ui/views/site_data/page_specific_site_data_dialog.h"
 #include "chrome/browser/ui/views/tabs/hovercard/hover_card_anchor_target.h"
 #include "chrome/browser/ui/views/tabs/hovercard/tab_hover_card_thumbnail_observer.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/favicon/content/content_favicon_driver.h"
 #include "components/omnibox/browser/location_bar_model.h"
@@ -238,6 +244,7 @@ class BrowserAdapter::Tab final : public content::WebContentsObserver {
     }
     Changed();
     owner_->PublishNavigation();
+    owner_->SchedulePageBackgrounds();
     if (tab_) {
       owner_->UpdateEssential(*tab_);
     }
@@ -667,6 +674,7 @@ void BrowserAdapter::Close() {
   menus_->CloseAll();
   site_customization_.reset();
   browser_services_.reset();
+  site_permissions_.reset();
   screenshot_.reset();
   sidebar_.reset();
   location_->Close();
@@ -858,6 +866,43 @@ void BrowserAdapter::OnTabStripModelChanged(
       change.type() == TabStripModelChange::kReplaced) {
     PublishSelection();
     PublishNavigation();
+    SchedulePageBackgrounds();
+  }
+}
+
+void BrowserAdapter::SchedulePageBackgrounds() {
+  if (page_backgrounds_scheduled_) {
+    return;
+  }
+  page_backgrounds_scheduled_ = true;
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&BrowserAdapter::UpdatePageBackgrounds,
+                                weak_factory_.GetWeakPtr()));
+}
+
+void BrowserAdapter::UpdatePageBackgrounds() {
+  page_backgrounds_scheduled_ = false;
+  auto* pages = view_->multi_contents_view();
+  if (!pages) {
+    return;
+  }
+  for (ContentsContainerView* container : pages->contents_container_views()) {
+    ContentsWebView* web_view =
+        container ? container->contents_view() : nullptr;
+    if (!web_view) {
+      continue;
+    }
+    // A new tab has no committed entry yet; its pending chrome://newtab is
+    // visible. Leaving the page waits for the next page to commit.
+    bool new_tab_page = false;
+    if (auto* contents = web_view->web_contents()) {
+      const GURL& committed = contents->GetLastCommittedURL();
+      const GURL& url =
+          committed.is_empty() ? contents->GetVisibleURL() : committed;
+      new_tab_page =
+          search::IsNTPURL(url) || url == GURL(chrome::kChromeUINewTabURL);
+    }
+    web_view->SetBackgroundVisible(!new_tab_page);
   }
 }
 
@@ -1144,13 +1189,24 @@ void BrowserAdapter::RefreshPageMenu(const ui::MenuModel& model) {
 
 base::expected<void, std::string> BrowserAdapter::ShowPageInfo(
     tabs::TabInterface* tab) {
-  if (!tab) {
+  if (!tab || tab->GetBrowserWindowInterface() != &*browser_ ||
+      browser_->GetActiveTabInterface() != tab) {
     return base::unexpected("There is no page to describe.");
   }
-  if (!ShowPageInfoDialog(tab->GetContents(), base::DoNothing(),
-                          bubble_anchor_util::Anchor::kLocationBar)) {
-    return base::unexpected("This page has no page information.");
+  const auto* api = session_.api();
+  if (!api)
+    return base::unexpected("The native shell is closed.");
+  auto bounds = location_->Bounds();
+  if (bounds.IsEmpty()) {
+    bounds = views::View::ConvertRectFromScreen(
+        &*view_, tab->GetContents()->GetContainerBounds());
+    bounds.set_height(0);
   }
+  api->request_context_menu(
+      api->self, KR_MENU_SECURITY, 0,
+      {static_cast<float>(bounds.x()), static_cast<float>(bounds.y()),
+       static_cast<float>(bounds.width()),
+       static_cast<float>(bounds.height())});
   return {};
 }
 
@@ -1205,14 +1261,52 @@ void BrowserAdapter::MoveTab(KrTabId id, KrSpaceId space, size_t index) {
     const bool follow = tab->IsActivated() && space != active_space_;
     AssignWorkspace(*tab, space);
     PublishTab(*tab);
+    if (EssentialForTab(tab->GetContents())) {
+      AlignEssentialPin(*tab, base::checked_cast<int>(index));
+    }
     model->MoveWebContentsAt(model->GetIndexOfTab(tab),
                              base::checked_cast<int>(index), false);
+    if (EssentialForTab(tab->GetContents())) {
+      std::vector<uint64_t> order;
+      for (auto* item : *model)
+        if (const auto essential = EssentialForTab(item->GetContents()))
+          order.push_back(essential);
+      std::ignore =
+          ReorderEssentials(*browser_->GetProfile()->GetPrefs(), order);
+    }
     PublishSelection();
     if (follow) {
       SwitchWorkspace(space);
     }
   }
 }
+// Chromium keeps pinned tabs before the others, while the Essentials grid
+// shows Essentials in strip order whatever their pinned state. Match a moved
+// Essential's state to the tab it lands beside, so the strip can hold the
+// order the grid asked for.
+void BrowserAdapter::AlignEssentialPin(tabs::TabInterface& tab, int to_index) {
+  auto* model = browser_->GetTabStripModel();
+  const int from = model->GetIndexOfTab(&tab);
+  // `to_index` counts the strip without `tab`.
+  const auto other = [&](int index) -> tabs::TabInterface* {
+    if (index < 0 || index >= model->count() - 1) {
+      return nullptr;
+    }
+    return model->GetTabAtIndex(index < from ? index : index + 1);
+  };
+  const auto* next = other(to_index);
+  const auto* previous = other(to_index - 1);
+  bool pinned = tab.IsPinned();
+  if (next && next->IsPinned()) {
+    pinned = true;
+  } else if (previous && !previous->IsPinned()) {
+    pinned = false;
+  }
+  if (pinned != tab.IsPinned()) {
+    model->SetTabPinned(from, pinned);
+  }
+}
+
 void BrowserAdapter::SetTabFlags(KrTabId id, uint32_t mask, uint32_t values) {
   auto* tab = FindTab(id);
   if (!tab) {
@@ -1845,17 +1939,6 @@ KrBrowser BrowserAdapter::MakeBrowser() {
             if (api) {
               std::ignore =
                   api->show_settings(api->self, KR_SETTINGS_APPEARANCE);
-            }
-            if (api) {
-              api->dismiss_menu(api->self, request);
-            }
-            return;
-          }
-          if (kind == KR_MENU_SECURITY) {
-            // Page information is the browser's bubble, so no menu follows.
-            auto shown = owner->ShowPageInfo(target_tab.get());
-            if (!shown.has_value()) {
-              LOG(ERROR) << shown.error();
             }
             if (api) {
               api->dismiss_menu(api->self, request);

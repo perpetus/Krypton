@@ -1,0 +1,32 @@
+# Draw the New Tab Page's own background transparent. Its web view's background
+# keeps Chromium's New Tab Page color, so pages look unchanged until KryptonUI
+# hides that background to show the window's theme gradient behind the page.
+--- a/chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.cc
++++ b/chrome/browser/ui/webui/new_tab_page/new_tab_page_handler.cc
+@@ -186,7 +186,11 @@
+       ntp_custom_background_service
+           ? ntp_custom_background_service->GetCustomBackground()
+           : std::nullopt;
+-  theme->background_color = color_provider.GetColor(kColorNewTabPageBackground);
++  // Krypton: the page is transparent over its web view's background, which
++  // shows this color unless KryptonUI reveals the window's theme instead.
++  theme->background_color =
++      SkColorSetA(color_provider.GetColor(kColorNewTabPageBackground),
++                  SK_AlphaTRANSPARENT);
+   theme->is_baseline = theme_service->GetIsBaseline();
+   // Theme is GM3 if there is a GM3 color set or the theme is baseline and no
+   // CWS theme is set.
+--- a/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
+@@ -1394,9 +1394,8 @@
+   if (!web_contents() || !web_ui()) {
+     return;
+   }
+-  const ui::ColorProvider& color_provider = web_contents()->GetColorProvider();
+-  auto background_color = color_provider.GetColor(kColorNewTabPageBackground);
+-  update.Set("backgroundColor", skia::SkColorToHexString(background_color));
++  // Krypton: transparent, like NewTabPageHandler's theme color.
++  update.Set("backgroundColor", "transparent");
+   content::WebUIDataSource::Update(Profile::FromWebUI(web_ui()),
+                                    chrome::kChromeUINewTabPageHost,
+                                    std::move(update));

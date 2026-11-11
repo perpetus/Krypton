@@ -681,7 +681,9 @@ enum KrAppearanceFlags {
   /* Zero preserves the existing always-floating address editor. */
   KR_APPEARANCE_ATTACHED_SEARCH_BAR = 1u << 2,
   KR_APPEARANCE_SEARCH_BAR_FLOATING_ON_TYPE = 1u << 3,
-  KR_APPEARANCE_SEARCH_BAR_MENU_BACKDROP = 1u << 4
+  KR_APPEARANCE_SEARCH_BAR_MENU_BACKDROP = 1u << 4,
+  /* New tab buttons open a New Tab Page; zero opens the search bar. */
+  KR_APPEARANCE_NEW_TAB_PAGE = 1u << 5
 };
 /* Chrome icon set. Records without icon_pack mean FLUENT. */
 enum KrIconPack {
@@ -1889,6 +1891,12 @@ typedef struct KrShellUI {
   /* Close through the shared popup/focus lifecycle before a host editor opens. */
   KrResult (*dismiss_library)(void* self);
   KrResult (*show_routing_editor)(void* self, const KrRoutingRule* value);
+  /* Cancel the permission surface when its document/window is no longer valid. */
+  void (*dismiss_site_permissions)(void* self);
+  /* URL drag position in client DIPs, including drags over page content.
+   * Reveals hidden chrome without taking focus; returns whether chrome accepts
+   * a drop at this point. active=false ends the drag and releases its reveal. */
+  bool (*url_drag_changed)(void* self, float x, float y, bool active);
 } KrShellUI;
 
 typedef struct KrCreateParams {

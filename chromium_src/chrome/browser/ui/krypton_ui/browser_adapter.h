@@ -31,17 +31,20 @@ class BrowserWindowInterface;
 struct NavigateParams;
 namespace content {
 class NavigationHandle;
-}
+struct DropData;
+}  // namespace content
 namespace image_editor {
 class ScreenshotFlow;
 }
 namespace ui {
 class ImageModel;
 class MenuModel;
+class OSExchangeData;
 }  // namespace ui
 namespace gfx {
 class Point;
-}
+class PointF;
+}  // namespace gfx
 
 namespace krypton_ui {
 class NativeLocationBar;
@@ -54,6 +57,7 @@ class BrowserServices;
 class SidebarServices;
 class NativeExtensions;
 class SiteCustomization;
+class SitePermissions;
 class MultiPageController;
 
 // BrowserView owns this adapter before constructing browser chrome. It keeps
@@ -68,6 +72,9 @@ class BrowserAdapter final : public TabStripModelObserver {
     return site_customization_.get();
   }
   [[nodiscard]] bool SnapLayoutsEnabled() const;
+  [[nodiscard]] SitePermissions* site_permissions() const {
+    return site_permissions_.get();
+  }
   [[nodiscard]] bool PrepareMultiPageSelection(content::WebContents* contents);
   [[nodiscard]] bool IsWorkspaceCloseCandidate(
       const tabs::TabInterface& tab) const;
@@ -117,6 +124,12 @@ class BrowserAdapter final : public TabStripModelObserver {
   void PublishNavigation();
   void ScheduleActions();
   bool ShowOnboarding();
+  static bool CanDropUrl(const ui::OSExchangeData& data);
+  bool UrlDragChanged(const gfx::PointF& point, bool active);
+  void UrlDragExited();
+  bool PreviewUrlDrag(const content::DropData& data, const gfx::PointF& point);
+  base::OnceClosure CaptureUrlDrop(const ui::OSExchangeData& data,
+                                   const gfx::PointF& point);
   void Fail(std::string error);
 
  private:
@@ -131,6 +144,11 @@ class BrowserAdapter final : public TabStripModelObserver {
   void Insert(tabs::TabInterface& tab, size_t index);
   void PublishTab(tabs::TabInterface& tab);
   void PublishSelection();
+  // New Tab Pages show the window's theme: their page view hides its
+  // background and the patched page draws none. Runs after Chromium has bound
+  // tabs to views, once per task.
+  void SchedulePageBackgrounds();
+  void UpdatePageBackgrounds();
   void PublishProgress(tabs::TabInterface& tab);
   void PublishActions();
   void PublishLayout();
@@ -147,6 +165,7 @@ class BrowserAdapter final : public TabStripModelObserver {
   void AssignWorkspace(tabs::TabInterface& tab, KrSpaceId space);
   void AssignEssential(tabs::TabInterface& tab, uint64_t id);
   void SetEssential(tabs::TabInterface& tab, bool enabled);
+  void AlignEssentialPin(tabs::TabInterface& tab, int to_index);
   void OnEssentialsChanged();
   void UpdateEssential(tabs::TabInterface& tab);
   void EnsureWorkspace(tabs::TabInterface& tab);
@@ -198,6 +217,7 @@ class BrowserAdapter final : public TabStripModelObserver {
   std::unique_ptr<NativeMenus> menus_;
   std::unique_ptr<PrivacyFeaturesBridge> privacy_features_;
   std::unique_ptr<BrowserServices> browser_services_;
+  std::unique_ptr<SitePermissions> site_permissions_;
   std::unique_ptr<image_editor::ScreenshotFlow> screenshot_;
   std::unique_ptr<SidebarServices> sidebar_;
   std::unique_ptr<NativeExtensions> extensions_;
@@ -230,8 +250,10 @@ class BrowserAdapter final : public TabStripModelObserver {
   bool loading_ = false;
   bool navigation_published_ = false;
   bool actions_scheduled_ = false;
+  bool page_backgrounds_scheduled_ = false;
   bool services_initialized_ = false;
   bool closed_ = false;
+  bool url_drag_preview_active_ = false;
   float image_scale_ = 0;
   base::WeakPtrFactory<BrowserAdapter> weak_factory_{this};
 };

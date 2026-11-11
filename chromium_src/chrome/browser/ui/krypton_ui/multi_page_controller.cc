@@ -4,18 +4,24 @@
 #include "chrome/browser/ui/krypton_ui/multi_page_controller.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <numbers>
 #include <utility>
+#include <vector>
 
 #include "base/auto_reset.h"
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/i18n/rtl.h"
+#include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/scoped_observation.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "cc/paint/paint_flags.h"
 #include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/profiles/profile.h"
@@ -49,11 +55,11 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/color/color_id.h"
-#include "ui/compositor/callback_layer_animation_observer.h"
 #include "ui/compositor/compositor.h"
+#include "ui/compositor/compositor_animation_observer.h"
 #include "ui/compositor/layer.h"
-#include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/layer_tree_owner.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/display/screen.h"
 #include "ui/events/event.h"
@@ -67,6 +73,7 @@
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/focus_ring.h"
@@ -76,6 +83,7 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/view.h"
+#include "ui/views/view_observer.h"
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
 
@@ -488,6 +496,308 @@ class GlanceBackdrop final : public views::View {
 BEGIN_METADATA(GlanceBackdrop)
 END_METADATA
 
+namespace {
+// Rows of the lamp. The reference effect warps a 30px grid; projective strips
+// follow its curves at a few dozen DIPs, and each strip costs a render pass
+// because its clip is not axis-aligned. Strips overlap by a pixel so edge
+// antialiasing leaves no seams.
+constexpr int kGenieStripLength = 36;
+constexpr int kGenieMaxStrips = 24;
+constexpr int kGenieSeam = 1;
+
+float InOutSine(float t) {
+  return 0.5f - 0.5f * std::cos(std::numbers::pi_v<float> * t);
+}
+
+float LargestRadius(const ui::Layer& layer) {
+  const auto& radii = layer.rounded_corner_radii();
+  float radius = std::max({radii.upper_left(), radii.upper_right(),
+                           radii.lower_right(), radii.lower_left()});
+  for (const ui::Layer* child : layer.children()) {
+    if (child->GetTargetVisibility())
+      radius = std::max(radius, LargestRadius(*child));
+  }
+  return radius;
+}
+
+// One strip's copy of the card's visible layers. Surface and solid color
+// layers are mirrored, so the page stays live and nothing is captured. Painted
+// layers become empty placeholders that keep their geometry and clips: a
+// mirror would repaint the card's views and raster them again for every
+// strip. Rounded corners stay only where `corners` says the strip shows the
+// card's corners; elsewhere they would cost another offscreen pass.
+std::unique_ptr<ui::Layer> StripTree(ui::Layer& source, bool corners) {
+  std::unique_ptr<ui::Layer> layer;
+  if (source.type() == ui::LAYER_TEXTURED) {
+    layer = ui::Layer::Create(ui::LAYER_NOT_DRAWN);
+    layer->SetBounds(source.bounds());
+    layer->SetTransform(source.GetTargetTransform());
+    layer->SetOpacity(source.GetTargetOpacity());
+    layer->SetMasksToBounds(source.GetMasksToBounds());
+    layer->SetClipRect(source.GetTargetClipRect());
+    layer->SetRoundedCornerRadius(source.GetTargetRoundedCornerRadius());
+    layer->SetIsFastRoundedCorner(source.is_fast_rounded_corner());
+  } else {
+    layer = source.Mirror();
+  }
+  if (!corners)
+    layer->SetRoundedCornerRadius({});
+  for (ui::Layer* child : source.children()) {
+    if (child->GetTargetVisibility())
+      layer->Add(StripTree(*child, corners).release());
+  }
+  return layer;
+}
+
+// The projective transform taking the rect (0, 0, width, height) onto `quad`,
+// whose corners follow the rect's: top-left, top-right, bottom-right,
+// bottom-left (Heckbert's square-to-quad mapping).
+gfx::Transform RectToQuad(float width,
+                          float height,
+                          const std::array<gfx::PointF, 4>& quad) {
+  const double x0 = quad[0].x(), y0 = quad[0].y();
+  const double x1 = quad[1].x(), y1 = quad[1].y();
+  const double x2 = quad[2].x(), y2 = quad[2].y();
+  const double x3 = quad[3].x(), y3 = quad[3].y();
+  const double sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+  const double dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2;
+  const double det = dx1 * dy2 - dx2 * dy1;
+  double g = 0, h = 0;
+  if ((std::abs(sx) > 1e-6 || std::abs(sy) > 1e-6) && std::abs(det) > 1e-9) {
+    g = (sx * dy2 - dx2 * sy) / det;
+    h = (dx1 * sy - sx * dy1) / det;
+  }
+  const double a = x1 - x0 + g * x1, b = x3 - x0 + h * x3;
+  const double d = y1 - y0 + g * y1, e = y3 - y0 + h * y3;
+  // clang-format off
+  return gfx::Transform::RowMajor(
+      a / width, b / height, 0, x0,
+      d / width, e / height, 0, y0,
+      0,         0,          1, 0,
+      g / width, h / height, 0, 1);
+  // clang-format on
+}
+}  // namespace
+
+// Glance's magic lamp: the card pours out of, and back into, a small source
+// rect on its bottom edge, under the pointer that opened it. The motion is the
+// model of reference/kwin-effects-yet-another-magic-lamp (Model.cc). Closing
+// first stretches each row toward its proportional place in the source,
+// weighted by an InOutSine of the row's distance from the top, then squashes
+// the rows down into the source, where the card's bounds clip them. Opening
+// runs the same linear timeline backwards.
+//
+// Each row is a strip: the card's live layers clipped to the row, with a
+// projective transform onto the row's quad. Adjacent strips share edges, the
+// page keeps rendering, and no image of it is captured. Per frame, the only
+// work is one transform per visible strip.
+class GlanceGenie final : public ui::CompositorAnimationObserver,
+                          public views::ViewObserver {
+ public:
+  struct Spec {
+    // Card-local position of the pointer that opened the Glance.
+    gfx::PointF source;
+    // Source size as fractions of the card's width and height.
+    float source_width = 0;
+    float source_depth = 0;
+    // Share of the motion spent stretching before squashing.
+    float stretch_share = 0;
+    base::TimeDelta duration;
+    bool opening = false;
+  };
+
+  // Null when the card has no layer, compositor or size to animate.
+  static std::unique_ptr<GlanceGenie> Create(views::View& card,
+                                             const Spec& spec) {
+    ui::Layer* layer = card.layer();
+    if (!layer || !layer->GetCompositor() || layer->bounds().IsEmpty())
+      return nullptr;
+    return base::WrapUnique(new GlanceGenie(card, spec));
+  }
+  GlanceGenie(const GlanceGenie&) = delete;
+  GlanceGenie& operator=(const GlanceGenie&) = delete;
+  ~GlanceGenie() override { Detach(spec_.opening); }
+
+  void Start(base::OnceClosure done) {
+    done_ = std::move(done);
+    Apply(spec_.opening ? 1 : 0);
+    compositor_->AddAnimationObserver(this);
+    observing_ = true;
+  }
+
+  // Ends in the final state at once and runs the completion.
+  void Finish() {
+    if (finished_)
+      return;
+    finished_ = true;
+    // A closed card stays hidden until its page closes.
+    Detach(spec_.opening);
+    if (done_)
+      std::move(done_).Run();
+  }
+
+ private:
+  struct Strip {
+    std::unique_ptr<ui::Layer> clip;
+    std::unique_ptr<ui::LayerTreeOwner> content;
+    gfx::Rect band;
+  };
+
+  GlanceGenie(views::View& card, const Spec& spec)
+      : card_(&card), compositor_(card.layer()->GetCompositor()), spec_(spec) {
+    ui::Layer& source = *card.layer();
+    const gfx::Rect bounds = source.bounds();
+    width_ = bounds.width();
+    height_ = bounds.height();
+    source_width_ = std::clamp(width_ * spec.source_width, 1.0f,
+                               static_cast<float>(width_));
+    const float depth =
+        std::clamp(height_ * spec.source_depth, 0.0f, height_ / 2.0f);
+    distance_ = std::max(1.0f, height_ - depth);
+    source_start_ = std::clamp(spec.source.x() - source_width_ / 2, 0.0f,
+                               width_ - source_width_);
+
+    root_ = ui::Layer::Create(ui::LAYER_NOT_DRAWN);
+    root_->SetName("GlanceGenie");
+    root_->SetBounds(bounds);
+    // Rows leave through the source, which lies on the card's bottom edge.
+    root_->SetMasksToBounds(true);
+    const float radius = LargestRadius(source);
+    const int count =
+        std::clamp((height_ + kGenieStripLength - 1) / kGenieStripLength, 1,
+                   kGenieMaxStrips);
+    strips_.reserve(count);
+    for (int i = 0; i < count; ++i) {
+      const int top = height_ * i / count;
+      const int bottom =
+          std::min(height_, height_ * (i + 1) / count +
+                                (i + 1 < count ? kGenieSeam : 0));
+      Strip strip;
+      strip.band = gfx::Rect(0, top, width_, bottom - top);
+      strip.clip = ui::Layer::Create(ui::LAYER_NOT_DRAWN);
+      strip.clip->SetName("GlanceGenieStrip");
+      strip.clip->SetBounds(strip.band);
+      strip.clip->SetMasksToBounds(true);
+      auto content =
+          StripTree(source, top < radius || bottom > height_ - radius);
+      content->SetTransform(gfx::Transform());
+      content->SetOpacity(1);
+      content->SetBounds(gfx::Rect(0, -top, width_, height_));
+      strip.clip->Add(content.get());
+      strip.content = std::make_unique<ui::LayerTreeOwner>(std::move(content));
+      root_->Add(strip.clip.get());
+      strips_.push_back(std::move(strip));
+    }
+    card.AddLayerToRegion(root_.get(), views::LayerRegion::kAbove);
+    source.SetOpacity(0);
+    observation_.Observe(&card);
+  }
+
+  // ui::CompositorAnimationObserver:
+  void OnAnimationStep(base::TimeTicks timestamp) override {
+    if (finished_)
+      return;
+    if (start_.is_null())
+      start_ = timestamp;
+    const float progress =
+        spec_.duration.is_positive()
+            ? static_cast<float>(
+                  std::clamp((timestamp - start_) / spec_.duration, 0.0, 1.0))
+            : 1.0f;
+    Apply(spec_.opening ? 1 - progress : progress);
+    if (progress < 1)
+      return;
+    compositor_->RemoveAnimationObserver(this);
+    observing_ = false;
+    // Tear the strips down after this frame's step, not inside it.
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&GlanceGenie::Finish, weak_factory_.GetWeakPtr()));
+  }
+  void OnCompositingShuttingDown(ui::Compositor* compositor) override {
+    observing_ = false;
+    compositor_ = nullptr;
+    Finish();
+  }
+
+  // views::ViewObserver:
+  void OnViewBoundsChanged(views::View* view) override {
+    // A moved card keeps its lamp; a resized one no longer fits it.
+    if (view->layer() &&
+        view->layer()->bounds().size() == root_->bounds().size()) {
+      root_->SetBounds(view->layer()->bounds());
+      return;
+    }
+    Finish();
+  }
+  void OnViewIsDeleting(views::View* view) override { Finish(); }
+
+  // `closing` runs from 0, the card in place, to 1, the card in the source.
+  void Apply(float closing) {
+    const float share = std::clamp(spec_.stretch_share, 0.0f, 1.0f);
+    float stretch = 1, squash = 0;
+    if (closing < share)
+      stretch = closing / share;
+    else if (share < 1)
+      squash = (closing - share) / (1 - share);
+    for (auto& strip : strips_) {
+      const gfx::RectF band(strip.band);
+      const std::array<gfx::PointF, 4> corners = {
+          band.origin(), band.top_right(), band.bottom_right(),
+          band.bottom_left()};
+      std::array<gfx::PointF, 4> quad;
+      for (size_t i = 0; i < corners.size(); ++i)
+        quad[i] = Warp(corners[i], stretch, squash) - band.OffsetFromOrigin();
+      // A strip wholly past the source is clipped away; skip drawing it.
+      const bool visible = band.y() + squash * distance_ < height_;
+      strip.clip->SetVisible(visible);
+      if (visible)
+        strip.clip->SetTransform(RectToQuad(band.width(), band.height(), quad));
+    }
+  }
+
+  // Model.cc's transformQuadsBottom: a point moves `squash` of the way down to
+  // the source and toward its place inside it by `stretch` times the shape
+  // curve of its new height.
+  gfx::PointF Warp(gfx::PointF point, float stretch, float squash) const {
+    const float y = point.y() + squash * distance_;
+    const float weight =
+        stretch * InOutSine(std::clamp(y / distance_, 0.0f, 1.0f));
+    const float target = source_start_ + source_width_ * point.x() / width_;
+    return {point.x() + weight * (target - point.x()), y};
+  }
+
+  void Detach(bool show_card) {
+    if (compositor_ && observing_)
+      compositor_->RemoveAnimationObserver(this);
+    observing_ = false;
+    observation_.Reset();
+    if (card_) {
+      if (root_)
+        card_->RemoveLayerFromRegions(root_.get());
+      if (show_card && card_->layer())
+        card_->layer()->SetOpacity(1);
+      card_ = nullptr;
+    }
+    strips_.clear();
+    root_.reset();
+  }
+
+  raw_ptr<views::View> card_;
+  raw_ptr<ui::Compositor> compositor_;
+  const Spec spec_;
+  int width_ = 0, height_ = 0;
+  float source_start_ = 0, source_width_ = 0, distance_ = 0;
+  std::unique_ptr<ui::Layer> root_;
+  std::vector<Strip> strips_;
+  base::TimeTicks start_;
+  base::OnceClosure done_;
+  bool observing_ = false;
+  bool finished_ = false;
+  base::ScopedObservation<views::View, views::ViewObserver> observation_{this};
+  base::WeakPtrFactory<GlanceGenie> weak_factory_{this};
+};
+
 // Compatibility with modules that predate the appended Glance metrics.
 class GlanceToolbarView final : public views::View {
   METADATA_HEADER(GlanceToolbarView, views::View)
@@ -526,10 +836,20 @@ class PaneDragHandle final : public views::View {
       : owner_(std::move(owner)) {
     SetFocusBehavior(FocusBehavior::NEVER);
     GetViewAccessibility().SetName(u"Drag to move pane");
+    SetTooltipText(u"Drag to move pane");
+  }
+  ~PaneDragHandle() override { Cancel(); }
+  void Style(SkColor color, float stroke, float gap) {
+    if (color_ == color && stroke_ == stroke && gap_ == gap)
+      return;
+    color_ = color;
+    stroke_ = stroke;
+    gap_ = gap;
+    SchedulePaint();
   }
   void SetIdentity(KrTabId tab, KrSplitGroupId group, uint64_t revision) {
     if (tab_ != tab || group_ != group || revision_ != revision)
-      pressed_ = dragging_ = false;
+      Cancel();
     tab_ = tab;
     group_ = group;
     revision_ = revision;
@@ -539,6 +859,7 @@ class PaneDragHandle final : public views::View {
     if (!event.IsOnlyLeftMouseButton() || event.IsControlDown() ||
         event.IsAltDown() || event.IsShiftDown())
       return false;
+    Cancel();
     start_ = event.location();
     pressed_ = true;
     dragging_ = false;
@@ -547,30 +868,74 @@ class PaneDragHandle final : public views::View {
   bool OnMouseDragged(const ui::MouseEvent& event) override {
     if (!pressed_)
       return false;
-    dragging_ |= ExceededDragThreshold(event.location() - start_);
+    if (!event.IsOnlyLeftMouseButton() || event.IsControlDown() ||
+        event.IsAltDown() || event.IsShiftDown()) {
+      Cancel();
+      return true;
+    }
+    if (!dragging_ && ExceededDragThreshold(event.location() - start_)) {
+      dragging_ = owner_ && owner_->BeginPaneDrag(tab_, group_, revision_);
+      if (!dragging_) {
+        Cancel();
+        return true;
+      }
+    }
+    if (dragging_ && owner_) {
+      auto screen = event.location();
+      ConvertPointToScreen(this, &screen);
+      owner_->UpdatePaneDrag(tab_, group_, revision_, screen);
+    }
     return true;
   }
   void OnMouseReleased(const ui::MouseEvent& event) override {
     const bool drop = std::exchange(pressed_, false) && dragging_;
     dragging_ = false;
-    if (!drop || !owner_)
+    if (!drop || !owner_ || !event.IsLeftMouseButton() ||
+        event.IsControlDown() || event.IsAltDown() || event.IsShiftDown()) {
+      Cancel();
       return;
+    }
     auto screen = event.location();
     ConvertPointToScreen(this, &screen);
     owner_->DropPane(tab_, group_, revision_, screen);
   }
-  void OnMouseCaptureLost() override { pressed_ = dragging_ = false; }
+  void OnMouseCaptureLost() override { Cancel(); }
   ui::Cursor GetCursor(const ui::MouseEvent&) override {
     return ui::Cursor(ui::mojom::CursorType::kMove);
   }
 
+ protected:
+  void VisibilityChanged(views::View* starting_from, bool visible) override {
+    views::View::VisibilityChanged(starting_from, visible);
+    if (!IsDrawn())
+      Cancel();
+  }
+  void OnPaint(gfx::Canvas* canvas) override {
+    cc::PaintFlags flags;
+    flags.setAntiAlias(true);
+    flags.setColor(color_);
+    const auto center = gfx::RectF(GetLocalBounds()).CenterPoint();
+    for (int row = -1; row <= 1; ++row)
+      for (int column = 0; column < 2; ++column)
+        canvas->DrawCircle(
+            {center.x() + (column - 0.5f) * gap_, center.y() + row * gap_},
+            stroke_ / 2, flags);
+  }
+
  private:
+  void Cancel() {
+    pressed_ = dragging_ = false;
+    if (owner_)
+      owner_->CancelPaneDrag(tab_, group_, revision_);
+  }
   base::WeakPtr<MultiPageController> owner_;
   KrTabId tab_ = 0;
   KrSplitGroupId group_ = 0;
   uint64_t revision_ = 0;
   gfx::Point start_;
   bool pressed_ = false, dragging_ = false;
+  SkColor color_ = SK_ColorTRANSPARENT;
+  float stroke_ = 0, gap_ = 0;
 };
 
 BEGIN_METADATA(PaneDragHandle)
@@ -588,10 +953,6 @@ class PaneHeader final : public views::View {
         views::BoxLayout::Orientation::kHorizontal));
     drag_ = AddChildView(std::make_unique<PaneDragHandle>(owner_));
     layout->SetFlexForView(drag_, 1);
-    auto grip = std::make_unique<views::Label>(u"\u283f");
-    grip->SetCanProcessEventsWithinSubtree(false);
-    drag_->SetLayoutManager(std::make_unique<views::FillLayout>());
-    drag_->AddChildView(std::move(grip));
     expand_ = AddChildView(std::make_unique<views::LabelButton>(
         base::BindRepeating(&PaneHeader::Expand, base::Unretained(this)),
         u"\u2922"));
@@ -607,12 +968,15 @@ class PaneHeader final : public views::View {
               KrSplitGroupId group,
               uint64_t revision,
               const NativeBackdrop& theme,
+              const KrMultiPageMetrics& metrics,
               float radius,
               int height) {
     tab_ = tab;
     group_ = group;
     revision_ = revision;
     drag_->SetIdentity(tab, group, revision);
+    drag_->Style(theme.glance_button_icon(), metrics.outline_width,
+                 metrics.divider_width);
     if (background_color_ != theme.glance_button()) {
       background_color_ = theme.glance_button();
       SetBackground(
@@ -779,10 +1143,42 @@ END_METADATA
 class PaneOutline final : public views::View {
   METADATA_HEADER(PaneOutline, views::View)
  public:
-  PaneOutline() {
+  explicit PaneOutline(bool drop_target = false) {
+    SetFocusBehavior(FocusBehavior::NEVER);
     SetCanProcessEventsWithinSubtree(false);
     SetPaintToLayer();
     layer()->SetFillsBoundsOpaquely(false);
+    if (drop_target) {
+      auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
+          views::BoxLayout::Orientation::kVertical));
+      layout->set_main_axis_alignment(
+          views::BoxLayout::MainAxisAlignment::kCenter);
+      layout->set_cross_axis_alignment(
+          views::BoxLayout::CrossAxisAlignment::kCenter);
+      caption_ = AddChildView(
+          std::make_unique<views::Label>(u"Drop to move pane here"));
+      caption_->SetFocusBehavior(FocusBehavior::NEVER);
+    }
+  }
+  void DropStyle(const NativeBackdrop& theme,
+                 const KrMultiPageMetrics& metrics,
+                 float radius) {
+    const bool changed = width_ != metrics.outline_width || radius_ != radius ||
+                         caption_background_ != theme.glance_button() ||
+                         caption_foreground_ != theme.glance_button_icon() ||
+                         caption_gap_ != metrics.divider_width;
+    Update(theme.pane_outline(), metrics.outline_width, radius);
+    if (caption_ && changed) {
+      caption_background_ = theme.glance_button();
+      caption_foreground_ = theme.glance_button_icon();
+      caption_gap_ = metrics.divider_width;
+      caption_->SetEnabledColor(theme.glance_button_icon());
+      caption_->SetBackground(
+          views::CreateRoundedRectBackground(theme.glance_button(), radius));
+      caption_->SetBorder(views::CreateEmptyBorder(
+          gfx::Insets::VH(base::ClampCeil(metrics.outline_width),
+                          base::ClampCeil(metrics.divider_width))));
+    }
   }
   void Update(SkColor color, float width, float radius) {
     if (color == color_ && width == width_ && radius == radius_)
@@ -809,6 +1205,10 @@ class PaneOutline final : public views::View {
   SkColor color_ = SK_ColorTRANSPARENT;
   float width_ = 0;
   float radius_ = 0;
+  raw_ptr<views::Label> caption_ = nullptr;
+  SkColor caption_background_ = SK_ColorTRANSPARENT;
+  SkColor caption_foreground_ = SK_ColorTRANSPARENT;
+  float caption_gap_ = 0;
 };
 BEGIN_METADATA(PaneOutline)
 END_METADATA
@@ -866,7 +1266,9 @@ MultiPageController::MultiPageController(BrowserAdapter& owner)
     divider.struct_size = sizeof(divider);
 }
 MultiPageController::~MultiPageController() {
+  ClearPaneDrag();
   weak_factory_.InvalidateWeakPtrs();
+  glance_genie_.reset();
   UpdateGlanceParent(nullptr, {}, false);
   for (size_t i = 2; i < containers_.size(); ++i) {
     if (containers_[i]) {
@@ -1223,6 +1625,7 @@ void MultiPageController::BindVisible(tabs::TabInterface* selected) {
       containers_[i]->contents_view()->set_is_primary_web_contents_for_window(
           i == selected_container_);
   }
+  owner_->SchedulePageBackgrounds();
   active_ = true;
   EnsureChrome();
 }
@@ -1376,6 +1779,7 @@ bool MultiPageController::PrepareSelection(content::WebContents* contents) {
     if (!active_)
       return false;
     const base::AutoReset<bool> binding(&binding_, true);
+    ClearPaneDrag();
     visible_.reset();
     ReleaseHidden();
     // Native single-page layout does not manage our lazily added chrome.
@@ -1573,6 +1977,7 @@ void MultiPageController::AppendLayout(gfx::Rect available,
   }
   if (fullscreen) {
     desired_glance_parent_ = nullptr;
+    CancelGlanceGenie();
     if (containers_[4] && containers_[4]->layer()) {
       containers_[4]->contents_view()->SetFastResize(
           glance_fast_resize_before_);
@@ -1650,16 +2055,31 @@ void MultiPageController::AppendLayout(gfx::Rect available,
       for (size_t pane = 0; pane < geometry.pane_count; ++pane) {
         if (pane_containers_[pane] == slot) {
           control = Bounds(pane_bounds_[pane].controls);
-          pane_controls_[slot]->Update(bound_tabs_[slot], visible_->id,
-                                       visible_->revision, *owner_->backdrop_,
-                                       view_->GetBackgroundRadii().upper_left(),
-                                       control.height());
+          pane_controls_[slot]->Update(
+              bound_tabs_[slot], visible_->id, visible_->revision,
+              *owner_->backdrop_, metrics_,
+              view_->GetBackgroundRadii().upper_left(), control.height());
           show = glance_.phase == KR_GLANCE_CLOSED;
         }
       }
     }
     layout.child_layouts.emplace_back(pane_controls_[slot].get(), show,
                                       control);
+  }
+  if (drop_outline_) {
+    const bool current = pane_drag_ && visible_ && !fullscreen &&
+                         glance_.phase == KR_GLANCE_CLOSED &&
+                         pane_drag_->group == visible_->id &&
+                         pane_drag_->revision == visible_->revision;
+    if (!current)
+      ClearPaneDrag();
+    const bool show = current && pane_drag_->target &&
+                      *pane_drag_->target < geometry.pane_count;
+    drop_outline_->DropStyle(*owner_->backdrop_, metrics_,
+                             view_->GetBackgroundRadii().upper_left());
+    layout.child_layouts.emplace_back(
+        drop_outline_.get(), show,
+        show ? Bounds(pane_bounds_[*pane_drag_->target].bounds) : gfx::Rect());
   }
 }
 gfx::Rect MultiPageController::ActiveBounds() const {
@@ -1697,24 +2117,84 @@ void MultiPageController::ExpandPane(KrTabId id,
     if (auto* tab = Tab(id))
       Focus(tab->GetContents());
 }
+bool MultiPageController::BeginPaneDrag(KrTabId id,
+                                        KrSplitGroupId group,
+                                        uint64_t revision) {
+  ClearPaneDrag();
+  const auto info = Describe(id);
+  if (!info || info->id != group || info->revision != revision || !visible_ ||
+      visible_->id != group || glance_.phase != KR_GLANCE_CLOSED ||
+      !view_->GetWidget() || !view_->GetWidget()->IsActive())
+    return false;
+  if (!drop_outline_) {
+    drop_outline_ = view_->AddChildView(std::make_unique<PaneOutline>(true));
+    drop_outline_->SetVisible(false);
+  }
+  pane_drag_ = PaneDrag{id, group, revision, std::nullopt};
+  return true;
+}
+std::optional<size_t> MultiPageController::PaneDropIndex(
+    KrTabId id,
+    KrSplitGroupId group,
+    uint64_t revision,
+    gfx::Point screen) const {
+  const auto info = Describe(id);
+  if (!info || info->id != group || info->revision != revision || !visible_ ||
+      visible_->id != group || glance_.phase != KR_GLANCE_CLOSED ||
+      !view_->GetWidget() || !view_->GetWidget()->IsActive())
+    return std::nullopt;
+  views::View::ConvertPointFromScreen(view_, &screen);
+  for (size_t index = 0; index < visible_->count; ++index)
+    if (index != info->index &&
+        Bounds(pane_bounds_[index].bounds).Contains(screen))
+      return index;
+  return std::nullopt;
+}
+bool MultiPageController::UpdatePaneDrag(KrTabId id,
+                                         KrSplitGroupId group,
+                                         uint64_t revision,
+                                         gfx::Point screen) {
+  if (!pane_drag_ || pane_drag_->tab != id || pane_drag_->group != group ||
+      pane_drag_->revision != revision)
+    return false;
+  const auto index = PaneDropIndex(id, group, revision, screen);
+  if (pane_drag_->target != index) {
+    pane_drag_->target = index;
+    drop_outline_->DropStyle(*owner_->backdrop_, metrics_,
+                             view_->GetBackgroundRadii().upper_left());
+    if (index)
+      drop_outline_->SetBoundsRect(Bounds(pane_bounds_[*index].bounds));
+    drop_outline_->SetVisible(index.has_value());
+  }
+  return index.has_value();
+}
+void MultiPageController::ClearPaneDrag() {
+  pane_drag_.reset();
+  if (drop_outline_)
+    drop_outline_->SetVisible(false);
+}
+void MultiPageController::CancelPaneDrag(KrTabId id,
+                                         KrSplitGroupId group,
+                                         uint64_t revision) {
+  if (pane_drag_ && pane_drag_->tab == id && pane_drag_->group == group &&
+      pane_drag_->revision == revision)
+    ClearPaneDrag();
+}
 void MultiPageController::DropPane(KrTabId id,
                                    KrSplitGroupId group,
                                    uint64_t revision,
                                    gfx::Point screen) {
-  const auto info = Describe(id);
-  if (!info || info->id != group || info->revision != revision || !visible_ ||
-      visible_->id != group || glance_.phase != KR_GLANCE_CLOSED)
+  if (!pane_drag_ || pane_drag_->tab != id || pane_drag_->group != group ||
+      pane_drag_->revision != revision)
     return;
-  views::View::ConvertPointFromScreen(view_, &screen);
-  for (size_t index = 0; index < visible_->count; ++index) {
-    if (!Bounds(pane_bounds_[index].bounds).Contains(screen))
-      continue;
-    if (index != info->index)
-      (void)EditGroup(group, {sizeof(KrSplitEdit), KR_SPLIT_MOVE, revision, id,
-                              info->space, index, info->layout, 0.5f});
+  const auto index = PaneDropIndex(id, group, revision, screen);
+  const auto info = Describe(id);
+  ClearPaneDrag();
+  if (index && info &&
+      EditGroup(group, {sizeof(KrSplitEdit), KR_SPLIT_MOVE, revision, id,
+                        info->space, *index, info->layout, 0.5f}) == KR_OK) {
     if (auto* tab = Tab(id))
       Focus(tab->GetContents());
-    return;
   }
 }
 
@@ -2241,8 +2721,14 @@ void MultiPageController::FinishGlanceOpen(KrGlanceState expected) {
     widget->LayoutRootViewIfNecessary();
 }
 
+void MultiPageController::CancelGlanceGenie() {
+  if (auto genie = std::move(glance_genie_))
+    genie->Finish();
+}
+
 void MultiPageController::AnimateGlanceCard(bool opening,
                                             base::OnceClosure complete) {
+  CancelGlanceGenie();
   auto* card = containers_[4].get();
   if (opening) {
     if (card && card->layer()) {
@@ -2269,35 +2755,13 @@ void MultiPageController::AnimateGlanceCard(bool opening,
     animator->StopAnimating();
   else
     animator->AbortAllAnimations();
+  card->SetTransform(gfx::Transform());
   const auto bounds = surface_bounds_[4];
   if (bounds.IsEmpty()) {
     if (complete)
       std::move(complete).Run();
     return;
   }
-  const auto center = bounds.CenterPoint();
-  const float dx =
-      std::clamp(glance_origin_.x(), bounds.x(), bounds.right()) - center.x();
-  const float dy =
-      std::clamp(glance_origin_.y(), bounds.y(), bounds.bottom()) - center.y();
-  const auto transform = [&](float sx, float sy, float travel, float skew) {
-    gfx::Transform value;
-    value.Translate(bounds.width() / 2.0f + dx * travel,
-                    bounds.height() / 2.0f + dy * travel);
-    value.SkewX(skew);
-    value.Scale(sx, sy);
-    value.Translate(-bounds.width() / 2.0f, -bounds.height() / 2.0f);
-    return value;
-  };
-  const auto source = transform(metrics_.glance_genie_source_scale_x,
-                                metrics_.glance_genie_source_scale_y, 1, 0);
-  const auto neck = transform(
-      metrics_.glance_genie_neck_scale_x, metrics_.glance_genie_neck_scale_y,
-      1 - metrics_.glance_genie_travel,
-      (dx < 0 ? -1 : 1) * metrics_.glance_genie_bend_degrees);
-  const auto settle =
-      CenteredScale(bounds.size(), metrics_.glance_genie_settle_scale);
-  const auto identity = gfx::Transform();
   const auto duration = base::Milliseconds(
       metrics_.glance_motion_ms / (opening ? 1 : metrics_.glance_close_speed));
   if (glance_backdrop_) {
@@ -2319,47 +2783,21 @@ void MultiPageController::AnimateGlanceCard(bool opening,
     glance_toolbar_->layer()->SetOpacity(0);
     glance_toolbar_->SetEnabled(false);
   }
-  const auto first = duration * metrics_.glance_genie_first_fraction;
-  const auto second = duration * metrics_.glance_genie_second_fraction;
-  const auto last = duration - first - second;
-  auto sequence = std::make_unique<ui::LayerAnimationSequence>();
-  const auto append = [&](const gfx::Transform& target, base::TimeDelta time) {
-    auto element =
-        ui::LayerAnimationElement::CreateTransformElement(target, time);
-    element->set_tween_type(gfx::Tween::EASE_IN_OUT);
-    sequence->AddElement(std::move(element));
-  };
-  if (opening) {
-    card->SetTransform(source);
-    card->layer()->SetOpacity(metrics_.glance_genie_source_opacity);
-    append(neck, first);
-    append(settle, second);
-    append(identity, last);
-  } else {
-    append(settle, last);
-    append(neck, second);
-    append(source, first);
+  // The lamp's source is where the pointer was when Glance opened.
+  glance_genie_ = GlanceGenie::Create(
+      *card, {.source = gfx::PointF(glance_origin_ - bounds.OffsetFromOrigin()),
+              .source_width = metrics_.glance_genie_source_scale_x,
+              .source_depth = metrics_.glance_genie_source_scale_y,
+              .stretch_share = metrics_.glance_genie_first_fraction,
+              .duration = duration,
+              .opening = opening});
+  if (!glance_genie_) {
+    if (complete)
+      std::move(complete).Run();
+    return;
   }
-  if (complete) {
-    // The compositor owns the observer until the finite sequence ends/aborts.
-    // Completion queues model work, so no mutation occurs in an animation
-    // callback.
-    auto* observer = new ui::CallbackLayerAnimationObserver(base::BindRepeating(
-        [](base::OnceClosure& done, const ui::CallbackLayerAnimationObserver&) {
-          if (done)
-            std::move(done).Run();
-          return true;
-        },
-        base::OwnedRef(std::move(complete))));
-    sequence->AddObserver(observer);
-    animator->StartAnimation(sequence.release());
-    observer->SetActive();
-  } else {
-    animator->StartAnimation(sequence.release());
-  }
-  ui::ScopedLayerAnimationSettings settings(animator);
-  settings.SetTransitionDuration(duration);
-  card->layer()->SetOpacity(opening ? 1 : metrics_.glance_genie_source_opacity);
+  // Completion queues model work, so nothing mutates inside an animation step.
+  glance_genie_->Start(std::move(complete));
 }
 
 bool MultiPageController::ShouldAnimateGlanceClose(
@@ -2578,6 +3016,10 @@ bool MultiPageController::HandleKey(unsigned int key,
                                     bool control,
                                     bool alt,
                                     bool shift) {
+  if (pane_drag_ && !control && !alt && key == 0x1b) {
+    ClearPaneDrag();
+    return true;
+  }
   if (shift)
     return false;
   if (glance_.phase != KR_GLANCE_CLOSED && !alt && control && key == 'O') {

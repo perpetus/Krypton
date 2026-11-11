@@ -4,6 +4,7 @@
 
 #include "base/functional/bind.h"
 #include "chrome/browser/ui/krypton_ui/browser_services.h"
+#include "chrome/browser/ui/krypton_ui/site_permissions.h"
 
 namespace krypton_ui {
 
@@ -12,6 +13,36 @@ bool BrowserAdapter::ShowOnboarding() {
 }
 
 void BrowserAdapter::BindBrowserServices(KrBrowser& host) {
+  site_permissions_ = std::make_unique<SitePermissions>(*browser_, session_);
+  host.site_permissions_visibility_changed = [](void* self, KrStr origin,
+                                                bool visible) noexcept {
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    if (owner.site_permissions_)
+      owner.site_permissions_->Visibility(
+          origin.data ? std::string(origin.data, origin.size) : std::string{},
+          visible);
+  };
+  host.set_site_permission = [](void* self, KrPermissionId id,
+                                uint32_t setting) noexcept {
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    return owner.site_permissions_
+               ? owner.site_permissions_->SetPermission(id, setting)
+               : KR_ERR_UNSUPPORTED;
+  };
+  host.reset_site_permissions = [](void* self, KrStr origin) noexcept {
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    return owner.site_permissions_
+               ? owner.site_permissions_->Reset(
+                     origin.data ? std::string(origin.data, origin.size)
+                                 : std::string{})
+               : KR_ERR_UNSUPPORTED;
+  };
+  host.permission_prompt_response = [](void* self, uint64_t request,
+                                       uint32_t decision) noexcept {
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    if (owner.site_permissions_)
+      owner.site_permissions_->Respond(request, decision);
+  };
   browser_services_ = std::make_unique<BrowserServices>(*browser_, session_);
   host.onboarding_visibility_changed = [](void* self, bool visible) noexcept {
     auto& owner = *static_cast<BrowserAdapter*>(self);

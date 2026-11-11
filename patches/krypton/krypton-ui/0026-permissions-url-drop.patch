@@ -1,0 +1,296 @@
+# Route standard permission prompts and external web-URL drops to KryptonUI.
+# Keep Chromium's quiet/embedded/accuracy prompts and native navigation policy.
+# Hidden chrome receives page drag positions through the existing drag lifecycle.
+--- a/chrome/browser/ui/views/frame/browser_root_view.cc
++++ b/chrome/browser/ui/views/frame/browser_root_view.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/frame/browser_root_view.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#endif
+ 
+ #include <cmath>
+ #include <memory>
+@@ -212,6 +216,12 @@
+ bool BrowserRootView::GetDropFormats(
+     int* formats,
+     std::set<ui::ClipboardFormatType>* format_types) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (browser_view_->krypton_ui()) {
++    *formats = ui::OSExchangeData::URL | ui::OSExchangeData::STRING;
++    return true;
++  }
++#endif
+   if ((browser_view_->tab_strip_view() &&
+        browser_view_->tab_strip_view()->GetVisible()) ||
+       (toolbar() && toolbar()->GetVisible())) {
+@@ -226,6 +236,10 @@
+ }
+ 
+ bool BrowserRootView::CanDrop(const ui::OSExchangeData& data) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (browser_view_->krypton_ui())
++    return krypton_ui::BrowserAdapter::CanDropUrl(data);
++#endif
+   // If it's not tabbed browser, we don't have to support drag and drops.
+   if (!browser_view_->GetIsNormalType()) {
+     return false;
+@@ -260,6 +274,14 @@
+ }
+ 
+ void BrowserRootView::OnDragEntered(const ui::DropTargetEvent& event) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (browser_view_->krypton_ui()) {
++    const gfx::PointF point(views::View::ConvertPointToTarget(
++        this, browser_view_, event.location()));
++    browser_view_->krypton_ui()->UrlDragChanged(point, true);
++    return;
++  }
++#endif
+   drop_info_ = std::make_unique<DropInfo>();
+   drop_info_->sequence = ++gDropInfoSequence;
+ 
+@@ -293,6 +315,15 @@
+ }
+ 
+ int BrowserRootView::OnDragUpdated(const ui::DropTargetEvent& event) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (browser_view_->krypton_ui()) {
++    const gfx::PointF point(views::View::ConvertPointToTarget(
++        this, browser_view_, event.location()));
++    return browser_view_->krypton_ui()->UrlDragChanged(point, true)
++               ? ui::DragDropTypes::DRAG_COPY
++               : ui::DragDropTypes::DRAG_NONE;
++  }
++#endif
+   if (!drop_info_) {
+     OnDragEntered(event);
+   }
+@@ -320,11 +351,33 @@
+ }
+ 
+ void BrowserRootView::OnDragExited() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (browser_view_->krypton_ui())
++    browser_view_->krypton_ui()->UrlDragChanged({}, false);
++#endif
+   drop_info_.reset();
+ }
+ 
+ views::View::DropCallback BrowserRootView::GetDropCallback(
+     const ui::DropTargetEvent& event) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (browser_view_->krypton_ui()) {
++    const gfx::PointF point(views::View::ConvertPointToTarget(
++        this, browser_view_, event.location()));
++    auto drop =
++        browser_view_->krypton_ui()->CaptureUrlDrop(event.data(), point);
++    if (!drop)
++      return {};
++    return base::BindOnce(
++        [](base::OnceClosure drop, const ui::DropTargetEvent& event,
++           ui::mojom::DragOperation& operation,
++           std::unique_ptr<ui::LayerTreeOwner> image) {
++          operation = ui::mojom::DragOperation::kCopy;
++          std::move(drop).Run();
++        },
++        std::move(drop));
++  }
++#endif
+   if (!drop_info_) {
+     return base::DoNothing();
+   }
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -3544,6 +3544,14 @@
+ 
+ void BrowserView::PreHandleDragUpdate(const content::DropData& drop_data,
+                                       const gfx::PointF& point) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    const gfx::PointF client(views::View::ConvertPointToTarget(
++        GetActiveContentsContainerView(), this, gfx::ToRoundedPoint(point)));
++    if (krypton_ui_->PreviewUrlDrag(drop_data, client))
++      return;
++  }
++#endif
+   if (multi_contents_view_->IsDragAndDropEnabled()) {
+     // Read the split state from the active tab because when BrowserView is in
+     // full screen it may not be rendering a split, even though the active tab
+@@ -3560,12 +3568,20 @@
+ }
+ 
+ void BrowserView::PreHandleDragExit() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->UrlDragChanged({}, false);
++#endif
+   if (multi_contents_view_->IsDragAndDropEnabled()) {
+     multi_contents_view_->drop_target_controller().OnWebContentsDragExit();
+   }
+ }
+ 
+ void BrowserView::HandleDragEnded() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->UrlDragChanged({}, false);
++#endif
+   if (multi_contents_view_->IsDragAndDropEnabled()) {
+     multi_contents_view_->drop_target_controller().OnWebContentsDragEnded();
+   }
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -765,9 +765,7 @@
+   if (!defined(public_deps)) {
+     public_deps = []
+   }
+-  public_deps += [
+-    "//chrome/browser/ui/krypton_ui:buildflags",
+-  ]
++  public_deps += [ "//chrome/browser/ui/krypton_ui:buildflags" ]
+ }
+ 
+ source_set("browser_view") {
+@@ -1374,15 +1372,13 @@
+       "//ui/gfx/geometry",
+       "//ui/views",
+     ]
+-  
+-  # Krypton: explicit dependencies after Chromium 157 UI modularization.
+-  if (!defined(deps)) {
+-    deps = []
+-  }
+-  deps += [
+-    "//chrome/browser/ui/krypton_ui:native_headers",
+-  ]
+-}
++
++    # Krypton: explicit dependencies after Chromium 157 UI modularization.
++    if (!defined(deps)) {
++      deps = []
++    }
++    deps += [ "//chrome/browser/ui/krypton_ui:native_headers" ]
++  }
+ 
+   source_set("minimize_button_metrics_win") {
+     public = [ "minimize_button_metrics_win.h" ]
+@@ -2509,9 +2505,7 @@
+   if (!defined(sources)) {
+     sources = []
+   }
+-  sources += [
+-    "//chrome/browser/ui/krypton_ui/multi_page_browsertest.cc",
+-  ]
++  sources += [ "//chrome/browser/ui/krypton_ui/multi_page_browsertest.cc" ]
+ }
+ 
+ source_set("interactive_ui_tests") {
+@@ -3003,15 +2997,13 @@
+         "//chrome/browser/ui/krypton_ui:workspace_models",
+       ]
+     }
+-  
+-  # Krypton: explicit dependencies after Chromium 157 UI modularization.
+-  if (!defined(deps)) {
+-    deps = []
+-  }
+-  deps += [
+-    "//chrome/browser/ui/krypton_ui:native_headers",
+-  ]
+-}
++
++    # Krypton: explicit dependencies after Chromium 157 UI modularization.
++    if (!defined(deps)) {
++      deps = []
++    }
++    deps += [ "//chrome/browser/ui/krypton_ui:native_headers" ]
++  }
+ }
+ 
+ source_set("browser_view_layout") {
+@@ -3273,6 +3265,7 @@
+     "//chrome/browser/ui:layout_constants",
+     "//chrome/browser/ui/browser_window",
+     "//chrome/browser/ui/color:color_headers",
++    "//chrome/browser/ui/krypton_ui:native_headers",
+     "//chrome/browser/ui/navigator",
+     "//chrome/browser/ui/tabs:tab_strip",
+     "//chrome/browser/ui/views/frame:browser_view_header",
+@@ -3366,9 +3359,7 @@
+   if (!defined(public_deps)) {
+     public_deps = []
+   }
+-  public_deps += [
+-    "//chrome/browser/ui/krypton_ui:buildflags",
+-  ]
++  public_deps += [ "//chrome/browser/ui/krypton_ui:buildflags" ]
+ }
+ 
+ source_set("multi_contents_view_impl") {
+@@ -3378,7 +3369,6 @@
+     "//chrome/browser:browser_public_dependencies",
+   ]
+   deps = [
+-    "//chrome/browser/ui/krypton_ui:abi",
+     ":browser_view_header",
+     ":contents_container_view",
+     ":contents_separator",
+@@ -3401,6 +3391,7 @@
+     "//chrome/browser/ui:sad_tab",
+     "//chrome/browser/ui:view_ids",
+     "//chrome/browser/ui/color:color_headers",
++    "//chrome/browser/ui/krypton_ui:abi",
+     "//chrome/browser/ui/read_anything",
+     "//chrome/browser/ui/tabs:tab_strip",
+     "//chrome/browser/ui/views/new_tab_footer",
+@@ -3422,9 +3413,7 @@
+   if (!defined(deps)) {
+     deps = []
+   }
+-  deps += [
+-    "//chrome/browser/ui/krypton_ui:native_headers",
+-  ]
++  deps += [ "//chrome/browser/ui/krypton_ui:native_headers" ]
+ }
+ 
+ source_set("top_container_view") {
+--- a/chrome/browser/ui/views/permissions/BUILD.gn
++++ b/chrome/browser/ui/views/permissions/BUILD.gn
+@@ -135,6 +135,7 @@
+       "//chrome/browser/ui/browser_web_contents_delegate",
+       "//chrome/browser/ui/dialogs",
+       "//chrome/browser/ui/exclusive_access",
++      "//chrome/browser/ui/krypton_ui:native_headers",
+       "//chrome/browser/ui/lens",
+       "//chrome/browser/ui/omnibox",
+       "//chrome/browser/ui/passwords",
+--- a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
++++ b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
+@@ -6,6 +6,10 @@
+ 
+ #include <algorithm>
+ #include <memory>
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/site_permissions.h"
++#endif
+ 
+ #include "base/command_line.h"
+ #include "base/memory/raw_ptr.h"
+@@ -302,6 +306,13 @@
+     return nullptr;
+   }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto prompt =
++          krypton_ui::CreatePermissionPrompt(web_contents, delegate)) {
++    return prompt;
++  }
++#endif
++
+ #if BUILDFLAG(IS_MAC)
+   // If this is a notification permission request coming from a PWA (or a PWA
+   // associated tab), and this is the first time we show a permission prompt for

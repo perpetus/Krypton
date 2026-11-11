@@ -32,6 +32,7 @@
 #include "chrome/browser/ui/krypton_ui/sidebar_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/site_customization.h"
 #include "chrome/browser/ui/krypton_ui/site_data_menu_model.h"
+#include "chrome/browser/ui/krypton_ui/site_info_menu.h"
 #include "chrome/browser/ui/krypton_ui/window_session.h"
 #include "chrome/browser/ui/krypton_ui/workspace_menu.h"
 #include "chrome/browser/ui/krypton_ui/workspace_session.h"
@@ -145,12 +146,17 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
   }
 
   bool TargetValid() const {
+    if (kind == KR_MENU_SECURITY && model && !SiteInfoIsValid(*model))
+      return false;
     if (!browser || (page_target && !page_model) || (submenu && !*submenu)) {
       return false;
     }
     if (tab_menu || active_scoped) {
       return tab && tab->GetBrowserWindowInterface() == browser.get() &&
-             (!active_scoped || browser->GetActiveTabInterface() == tab.get());
+             (!active_scoped ||
+              browser->GetActiveTabInterface() == tab.get()) &&
+             (kind != KR_MENU_SECURITY ||
+              tab->GetContents()->GetLastCommittedURL() == page_url);
     }
     return true;
   }
@@ -431,6 +437,7 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
   const ToggleEssential toggle_essential;
   // How the menu was presented, so a structural edit can present it again.
   uint32_t kind = 0;
+  GURL page_url;
   MenuModelSnapshot::GlyphTable glyphs = &BrowserCommandGlyph;
   base::span<const int> root_commands;
   std::unique_ptr<ui::MenuModel> tab_workspaces;
@@ -517,6 +524,7 @@ base::expected<void, std::string> NativeMenus::Present(
     case KR_MENU_BACK_HISTORY:
     case KR_MENU_FORWARD_HISTORY:
     case KR_MENU_SITE_DATA:
+    case KR_MENU_SECURITY:
       break;
     default:
       return base::unexpected("This menu has no Chromium model.");
@@ -530,6 +538,7 @@ base::expected<void, std::string> NativeMenus::Present(
   const bool active_scoped =
       kind == KR_MENU_RELOAD || kind == KR_MENU_PAGE ||
       kind == KR_MENU_SIDEBAR || kind == KR_MENU_SITE_DATA ||
+      kind == KR_MENU_SECURITY ||
       (kind == KR_MENU_ACTION &&
        ((target >> 56) == 2 || NativeExtensions::Handles(target))) ||
       kind == KR_MENU_BACK_HISTORY || kind == KR_MENU_FORWARD_HISTORY;
@@ -541,6 +550,8 @@ base::expected<void, std::string> NativeMenus::Present(
   if (!source->TargetValid()) {
     return base::unexpected("The menu target is gone.");
   }
+  if (tab)
+    source->page_url = tab->GetContents()->GetLastCommittedURL();
   MenuModelSnapshot::GlyphTable glyphs = &BrowserCommandGlyph;
   base::span<const int> root_commands;
   // Static: the source keeps these spans for later republishing.
@@ -561,9 +572,12 @@ base::expected<void, std::string> NativeMenus::Present(
       return base::unexpected("Workspaces are unavailable in this window.");
     }
     glyphs = &WorkspaceMenuModel::Glyph;
-  } else if (kind == KR_MENU_SIDEBAR || kind == KR_MENU_SITE_DATA) {
+  } else if (kind == KR_MENU_SIDEBAR || kind == KR_MENU_SITE_DATA ||
+             kind == KR_MENU_SECURITY) {
     source->model = context_menu_.Run(kind, tab);
-    glyphs = kind == KR_MENU_SITE_DATA ? &SiteDataGlyph : &ContextGlyph;
+    glyphs = kind == KR_MENU_SECURITY    ? &SiteInfoGlyph
+             : kind == KR_MENU_SITE_DATA ? &SiteDataGlyph
+                                         : &ContextGlyph;
   } else if (kind == KR_MENU_ACTION && NativeExtensions::Handles(target)) {
     source->model = extension_menu_.Run(target);
     if (!source->model) {
@@ -753,14 +767,15 @@ base::expected<void, std::string> NativeMenus::Publish(
   }
   auto& root = source.Root();
   source.Open(root);
-  auto captured = source.snapshot.Capture(root, colors, source.glyphs,
-                                          source.root_commands);
+  auto captured = source.snapshot.Capture(
+      root, colors, source.glyphs, source.root_commands,
+      source.kind == KR_MENU_SECURITY ? &SiteInfoKeepsOpen : nullptr);
   if (!captured.has_value()) {
     return captured;
   }
   const bool site_data = source.kind == KR_MENU_SITE_DATA;
   return source.snapshot.Publish(
-      *api, request, site_data,
+      *api, request, site_data || source.kind == KR_MENU_SECURITY,
       site_data ? static_cast<SiteDataMenuModel&>(root).PanelLayout()
                 : base::span<const MenuPanelRow>());
 }
@@ -790,6 +805,18 @@ base::OnceClosure NativeMenus::CaptureCommand(uint32_t request,
   auto execute = found->second->snapshot.CaptureCommand(request, command);
   if (!execute) {
     return {};
+  }
+  if (found->second->snapshot.KeepsOpen(command)) {
+    return base::BindOnce(
+        [](base::WeakPtr<NativeMenus> owner, uint32_t request,
+           base::OnceClosure execute) {
+          if (!owner)
+            return;
+          const auto found = owner->sources_.find(request);
+          if (found != owner->sources_.end() && found->second->TargetValid())
+            std::move(execute).Run();
+        },
+        weak_factory_.GetWeakPtr(), request, std::move(execute));
   }
   auto source = std::move(found->second);
   sources_.erase(found);
