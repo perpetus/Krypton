@@ -19,9 +19,11 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'tools'))
 from krypton import layout  # pylint: disable=wrong-import-position
+from krypton import product_version  # pylint: disable=wrong-import-position
 sys.path.pop(0)
 
 
@@ -50,13 +52,15 @@ def _load_helium_packaging():
                                                   layout.HELIUM_WINDOWS / 'package.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # Krypton: packaging and Windows resources use the same updater marker.
+    # Override this module's dependency, leaving the upstream module untouched.
+    module.helium_version = SimpleNamespace(get_version_parts=lambda *_: product_version.parts())
     # Everything else it resolves (helium-chromium versions, the NSIS script,
     # the license) stays inside upstream/helium-windows, where it belongs.
     module._BUILD_SRC = layout.SOURCE_TREE  # pylint: disable=protected-access
     module._ICON_PATH = (layout.SOURCE_TREE / 'chrome' / 'app' / 'theme' / 'chromium' / 'win' /
                          'chromium.ico')  # pylint: disable=protected-access
-    # Krypton: only the installer invocation changes. Version numbers, payload
-    # handling and upstream legal text continue to use the pinned packager.
+    # Krypton: payload handling and legal text continue to use the pinned packager.
     def build_installer(version, arch, build_outputs, output_file):
         subprocess.run([
             str(layout.SOURCE_TREE / 'third_party' / 'nsis' / 'makensis.exe'),

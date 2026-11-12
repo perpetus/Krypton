@@ -35,6 +35,15 @@ def verify_runtime(directory: Path) -> dict[str, str]:
     return hashes
 
 
+def verify_manifest(directory: Path, contract: Path) -> None:
+    """Accept a CI runtime only when its complete payload and ABI match."""
+    manifest = json.loads((directory / 'runtime-manifest.json').read_text(encoding='utf-8'))
+    if manifest.get('abi_sha256') != hashlib.sha256(contract.read_bytes()).hexdigest():
+        raise ValueError('KryptonUI runtime manifest has a different C ABI')
+    if manifest.get('files') != verify_runtime(directory):
+        raise ValueError('KryptonUI runtime does not match its SHA-256 manifest')
+
+
 def write_manifest(directory: Path, contract: Path) -> None:
     manifest = {
         'abi_sha256': hashlib.sha256(contract.read_bytes()).hexdigest(),

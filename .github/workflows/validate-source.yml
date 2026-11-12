@@ -1,0 +1,41 @@
+name: Check patches against Chromium
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  patches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.14'
+      - name: Restore verified source downloads
+        uses: actions/cache@v6.1.0
+        with:
+          path: build/download_cache
+          key: chromium-sources-${{ hashFiles('upstream/helium-windows/helium-chromium/chromium_version.txt', 'upstream/helium-windows/helium-chromium/downloads.ini', 'upstream/helium-windows/helium-chromium/deps.ini', 'upstream/helium-windows/downloads.ini', 'deps.ini') }}
+      - name: Extract touched source files
+        run: python tools/validate_series.py extract
+      - name: Apply selected patches and check dangling references
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci
+          python tools/validate_series.py apply --patch /usr/bin/patch 2>&1 | tee build/ci/patch-application.log
+      - name: Upload source validation log
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: patch-application-log
+          path: build/ci/*.log
+          if-no-files-found: ignore
+          retention-days: 7

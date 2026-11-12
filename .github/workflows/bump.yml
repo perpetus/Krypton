@@ -1,0 +1,81 @@
+name: Prepare Helium update
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: helium-windows release tag (empty selects newest release tag)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: helium-update
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HELIUM_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.14'
+      - name: Move the pin and open a draft for adaptation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$HELIUM_VERSION" ]]; then
+            HELIUM_VERSION=$(gh api repos/imputnet/helium-windows/releases/latest --jq .tag_name)
+          fi
+          if [[ -n "$HELIUM_VERSION" && ! "$HELIUM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Expected a four-part helium-windows release tag.' >&2
+            exit 1
+          fi
+          arguments=(--release-core "$HELIUM_VERSION")
+          report="$RUNNER_TEMP/helium-update.txt"
+          python tools/sync_helium.py "${arguments[@]}" | tee "$report"
+          if [[ -z "$(git status --porcelain -- upstream/helium-windows helium-core-ref.txt)" ]]; then
+            echo 'Already using this upstream release.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          pin=$(git -C upstream/helium-windows rev-parse HEAD)
+          branch="automation/helium-$pin"
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json url --jq '.[0].url // empty')
+          if [[ -n "$existing" ]]; then
+            echo "Existing update draft: $existing" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u -- .
+          git commit -m 'Update pinned Helium release'
+          gh auth setup-git
+          git push origin "HEAD:refs/heads/$branch"
+          body="$RUNNER_TEMP/helium-update.md"
+          {
+            echo 'Moves the pinned upstream release. This draft still needs Krypton patch adaptation and build verification.'
+            echo
+            echo 'The product version is unchanged. No tests, browser builds or releases were run.'
+            echo
+            echo '```text'
+            cat "$report"
+            echo '```'
+          } > "$body"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --draft \
+            --title 'Update pinned Helium release' --body-file "$body" >> "$GITHUB_STEP_SUMMARY"

@@ -71,7 +71,9 @@ def old_archive_files(archives, cache=None):
     for archive in archives:
         if not archive.is_file():
             raise ValueError(f'Missing old source manifest archive: {archive}')
-        with tarfile.open(archive, 'r|zst', bufsize=1024 * 1024, stream=True) as bundle:
+        # Cached archives are seekable. ZstdFile's forward seeks avoid the
+        # streaming wrapper repeatedly copying large decompressed buffers.
+        with tarfile.open(archive, 'r:zst', stream=True) as bundle:
             for member in bundle:
                 if not (member.isfile() or member.issym() or member.islnk()):
                     continue

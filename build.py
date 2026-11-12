@@ -38,6 +38,7 @@ from krypton import ui_runtime  # pylint: disable=wrong-import-position
 from krypton import branding  # Krypton: final user-visible name pass.
 from krypton import official_ublock  # Krypton: replace the fork runtime payload.
 from krypton import build_jobs  # Krypton: configurable native build parallelism.
+from krypton import product_version  # Krypton: monotonic signed-update versions.
 sys.path.pop(0)
 
 sys.path.insert(0, str(layout.HELIUM_UTILS))
@@ -169,6 +170,8 @@ def _prepare_fingerprint():
     """
     digest = hashlib.sha256()
     inputs = [Path(__file__), Path(build_jobs.__file__), layout.KRYPTON_DEPS,
+              layout.KRYPTON_VERSION,
+              Path(product_version.__file__),
               Path(official_ublock.__file__),
               layout.HELIUM_CORE_REF, layout.WINDOWS_PATCH_OVERRIDES]
     for name, patch_dir in layout.PATCH_LAYERS:
@@ -366,9 +369,12 @@ def main():
                         help='prepare a separate source tree without touching the active build')
     parser.add_argument('--state-file', type=Path,
                         help='preparation checkpoint for a separately staged source tree')
+    parser.add_argument('--krypton-ui-runtime', type=Path, metavar='DIR',
+                        help='Use a complete, ABI/hash-verified prebuilt UI runtime')
     args = parser.parse_args()
     try:
         layout.check_core_ref()
+        product_version.parts()  # Krypton: reject invalid release markers before preparation.
     except ValueError as error:
         parser.error(str(error))
     # Krypton: keep Ninja's automatic default; -j0 explicitly means unlimited.
@@ -512,6 +518,8 @@ def main():
 
         # Set version
         version_parts = helium_version.get_version_parts(layout.HELIUM, layout.HELIUM_WINDOWS)
+        # Krypton: engine fields stay upstream; only the product version is independent.
+        version_parts.update(product_version.parts())
         chrome_version_path = source_tree / "chrome" / "VERSION"
         helium_version.check_existing_version(chrome_version_path)
         with open(chrome_version_path, "a") as f:
@@ -560,8 +568,19 @@ def main():
 
     # Krypton: required runtime inputs must exist before GN and compilation.
     if not args.arm:
-        _build_krypton_ui(Path(args.krypton_ui).resolve(),
-                          source_tree / 'krypton_ui_runtime', args.thread_count)
+        if args.krypton_ui_runtime:
+            runtime = args.krypton_ui_runtime.resolve()
+            ui_runtime.verify_manifest(runtime, layout.KRYPTON_UI_ABI)
+            destination = source_tree / 'krypton_ui_runtime'
+            destination.mkdir(parents=True, exist_ok=True)
+            for relative in (*ui_runtime.RUNTIME_FILES, Path('runtime-manifest.json')):
+                target = destination / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if not target.is_file() or target.read_bytes() != (runtime / relative).read_bytes():
+                    shutil.copyfile(runtime / relative, target)
+        else:
+            _build_krypton_ui(Path(args.krypton_ui).resolve(),
+                              source_tree / 'krypton_ui_runtime', args.thread_count)
 
     if not args.ci or not (source_tree / 'out/Default').exists():
         # Output args.gn

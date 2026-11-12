@@ -13,8 +13,8 @@ use_text_section_splitting = true
 krypton_thinlto_opt_level = 3
 krypton_thinlto_codegen_opt_level = 3
 krypton_thinlto_jobs = 1
-# Browser binaries (chrome.dll, chrome.exe, ANGLE): 0 is automatic.
-krypton_browser_link_jobs = 0
+# Browser linker workers are separate from automatic compilation parallelism.
+krypton_browser_link_jobs = 1
 krypton_concurrent_links = 1
 
 # --- V8 --------------------------------------------------------------------------

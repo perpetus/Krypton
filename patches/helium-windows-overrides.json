@@ -1,6 +1,0 @@
-{
-  "helium/windows/change-branding.patch": {
-    "patch": "krypton/chromium-157/windows-change-branding.patch",
-    "upstream_sha256": "e3423c1a93ed783ff3ecf442b1888c90d24276a9df41bacb5cbc9aaa82fba0c4"
-  }
-}
