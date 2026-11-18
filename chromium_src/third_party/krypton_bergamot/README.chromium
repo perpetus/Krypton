@@ -1,0 +1,19 @@
+Name: Bergamot local translation engine
+URL: https://github.com/mozilla/translations
+Version: v0.6.0 / eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d
+License: MPL 2.0
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+Source-built CPU inference behind the existing sandboxed utility service.
+The owned ABI wrapper is GPL-3.0; support components retain their licences in
+notices/. Exact source archive revisions and SHA-256s are in deps.ini and
+translation_engine/source-pins.json. Native changes are in
+translation_engine/patches/native-sandbox.patch. No engine binary is downloaded.
+
+Released model generation 3.x files are MPL-2.0, as stated by mozilla/translations.
+The host embeds a pinned per-file URL, size, raw/decoded hash and licence manifest.
+Model files are downloaded only after an explicit host menu action, from the
+original Mozilla CDN. No models are bundled, mirrored or published here.

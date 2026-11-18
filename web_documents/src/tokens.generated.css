@@ -1,0 +1,21 @@
+:root {
+--document-font: "Segoe UI Variable", sans-serif;
+--document-font-size: 16px;
+--document-gap: 6px;
+--document-padding: 16px;
+--document-radius: 8px;
+--document-card-radius: 10px;
+--document-accent: #5D566AFF;
+--light-page: #EBEBEBFF;
+--light-surface: #F4F4F4FF;
+--light-text: #000000E6;
+--light-muted: #00000099;
+--light-line: #00000026;
+--light-hover: #10101012;
+--dark-page: #1B1B1BFF;
+--dark-surface: #1F1F1FFF;
+--dark-text: #FFFFFFE6;
+--dark-muted: #FFFFFF99;
+--dark-line: #FFFFFF26;
+--dark-hover: #E2E2E212;
+}

@@ -9,7 +9,7 @@ closing the last window in background mode still permits reopening.
 
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1066,6 +1066,7 @@
+@@ -1068,6 +1068,7 @@
    }
  
    deps = [
@@ -31,9 +31,9 @@ closing the last window in background mode still permits reopening.
  
  #include <memory>
  #include <string>
-@@ -2251,6 +2256,14 @@
-   restart_mode_ = browser_shutdown::ShutdownPreThreadsStop();
-   browser_process_->StartTearDown();
+@@ -2259,6 +2264,14 @@
+   // After the user profiles, which may own WebContents in this profile.
+   webui::DestroyTopChromeWebUIProfile();
  
 +#if BUILDFLAG(ENABLE_KRYPTON_UI)
 +  // Terminal runtime shutdown belongs to process teardown, not the last

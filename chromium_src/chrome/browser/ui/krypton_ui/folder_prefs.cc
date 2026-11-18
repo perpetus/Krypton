@@ -1,13 +1,13 @@
 // Copyright 2026 The Krypton Authors
 // Use of this source code is governed by the GPL-3.0 license in LICENSE.
 #include "chrome/browser/ui/krypton_ui/folder_prefs.h"
-#include <algorithm>
-#include <limits>
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
+#include <algorithm>
+#include <limits>
 namespace krypton_ui {
 namespace {
 uint64_t Id(const std::string* text) {
@@ -29,13 +29,18 @@ bool FolderCatalog::IsDescendant(KrFolderId id, KrFolderId ancestor) const {
   return false;
 }
 bool FolderCatalog::Valid() const {
+  if (std::ranges::count_if(items, [](const auto &folder) {
+        return folder.live.enabled();
+      }) > static_cast<int>(kMaxLiveFolders))
+    return false;
   for (const auto& folder : items) {
     if (!folder.id || !folder.space || folder.name.empty() ||
         folder.name.find_first_not_of(" \t\r\n") == std::string::npos ||
         !base::IsStringUTF8(folder.name) || !base::IsStringUTF8(folder.glyph) ||
         folder.name.find('\0') != std::string::npos ||
         folder.glyph.find('\0') != std::string::npos ||
-        std::ranges::count(items, folder.id, &TabFolder::id) != 1)
+        std::ranges::count(items, folder.id, &TabFolder::id) != 1 ||
+        !ValidLiveFolderConfig(folder.live))
       return false;
     const TabFolder* current = &folder;
     unsigned depth = 1;
@@ -49,6 +54,7 @@ bool FolderCatalog::Valid() const {
 }
 void RegisterFolderPrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterDictionaryPref(kFoldersPref);
+  registry->RegisterDictionaryPref(kLiveFolderCachePref);
 }
 FolderCatalog ReadFolders(const PrefService& prefs) {
   FolderCatalog catalog;
@@ -72,6 +78,7 @@ FolderCatalog ReadFolders(const PrefService& prefs) {
         folder.glyph = *glyph;
       folder.order = Id(row->FindString("order"));
       folder.collapsed = row->FindBool("collapsed").value_or(false);
+      folder.live = ReadLiveFolderConfig(*row);
       catalog.items.push_back(std::move(folder));
       catalog.next_id = std::max(catalog.next_id, id + 1);
     }
@@ -96,6 +103,7 @@ bool WriteFolders(PrefService& prefs, const FolderCatalog& catalog) {
     row.Set("glyph", folder.glyph);
     row.Set("order", base::NumberToString(folder.order));
     row.Set("collapsed", folder.collapsed);
+    WriteLiveFolderConfig(row, folder.live);
     items.Append(std::move(row));
   }
   data.Set("items", std::move(items));

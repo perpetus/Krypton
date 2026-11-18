@@ -71,7 +71,8 @@ base::expected<void, std::string> Module::Initialize() {
 base::expected<KrShellUI, std::string> Module::Create(
     HWND window,
     const KrBrowser& browser,
-    const KrTheme& initial_theme) {
+    const KrTheme& initial_theme,
+    bool hosted) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   TRACE_EVENT0("browser", "KryptonUI.Create");
   if (auto result = Initialize(); !result.has_value()) {
@@ -82,8 +83,12 @@ base::expected<KrShellUI, std::string> Module::Create(
     return base::unexpected(
         "KryptonUI requires the window's owning UI thread.");
   }
-  const KrCreateParams params{sizeof(KrCreateParams), KR_UI_ABI_VERSION, window,
-                              &browser, &initial_theme};
+  const KrCreateParams params{sizeof(KrCreateParams),
+                              KR_UI_ABI_VERSION,
+                              window,
+                              &browser,
+                              &initial_theme,
+                              hosted ? KR_CREATE_HOSTED_SHELL : 0u};
   KrShellUI shell{};
   shell.struct_size = sizeof(shell);
   const auto result = exports_.create(&params, &shell);
@@ -92,7 +97,14 @@ base::expected<KrShellUI, std::string> Module::Create(
         base::StringPrintf("KryptonUI could not create this window (error %u).",
                            static_cast<unsigned>(result)));
   }
-  if (const auto error = ValidateShell(shell); !error.empty()) {
+  // A module without presentation would draw a second frame over the window.
+  const bool presentable =
+      !hosted ||
+      (KR_HAS_SLOT(&shell, KrShellUI, set_presented) && shell.set_presented);
+  if (const auto error =
+          presentable ? ValidateShell(shell)
+                      : std::string_view("KryptonUI cannot host this profile.");
+      !error.empty()) {
     if (KR_HAS_SLOT(&shell, KrShellUI, destroy) && shell.destroy &&
         shell.self) {
       shell.destroy(shell.self);

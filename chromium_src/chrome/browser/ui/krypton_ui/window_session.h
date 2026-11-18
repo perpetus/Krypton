@@ -30,8 +30,11 @@ class WindowSession {
   [[nodiscard]] base::expected<void, std::string> Initialize(
       HWND parent,
       const KrBrowser& browser,
-      const KrTheme& initial_theme);
+      const KrTheme& initial_theme,
+      bool hosted = false);
   void Close();
+  // Shows or hides this shell over a frame shared by several profiles.
+  void SetPresented(bool presented);
   [[nodiscard]] bool Defer(base::OnceClosure command);
   [[nodiscard]] base::expected<bool, std::string> UpdateWindowState(
       uint32_t flags);

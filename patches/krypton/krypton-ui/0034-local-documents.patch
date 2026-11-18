@@ -1,0 +1,122 @@
+Krypton: Register isolated, profile-local Notes and Easel pages.
+
+The trusted WebUI contains only the validated document bridge. Editors
+are packed prebuilt and run only in an untrusted renderer. No npm work
+runs in GN and no startup service or rendering-engine hook is added.
+Reserve resources from the existing unused placeholder range so other
+resource ranges retain their allocations.
+
+--- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/webui/chrome_web_ui_configs.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/document_webui.h"
++#endif
+ 
+ #include "build/android_buildflags.h"
+ #include "build/branding_buildflags.h"
+@@ -252,6 +257,9 @@
+         // BUILDFLAG(IS_CHROMEOS)
+ 
+ void RegisterChromeWebUIConfigs() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  krypton_ui::RegisterDocumentWebUIConfigs();
++#endif
+   // Don't add calls to `AddWebUIConfig()` for Ash-specific WebUIs here. Add
+   // them to `AshWebUIConfigManager::RegisterWebUIConfigs()` in
+   // ash_web_ui_config_manager.cc.
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -51,6 +51,8 @@
+     "//chrome/browser/browser_actuator/internals",
+     "//chrome/browser/contextual_tasks:ui",
+     "//chrome/browser/glic",
++    "//chrome/browser/ui/krypton_ui:buildflags",
++    "//chrome/browser/ui/krypton_ui:document_webui",
+     "//chrome/browser/ui/webui/about",
+     "//chrome/browser/ui/webui/accessibility",
+     "//chrome/browser/ui/webui/actor_internals",
+@@ -726,17 +728,13 @@
+   if (!defined(deps)) {
+     deps = []
+   }
+-  deps += [
+-    "//extensions/browser:webstore_installer",
+-  ]
++  deps += [ "//extensions/browser:webstore_installer" ]
+ 
+   # Krypton: direct includes after Chromium 157 target modularization.
+   if (!defined(public_deps)) {
+     public_deps = []
+   }
+-  public_deps += [
+-    "//extensions/browser:webstore_installer",
+-  ]
++  public_deps += [ "//extensions/browser:webstore_installer" ]
+ }
+ 
+ if (enable_extensions_core) {
+--- a/chrome/chrome_paks.gni
++++ b/chrome/chrome_paks.gni
+@@ -147,6 +147,7 @@
+       "$root_gen_dir/third_party/blink/public/resources/blink_resources.pak",
+       "$root_gen_dir/third_party/blink/public/resources/inspector_overlay_resources.pak",
+       "$root_gen_dir/third_party/blink/public/strings/permission_element_generated_strings.pak",
++      "$root_gen_dir/third_party/krypton_documents/krypton_documents_resources.pak",
+       "$root_gen_dir/third_party/ublock/resources/ublock_resources.pak",
+       "$root_gen_dir/ui/resources/ui_lottie_resources.pak",
+       "$root_gen_dir/ui/webui/resources/webui_resources.pak",
+@@ -175,8 +176,8 @@
+       "//chrome/browser/glic/resources:browser_resources",
+       "//chrome/browser/resources",
+       "//chrome/common:resources",
++      "//components/extstore_fixups",
+       "//components/resources",
+-      "//components/extstore_fixups",
+       "//content:content_resources",
+       "//content/browser/resources",
+       "//mojo/public/js:resources",
+@@ -185,6 +186,7 @@
+       "//third_party/blink/public:devtools_inspector_resources",
+       "//third_party/blink/public:resources",
+       "//third_party/blink/public/strings:permission_element_generated_strings",
++      "//third_party/krypton_documents:resources",
+       "//third_party/ublock",
+       "//ui/resources:ui_lottie_resources_grd",
+       "//ui/webui/resources",
+@@ -586,9 +588,8 @@
+     }
+ 
+     if (enable_dice_support) {
+-      sources += [
+-        "$root_gen_dir/chrome/signin_signout_confirmation_resources.pak",
+-      ]
++      sources +=
++          [ "$root_gen_dir/chrome/signin_signout_confirmation_resources.pak" ]
+       deps += [
+         "//chrome/browser/resources/feature_showcase:resources",
+         "//chrome/browser/resources/signin/signout_confirmation:resources",
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -1795,9 +1795,14 @@
+     "includes": [10140],
+   },
+ 
++  "third_party/krypton_documents/krypton_documents_resources.grd": {
++    "META": {"sizes": {"includes": [700]}},
++    "includes": [12000],
++  },
++
+   "<(SHARED_INTERMEDIATE_DIR)/THIS_IS_A_PLACEHOLDER.grd": {
+-    "META": {"sizes": {"includes": [800]}},
+-    "includes": [12000],
++    "META": {"sizes": {"includes": [100]}},
++    "includes": [12700],
+   },
+ 
+   # END "everything else" section.

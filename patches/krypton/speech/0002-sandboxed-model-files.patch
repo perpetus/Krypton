@@ -1,0 +1,275 @@
+Krypton: supply verified read-only speech model handles to the existing
+Windows utility. Keep profile ACLs, the speech sandbox and consent intact.
+
+--- a/chrome/browser/speech/chrome_speech_recognition_service.cc
++++ b/chrome/browser/speech/chrome_speech_recognition_service.cc
+@@ -220,6 +220,11 @@
+ void ChromeSpeechRecognitionService::OnSodaInstalled(
+     speech::LanguageCode /*language_code*/) {
+   if (speech_recognition_service_.is_bound()) {
++#if BUILDFLAG(IS_WIN)
++    if (auto* installer = krypton::speech::Installer::Get())
++      speech_recognition_service_->SetKryptonModelFiles(
++          installer->ModelFilesForService());
++#endif
+     speech_recognition_service_->SetSodaConfigPaths(
+         ChromeSpeechRecognitionService::GetSodaConfigPaths());
+   }
+@@ -305,6 +310,10 @@
+   speech_recognition_service_.reset_on_disconnect();
+   speech_recognition_service_.reset_on_idle_timeout(kIdleProcessTimeout);
+   if (speech_recognition_service_.is_bound()) {
++#if BUILDFLAG(IS_WIN)
++    speech_recognition_service_->SetKryptonModelFiles(
++        installer->ModelFilesForService());
++#endif
+     speech_recognition_service_->SetSodaPaths(binary_path, config_paths,
+                                               language_name);
+ 
+--- a/chrome/services/speech/soda/soda_client.h
++++ b/chrome/services/speech/soda/soda_client.h
+@@ -5,6 +5,9 @@
+ #ifndef CHROME_SERVICES_SPEECH_SODA_SODA_CLIENT_H_
+ #define CHROME_SERVICES_SPEECH_SODA_SODA_CLIENT_H_
+ 
++#include "base/containers/span.h"
++#include "base/files/file.h"
++#include "build/build_config.h"
+ #include "chrome/services/speech/soda/soda_async_impl.h"
+ 
+ namespace soda {
+@@ -43,6 +46,15 @@
+                      int sample_rate,
+                      int channel_count) = 0;
+ 
++#if BUILDFLAG(IS_WIN)
++  virtual void ResetWithModelFiles(const SerializedSodaConfig config,
++                                   int sample_rate,
++                                   int channel_count,
++                                   base::span<const base::File>) {
++    Reset(config, sample_rate, channel_count);
++  }
++#endif
++
+   // Destroys the SODA instance and releases its memory if initialized.
+   virtual void Destroy() = 0;
+ 
+--- a/chrome/services/speech/soda/soda_client_impl.cc
++++ b/chrome/services/speech/soda/soda_client_impl.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/services/speech/soda/soda_client_impl.h"
+ 
++#include <array>
+ #include <tuple>
+ 
+ #include "base/debug/dump_without_crashing.h"
+@@ -20,6 +21,12 @@
+     : lib_(library_path),
+       create_soda_func_(reinterpret_cast<CreateSodaFunction>(
+           lib_.GetFunctionPointer("CreateExtendedSodaAsync"))),
++#if BUILDFLAG(IS_WIN)
++      create_with_model_files_func_(
++          reinterpret_cast<CreateWithModelFilesFunction>(
++              lib_.GetFunctionPointer(
++                  "KryptonCreateExtendedSodaAsyncWithModelFiles"))),
++#endif
+       delete_soda_func_(reinterpret_cast<DeleteSodaFunction>(
+           lib_.GetFunctionPointer("DeleteExtendedSodaAsync"))),
+       add_audio_func_(reinterpret_cast<AddAudioFunction>(
+@@ -116,6 +123,34 @@
+   Destroy();
+ 
+   soda_async_handle_ = create_soda_func_(config);
++  StartInstance(sample_rate, channel_count);
++}
++
++#if BUILDFLAG(IS_WIN)
++NO_SANITIZE("cfi-icall")
++void SodaClientImpl::ResetWithModelFiles(const SerializedSodaConfig config,
++                                         int sample_rate,
++                                         int channel_count,
++                                         base::span<const base::File> files) {
++  std::array<base::PlatformFile, 16> handles;
++  Destroy();
++  if (load_soda_result_ != LoadSodaResultValue::kSuccess ||
++      !create_with_model_files_func_ || files.empty() ||
++      files.size() > handles.size()) {
++    return;
++  }
++
++  for (size_t i = 0; i < files.size(); ++i)
++    handles[i] = files[i].GetPlatformFile();
++
++  soda_async_handle_ =
++      create_with_model_files_func_(config, handles.data(), files.size());
++  StartInstance(sample_rate, channel_count);
++}
++#endif
++
++NO_SANITIZE("cfi-icall")
++void SodaClientImpl::StartInstance(int sample_rate, int channel_count) {
+   if (!soda_async_handle_) {
+     return;
+   }
+--- a/chrome/services/speech/soda/soda_client_impl.h
++++ b/chrome/services/speech/soda/soda_client_impl.h
+@@ -30,16 +30,29 @@
+   void Reset(const SerializedSodaConfig config,
+              int sample_rate,
+              int channel_count) override;
++#if BUILDFLAG(IS_WIN)
++  void ResetWithModelFiles(const SerializedSodaConfig config,
++                           int sample_rate,
++                           int channel_count,
++                           base::span<const base::File> files) override;
++#endif
+   void Destroy() override;
+   void UpdateRecognitionContext(const RecognitionContext context) override;
+   bool IsInitialized() override;
+   bool BinaryLoadedSuccessfully() override;
+ 
+  private:
++  void StartInstance(int sample_rate, int channel_count);
+   base::ScopedNativeLibrary lib_;
+ 
+   typedef void* (*CreateSodaFunction)(SerializedSodaConfig);
+   CreateSodaFunction create_soda_func_;
++#if BUILDFLAG(IS_WIN)
++  using CreateWithModelFilesFunction = void* (*)(SerializedSodaConfig,
++                                                 const base::PlatformFile*,
++                                                 size_t);
++  CreateWithModelFilesFunction create_with_model_files_func_;
++#endif
+ 
+   typedef void (*DeleteSodaFunction)(void*);
+   DeleteSodaFunction delete_soda_func_;
+--- a/chrome/services/speech/speech_recognition_recognizer_impl.cc
++++ b/chrome/services/speech/speech_recognition_recognizer_impl.cc
+@@ -760,7 +760,22 @@
+   config.callback_handle =
+       reinterpret_cast<void*>(static_cast<uintptr_t>(soda_client_id_));
+   CHECK(soda_client_);
++#if BUILDFLAG(IS_WIN)
++  if (!speech_recognition_service_) {
++    OnSpeechRecognitionError();
++    return;
++  }
++  soda_client_->ResetWithModelFiles(
++      config, sample_rate_, channel_count_,
++      speech_recognition_service_->GetKryptonModelFiles(
++          language_pack_directory));
++  if (!soda_client_->IsInitialized()) {
++    OnSpeechRecognitionError();
++    return;
++  }
++#else
+   soda_client_->Reset(config, sample_rate_, channel_count_);
++#endif
+ 
+   timestamp_estimator_ = std::make_unique<SpeechTimestampEstimator>();
+ }
+--- a/chrome/services/speech/speech_recognition_service_impl.cc
++++ b/chrome/services/speech/speech_recognition_service_impl.cc
+@@ -69,6 +69,23 @@
+     observer.OnLanguagePackInstalled(config_paths_);
+   }
+ }
++
++void SpeechRecognitionServiceImpl::SetKryptonModelFiles(
++    base::flat_map<std::string, std::vector<base::File>> files) {
++#if BUILDFLAG(IS_WIN)
++  krypton_model_files_ = std::move(files);
++#endif
++}
++
++#if BUILDFLAG(IS_WIN)
++base::span<const base::File> SpeechRecognitionServiceImpl::GetKryptonModelFiles(
++    const std::string& pack_id) const {
++  const auto it = krypton_model_files_.find(pack_id);
++  return it == krypton_model_files_.end()
++             ? base::span<const base::File>()
++             : base::span<const base::File>(it->second);
++}
++#endif
+ 
+ void SpeechRecognitionServiceImpl::BindRecognizer(
+     mojo::PendingReceiver<media::mojom::SpeechRecognitionRecognizer> receiver,
+@@ -162,6 +179,9 @@
+ }
+ 
+ bool SpeechRecognitionServiceImpl::FilePathsExist() {
++#if BUILDFLAG(IS_WIN)
++  return !binary_path_.empty() && !krypton_model_files_.empty();
++#else
+   if (!base::PathExists(binary_path_))
+     return false;
+ 
+@@ -171,6 +191,7 @@
+   }
+ 
+   return true;
++#endif
+ }
+ 
+ bool SpeechRecognitionServiceImpl::CreateRecognizer(
+--- a/chrome/services/speech/speech_recognition_service_impl.h
++++ b/chrome/services/speech/speech_recognition_service_impl.h
+@@ -6,8 +6,11 @@
+ #define CHROME_SERVICES_SPEECH_SPEECH_RECOGNITION_SERVICE_IMPL_H_
+ 
+ #include <string>
++#include <vector>
+ 
+ #include "base/containers/flat_map.h"
++#include "base/containers/span.h"
++#include "base/files/file.h"
+ #include "base/files/file_path.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/observer_list.h"
+@@ -59,6 +62,13 @@
+   void SetSodaParams(const bool mask_offensive_words) override;
+   void SetSodaConfigPaths(
+       const base::flat_map<std::string, base::FilePath>& config_paths) override;
++
++  void SetKryptonModelFiles(
++      base::flat_map<std::string, std::vector<base::File>> files) override;
++#if BUILDFLAG(IS_WIN)
++  base::span<const base::File> GetKryptonModelFiles(
++      const std::string& pack_id) const;
++#endif
+ 
+   // media::mojom::SpeechRecognitionContext:
+   void BindRecognizer(
+@@ -114,6 +124,9 @@
+ 
+   base::FilePath binary_path_ = base::FilePath();
+   base::flat_map<std::string, base::FilePath> config_paths_;
++#if BUILDFLAG(IS_WIN)
++  base::flat_map<std::string, std::vector<base::File>> krypton_model_files_;
++#endif
+   std::string default_live_caption_language_;
+   bool mask_offensive_words_ = false;
+ 
+--- a/media/mojo/mojom/speech_recognition_service.mojom
++++ b/media/mojo/mojom/speech_recognition_service.mojom
+@@ -9,6 +9,7 @@
+ import "media/mojo/mojom/audio_stream_factory.mojom";
+ import "media/mojo/mojom/media_types.mojom";
+ import "media/mojo/mojom/speech_recognition.mojom";
++import "mojo/public/mojom/base/file.mojom";
+ import "mojo/public/mojom/base/file_path.mojom";
+ import "sandbox/policy/mojom/context.mojom";
+ import "sandbox/policy/mojom/sandbox.mojom";
+@@ -59,6 +60,11 @@
+   // Sets the config file paths for the language packs. Used to notify the
+   // service when new language packs are installed.
+   SetSodaConfigPaths(map<string, mojo_base.mojom.FilePath> config_paths);
++
++  // Krypton: the browser transfers verified read-only model handles. Paths
++  // are identifiers only; the restricted service never opens these paths.
++  [AllowedContext=sandbox.mojom.Context.kBrowser]
++  SetKryptonModelFiles(map<string, array<mojo_base.mojom.ReadOnlyFile>> files);
+ };
+ 
+ // The interface used to start and stop fetching audio from the microphone

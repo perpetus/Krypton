@@ -8,7 +8,7 @@
 
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1634,7 +1634,6 @@
+@@ -1733,7 +1733,6 @@
    if (is_win) {
      sources += [
        "win/krypton_update_service.cc",
@@ -16,7 +16,7 @@
        "win/krypton_update_trust.h",
        "chrome_browser_main_win.cc",
        "chrome_browser_main_win.h",
-@@ -2237,6 +2236,17 @@
+@@ -2240,6 +2239,17 @@
      "//chrome/browser/ui/krypton_ui:multi_page_features",
      "//chrome/browser/ui/krypton_ui:runtime",
    ]
@@ -36,7 +36,7 @@
  # This target no longer has any sources of its own; it only aggregates
 --- a/chrome/browser/actor/BUILD.gn
 +++ b/chrome/browser/actor/BUILD.gn
-@@ -348,6 +348,14 @@
+@@ -370,6 +370,14 @@
        "//chrome/browser/ui:browser_window_header",
      ]
    }
@@ -53,7 +53,7 @@
  # actor_tab_data.cc is split from :impl into an internal source_set with
 --- a/chrome/browser/component_updater/BUILD.gn
 +++ b/chrome/browser/component_updater/BUILD.gn
-@@ -316,6 +316,14 @@
+@@ -325,6 +325,14 @@
    if (enable_request_header_integrity) {
      deps += [ "//chrome/browser/request_header_integrity" ]
    }
@@ -141,7 +141,7 @@
  source_set("impl") {
 --- a/chrome/browser/lifetime/BUILD.gn
 +++ b/chrome/browser/lifetime/BUILD.gn
-@@ -212,6 +212,16 @@
+@@ -216,6 +216,16 @@
    if (enable_background_mode) {
      deps += [ "//chrome/browser/background/extensions" ]
    }
@@ -160,7 +160,7 @@
  if (!is_android) {
 --- a/chrome/browser/net/BUILD.gn
 +++ b/chrome/browser/net/BUILD.gn
-@@ -338,6 +338,15 @@
+@@ -339,6 +339,15 @@
        "//components/tabs:public",
      ]
    }
@@ -212,7 +212,7 @@
  proto_library("permissions_proto") {
 --- a/chrome/browser/prefs/BUILD.gn
 +++ b/chrome/browser/prefs/BUILD.gn
-@@ -514,6 +514,14 @@
+@@ -516,6 +516,14 @@
      "//chrome/browser/ui/krypton_ui:buildflags",
      "//chrome/browser/ui/krypton_ui:workspace_models",
    ]
@@ -229,7 +229,7 @@
  # There are users of this util such as //c/b/ash/app_restore. If it's part of
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -621,6 +621,14 @@
+@@ -644,6 +644,14 @@
      "//ui/base",
      "//ui/gfx",
    ]
@@ -244,7 +244,7 @@
  }
  
  source_set("profile_util_impl") {
-@@ -711,6 +719,16 @@
+@@ -734,6 +742,16 @@
        "//chrome/browser/ash/profiles",
      ]
    }
@@ -281,7 +281,7 @@
  if (!is_android) {
 --- a/chrome/browser/spellchecker/BUILD.gn
 +++ b/chrome/browser/spellchecker/BUILD.gn
-@@ -103,6 +103,14 @@
+@@ -104,6 +104,14 @@
    if (is_chromeos) {
      deps += [ "//ash/constants" ]
    }
@@ -295,7 +295,7 @@
 +  ]
  }
  
- source_set("unit_tests") {
+ if (has_spellcheck_panel) {
 --- a/chrome/browser/ssl/BUILD.gn
 +++ b/chrome/browser/ssl/BUILD.gn
 @@ -184,6 +184,14 @@
@@ -315,7 +315,7 @@
  source_set("test_support") {
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -528,6 +528,14 @@
+@@ -530,6 +530,14 @@
      "//chrome/browser/ui/krypton_ui:buildflags",
      "//chrome/browser/ui/krypton_ui:workspace_session",
    ]
@@ -330,7 +330,7 @@
  }
  
    source_set("scoped_tabbed_browser_displayer") {
-@@ -626,7 +634,15 @@
+@@ -629,7 +637,15 @@
        "//chrome/browser/ui/tabs:tab_strip_model_observer",
        "//ui/base/unowned_user_data",
      ]
@@ -347,9 +347,9 @@
  
    source_set("unload_controller_impl") {
      sources = [ "unload_controller.cc" ]
-@@ -670,7 +686,15 @@
-     if (is_chromeos) {
-       deps += [ "//chrome/browser/ash/boca/on_task" ]
+@@ -676,7 +692,15 @@
+         "//chrome/browser/ui/chromeos/locked_state",
+       ]
      }
 -  }
 +  
@@ -364,7 +364,7 @@
  
    source_set("browser_command_controller") {
      public = [ "browser_command_controller.h" ]
-@@ -820,7 +844,15 @@
+@@ -827,7 +851,15 @@
          "//chrome/browser/ui/startup/default_browser_prompt",
        ]
      }
@@ -381,7 +381,7 @@
  
    source_set("browser_commands") {
      public = [ "browser_commands.h" ]
-@@ -1083,6 +1115,14 @@
+@@ -1094,6 +1126,14 @@
    if (is_win && is_chrome_branded) {
      deps += [ "//chrome/browser/win/installer_downloader:prefs" ]
    }
@@ -415,7 +415,7 @@
  source_set("unit_tests") {
 --- a/chrome/browser/ui/tabs/BUILD.gn
 +++ b/chrome/browser/ui/tabs/BUILD.gn
-@@ -434,6 +434,14 @@
+@@ -443,6 +443,14 @@
      "//chrome/browser/ui/krypton_ui:buildflags",
      "//chrome/browser/ui/krypton_ui:native_headers",
      "//chrome/browser/ui/krypton_ui:workspace_session",
@@ -451,7 +451,7 @@
  source_set("test_support") {
 --- a/chrome/browser/ui/views/page_info/BUILD.gn
 +++ b/chrome/browser/ui/views/page_info/BUILD.gn
-@@ -131,6 +131,14 @@
+@@ -132,6 +132,14 @@
        "//components/safe_browsing/core/browser:suspicious_site_warning_allowlist",
      ]
    }
@@ -468,7 +468,7 @@
  source_set("unit_tests") {
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
-@@ -720,6 +720,22 @@
+@@ -736,6 +736,22 @@
      "//extensions/common",
      "//ui/webui",
    ]
@@ -510,7 +510,7 @@
  source_set("unit_tests") {
 --- a/chrome/browser/ui/webui/settings/BUILD.gn
 +++ b/chrome/browser/ui/webui/settings/BUILD.gn
-@@ -455,6 +455,15 @@
+@@ -460,6 +460,15 @@
    if (enable_dice_support) {
      deps += [ "//chrome/browser/ui/webui/cr_components/signin" ]
    }

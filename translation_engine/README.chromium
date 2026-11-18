@@ -1,0 +1,35 @@
+Name: Krypton local translation engine (Bergamot / Marian)
+Short Name: krypton_bergamot
+URL: https://github.com/mozilla/translations
+Version: v0.6.0 at eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d
+License: MPL-2.0, MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, Unlicense
+License File: See the pinned source tree LICENSE and each component's LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+CPU inference behind the existing sandboxed on-device translation service and
+TranslateKit C ABI. Built from source with the prepared clang-cl, static CRT,
+CFG, CET compatibility, ASLR and NX. PCRE2 JIT, network access, file-based model
+loading, file logging, GPU backends and extra engine worker threads are disabled.
+
+Source provenance:
+source-pins.json and ../deps.ini record exact revisions and archive SHA-256s for
+mozilla/translations (including Marian), sentencepiece, intgemm, ssplit-cpp,
+onnxjs, Eigen and PCRE2. The source tree contains the original licence notices
+for embedded support libraries. No downloaded engine binary is used.
+
+Local Modifications:
+patches/native-sandbox.patch: immutable borrowed model buffers with explicit
+lifetime ownership, static dependency wiring, standalone archive versioning,
+parent toolchain flags and sandbox-safe file/log/error handling.
+patches/vendored-iterator-warnings.patch: warning-free vendored yaml-cpp and
+pathie headers (explicit iterator member types instead of the deprecated
+std::iterator base, as upstream yaml-cpp 0.7; an assert-only parameter cast to
+void). Applied after native-sandbox.patch.
+
+Model provenance:
+Mozilla's translations-models-v2 stable records, fetched at development time.
+Released generations 3.0/3.1 match the v0.6.0 inference family; alpha records are
+excluded. Individual sizes, hashes, URLs and MPL-2.0 licensing belong in the
+pack manifest. No model is fetched on startup or from page content.

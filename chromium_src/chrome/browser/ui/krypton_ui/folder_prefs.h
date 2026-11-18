@@ -2,9 +2,10 @@
 // Use of this source code is governed by the GPL-3.0 license in LICENSE.
 #ifndef CHROME_BROWSER_UI_KRYPTON_UI_FOLDER_PREFS_H_
 #define CHROME_BROWSER_UI_KRYPTON_UI_FOLDER_PREFS_H_
+#include "chrome/browser/ui/krypton_ui/live_folder_model.h"
+#include "krypton_ui/abi.h"
 #include <string>
 #include <vector>
-#include "krypton_ui/abi.h"
 class PrefService;
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -18,6 +19,8 @@ struct TabFolder {
   std::string name, glyph;
   size_t order = 0;
   bool collapsed = false;
+  LiveFolderConfig live;
+  std::string live_status; // Transient provider state; not written to prefs.
   bool operator==(const TabFolder&) const = default;
 };
 struct FolderCatalog {

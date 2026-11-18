@@ -1,0 +1,38 @@
+# Copyright 2026 The Krypton Authors. GPL-3.0.
+import("//chrome/browser/ui/krypton_ui/features.gni")
+
+source_set("local_translation") {
+  if (krypton_ui_enabled) {
+    data_deps = [ "//chrome/browser/ui/krypton_ui:runtime_data" ]
+  }
+  sources = [
+    "engine_manifest.h",
+    "installer.cc",
+    "installer.h",
+    "model_manifest.inc",
+    "model_packs.cc",
+    "model_packs.h",
+    "provider.cc",
+    "provider.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/krypton_models:files",
+    "//chrome/browser/on_device_translation",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common:constants",
+    "//components/on_device_translation",
+    "//components/on_device_translation:translation_installer",
+    "//components/prefs",
+    "//components/translate/core/browser",
+    "//components/translate/core/common",
+    "//content/public/browser",
+    "//crypto",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/cpp",
+    "//third_party/blink/public/mojom:mojom_platform",
+    "//third_party/zstd:decompress",
+    "//url",
+  ]
+}

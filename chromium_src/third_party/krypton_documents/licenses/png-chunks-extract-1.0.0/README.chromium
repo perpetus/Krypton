@@ -1,0 +1,10 @@
+Name: png-chunks-extract
+Short Name: png-chunks-extract
+URL: git://github.com/hughsk/png-chunks-extract.git
+Version: 1.0.0
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

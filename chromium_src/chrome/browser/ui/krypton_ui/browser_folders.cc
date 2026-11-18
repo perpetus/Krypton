@@ -13,6 +13,7 @@
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/krypton_ui/live_folders.h"
 #include "chrome/browser/ui/krypton_ui/multi_page_session.h"
 #include "chrome/browser/ui/krypton_ui/workspace_session.h"
 #include "components/sessions/content/session_tab_helper.h"
@@ -21,7 +22,9 @@
 
 namespace krypton_ui {
 bool BrowserAdapter::CanFolders() const {
-  return !browser_->GetProfile()->IsOffTheRecord();
+  // Folders belong to the catalog owner's profile; a host for another
+  // profile does not offer them.
+  return !hosted_ && !browser_->GetProfile()->IsOffTheRecord();
 }
 void BrowserAdapter::PublishFolders() {
   const auto* api = session_.api();
@@ -51,14 +54,20 @@ void BrowserAdapter::PublishFolders() {
           std::ranges::find(published_folders_, folder.id, &TabFolder::id);
       if (!reset && old != published_folders_.end() && *old == folder)
         continue;
-      const KrFolder value{sizeof(value),
-                           folder.id,
-                           folder.space,
-                           folder.parent,
-                           {folder.name.data(), folder.name.size()},
-                           {folder.glyph.data(), folder.glyph.size()},
-                           folder.order,
-                           folder.collapsed};
+      const KrFolder value{
+          sizeof(value),
+          folder.id,
+          folder.space,
+          folder.parent,
+          {folder.name.data(), folder.name.size()},
+          {folder.glyph.data(), folder.glyph.size()},
+          folder.order,
+          folder.collapsed,
+          folder.live.kind,
+          {folder.live.source.data(), folder.live.source.size()},
+          folder.live.interval_minutes,
+          folder.live.max_items,
+          {folder.live_status.data(), folder.live_status.size()}};
       if (api->upsert_folder(api->self, &value) != KR_OK)
         return;
     }
@@ -134,10 +143,12 @@ KrResult BrowserAdapter::FolderCommand(const KrFolderCommand& command) {
       !api->remove_folder)
     return KR_ERR_UNSUPPORTED;
   if (!KR_HAS_FIELD(&command, KrFolderCommand, collapsed) ||
-      command.kind > KR_FOLDER_NEW_TAB ||
+      command.kind > KR_FOLDER_RESTORE_LIVE_ITEMS ||
       (!command.name.data && command.name.size) ||
       (!command.glyph.data && command.glyph.size))
     return KR_ERR_INVALID_ARGUMENT;
+  if (command.kind >= KR_FOLDER_SET_LIVE)
+    return live_folders_ ? live_folders_->Command(command) : KR_ERR_UNSUPPORTED;
   if (command.kind == KR_FOLDER_MOVE_TAB) {
     auto* tab = FindTab(command.tab);
     if (!tab || (command.folder && !folders_.Find(command.folder)))
@@ -232,8 +243,9 @@ KrResult BrowserAdapter::FolderCommand(const KrFolderCommand& command) {
     default:
       return KR_ERR_INVALID_ARGUMENT;
   }
+  // Folders hold this profile's tabs, so they stay in Spaces it hosts.
   for (const auto& folder : catalog.items)
-    if (!workspaces_.Contains(folder.space))
+    if (!HostsSpace(folder.space))
       return KR_ERR_INVALID_ARGUMENT;
   if (!WriteFolders(*browser_->GetProfile()->GetPrefs(), catalog))
     return KR_ERR_INVALID_ARGUMENT;

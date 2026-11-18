@@ -1,0 +1,12 @@
+Name: onnxjs
+URL: https://github.com/browsermt/onnxjs
+Version: 924924b08e9596b41aeebada4a172f026be95f5a
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+Pinned support code for the sandboxed local translation engine.
+Source: https://codeload.github.com/browsermt/onnxjs/zip/924924b08e9596b41aeebada4a172f026be95f5a
+Archive SHA-256: 180493af976f7571c40620f12da754b2dd9853faabac49b9c4550e70dda98410

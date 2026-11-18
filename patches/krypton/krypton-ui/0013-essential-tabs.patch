@@ -22,7 +22,7 @@
  
 --- a/chrome/browser/ui/browser_live_tab_context.cc
 +++ b/chrome/browser/ui/browser_live_tab_context.cc
-@@ -213,11 +213,8 @@
+@@ -215,11 +215,8 @@
    std::map<std::string, std::string> extra_data;
  
  #if BUILDFLAG(ENABLE_KRYPTON_UI)
@@ -35,4 +35,4 @@
 +                                      extra_data);
  #endif
  
-   glic::PopulateGlicExtraData(tab_strip_model_->GetTabAtIndex(index),
+   tabs::TabInterface* const tab = tab_strip_model_->GetTabAtIndex(index);

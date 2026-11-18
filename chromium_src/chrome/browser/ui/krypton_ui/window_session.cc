@@ -25,14 +25,15 @@ WindowSession::~WindowSession() {
 base::expected<void, std::string> WindowSession::Initialize(
     HWND parent,
     const KrBrowser& browser,
-    const KrTheme& initial_theme) {
+    const KrTheme& initial_theme,
+    bool hosted) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (state_ != State::kNew) {
     return base::unexpected("KryptonUI window session has already been used.");
   }
   // A failed creation is terminal for this window, not a retry or fallback.
   state_ = State::kClosed;
-  auto created = module_->Create(parent, browser, initial_theme);
+  auto created = module_->Create(parent, browser, initial_theme, hosted);
   if (!created.has_value()) {
     return base::unexpected(std::move(created.error()));
   }
@@ -50,6 +51,14 @@ void WindowSession::Close() {
   previous_state_.reset();
   parent_ = nullptr;
   module_->Destroy(ui_);
+}
+
+void WindowSession::SetPresented(bool presented) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (state_ == State::kActive && KR_HAS_SLOT(&ui_, KrShellUI, set_presented) &&
+      ui_.set_presented) {
+    ui_.set_presented(ui_.self, presented);
+  }
 }
 
 bool WindowSession::Defer(base::OnceClosure command) {

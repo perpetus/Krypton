@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "base/strings/string_util.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "ui/base/accelerators/accelerator.h"
 
 namespace krypton_ui {
@@ -22,26 +23,39 @@ std::u16string Label(const actions::ActionItem& action) {
 SidebarMenuModel::SidebarMenuModel(base::span<const Action> actions,
                                    ReadState read_state,
                                    CanExecute can_execute,
-                                   Dispatch dispatch)
+                                   Dispatch dispatch,
+                                   uint64_t zone)
     : ui::SimpleMenuModel(this),
       actions_(actions.begin(), actions.end()),
       read_state_(std::move(read_state)),
       can_execute_(std::move(can_execute)),
-      dispatch_(std::move(dispatch)) {
-  AddCheckItem(kCompact, u"Enable compact mode");
-  AddSeparator(ui::NORMAL_SEPARATOR);
+      dispatch_(std::move(dispatch)),
+      layout_menus_(this),
+      appearance_(this),
+      page_(this) {
   for (const auto& action : actions_) {
     if (action.source) {
-      AddItem(action.command, action.source->GetText().empty()
-                                  ? action.fallback_label
-                                  : Label(*action.source));
+      auto& menu = action.command == IDC_RELOAD ||
+                           action.command == IDC_BOOKMARK_THIS_TAB
+                       ? page_
+                       : *this;
+      menu.AddItem(action.command, action.source->GetText().empty()
+                                       ? action.fallback_label
+                                       : Label(*action.source));
     }
   }
-  AddSeparator(ui::NORMAL_SEPARATOR);
+  if (zone == KR_SIDEBAR_TABS)
+    AddItem(kNewFolder, u"New folder");
+  if (zone == KR_SIDEBAR_ESSENTIALS)
+    AddCheckItem(kToggleEssential, u"Use current tab as Essential");
   AddItem(kNewWorkspace, u"New workspace\u2026");
-  AddCheckItem(kSidebarRight, u"Tabs on the right");
-  AddItem(kAppearance, u"Appearance settings\u2026");
-  AddItem(kEditTheme, u"Edit theme\u2026");
+  if (page_.GetItemCount())
+    AddSubMenu(kPageMenu, u"Current page", &page_);
+  AddSeparator(ui::NORMAL_SEPARATOR);
+  layout_menus_.AddTo(*this);
+  appearance_.AddItem(kEditTheme, u"Edit theme\u2026");
+  appearance_.AddItem(kAppearance, u"Appearance settings\u2026");
+  AddSubMenu(kAppearanceMenu, u"Appearance", &appearance_);
 }
 SidebarMenuModel::~SidebarMenuModel() = default;
 
@@ -54,7 +68,11 @@ bool SidebarMenuModel::IsCommandIdChecked(int command) const {
   if (!state) {
     return false;
   }
+  if (IsLayoutCommand(command))
+    return IsLayoutCommandChecked(state->layout_flags, command);
   switch (command) {
+    case kToggleEssential:
+      return state->essential;
     case kCompact:
       return state->layout_flags & KR_LAYOUT_COMPACT_MODE;
     case kSidebarRight:
@@ -71,7 +89,17 @@ bool SidebarMenuModel::IsCommandIdEnabled(int command) const {
   if (!state) {
     return false;
   }
+  if (IsLayoutCommand(command))
+    return IsLayoutCommandEnabled(state->layout_flags, command);
   switch (command) {
+    case kNewFolder:
+      return state->can_create_folder;
+    case kToggleEssential:
+      return state->can_set_essential;
+    case kAppearanceMenu:
+      return state->can_show_settings || state->can_edit_theme;
+    case kPageMenu:
+      return true;
     case kCompact:
       return true;
     case kSidebarRight:
@@ -94,7 +122,8 @@ bool SidebarMenuModel::IsCommandIdVisible(int command) const {
   if (const auto* action = FindAction(command)) {
     return action->GetVisible();
   }
-  return command >= kCompact && command <= kEditTheme;
+  return IsLayoutCommand(command) ||
+         (command >= kCompact && command <= kPageMenu);
 }
 bool SidebarMenuModel::GetAcceleratorForCommandId(
     int command,
@@ -112,22 +141,39 @@ void SidebarMenuModel::ExecuteCommand(int command, int event_flags) {
   }
   if (auto* action = FindAction(command)) {
     action->InvokeAction();
-  } else if (command >= kCompact && command <= kEditTheme) {
+  } else if (IsLayoutCommand(command) ||
+             (command >= kCompact && command <= kToggleEssential)) {
     dispatch_.Run(static_cast<Command>(command));
   }
 }
 bool SidebarMenuModel::IsItemDynamicAt(size_t index) const {
-  return FindAction(GetCommandIdAt(index)) != nullptr;
+  return IsItemForCommandIdDynamic(GetCommandIdAt(index));
 }
-std::u16string SidebarMenuModel::GetLabelAt(size_t index) const {
-  const auto found =
-      std::ranges::find(actions_, GetCommandIdAt(index), &Action::command);
+bool SidebarMenuModel::IsItemForCommandIdDynamic(int command) const {
+  return command == kToggleEssential || FindAction(command) != nullptr;
+}
+std::u16string SidebarMenuModel::GetLabelForCommandId(int command) const {
+  if (command == kToggleEssential) {
+    const auto state = read_state_.Run();
+    return state && state->essential ? u"Remove current tab from Essentials"
+                                     : u"Add current tab to Essentials";
+  }
+  const auto found = std::ranges::find(actions_, command, &Action::command);
   if (found != actions_.end()) {
     return found->source && !found->source->GetText().empty()
                ? Label(*found->source)
                : found->fallback_label;
   }
-  return ui::SimpleMenuModel::GetLabelAt(index);
+  return {};
+}
+std::u16string SidebarMenuModel::GetLabelAt(size_t index) const {
+  return IsItemDynamicAt(index) ? GetLabelForCommandId(GetCommandIdAt(index))
+                                : ui::SimpleMenuModel::GetLabelAt(index);
+}
+ui::ImageModel SidebarMenuModel::GetIconForCommandId(int command) const {
+  if (const auto* action = FindAction(command))
+    return action->GetImage();
+  return {};
 }
 ui::ImageModel SidebarMenuModel::GetIconAt(size_t index) const {
   if (const auto* action = FindAction(GetCommandIdAt(index))) {
@@ -147,6 +193,14 @@ std::string_view SidebarMenuModel::Glyph(int command) {
       return "\uE713";
     case kEditTheme:
       return "\uE790";
+    case kNewFolder:
+      return "\uE8F4";
+    case kToggleEssential:
+      return "\uE734";
+    case kAppearanceMenu:
+      return "\uE790";
+    case kPageMenu:
+      return "\uE8A5";
     default:
       return {};
   }

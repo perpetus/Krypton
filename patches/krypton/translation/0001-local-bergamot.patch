@@ -1,0 +1,324 @@
+Krypton: local, sandboxed page translation without remote services.
+Register the owned provider before profiles, replace the component installer on
+Windows, and default the existing provider feature on. Pass the document's
+BrowserContext additively to preserve profile isolation. Disable the web-facing
+Translator API by default. Fix the compatibility client's output callback to
+write to its output buffer rather than mutate a const input reference.
+No inference or page text is sent to a server; pack downloads need a host action.
+
+--- a/components/translate/core/browser/translation_provider.h
++++ b/components/translate/core/browser/translation_provider.h
+@@ -14,6 +14,9 @@
+ #include "components/translate/core/common/translate_errors.h"
+ 
+ class GURL;
++namespace content {
++class BrowserContext;
++}
+ 
+ namespace translate {
+ 
+@@ -123,6 +126,14 @@
+   virtual TranslationBatchLimits GetBatchLimits() const;
+ 
+   virtual std::unique_ptr<TranslationSession> StartSession(const GURL& url) = 0;
++
++  // Krypton: profile isolation comes from the requesting document, never an
++  // active window or a URL lookup. Older providers retain their existing seam.
++  virtual std::unique_ptr<TranslationSession> StartSession(
++      const GURL& url,
++      content::BrowserContext*) {
++    return StartSession(url);
++  }
+ };
+ 
+ // Adds |provider| after the ones registered before it. Must be called before
+--- a/components/translate/content/browser/text_translator_host.cc
++++ b/components/translate/content/browser/text_translator_host.cc
+@@ -67,8 +67,20 @@
+     std::vector<mojom::TextSegmentPtr> segments,
+     TranslateTextCallback callback) {
+   const TranslationBatchLimits limits = provider_->GetBatchLimits();
++  if (segments.empty() || segments.size() > limits.max_segments ||
++      source_lang.size() > 32 || target_lang.size() > 32) {
++    ReportBadMessageAndDeleteThis("Invalid translation language code");
++    return;
++  }
++  size_t runs = 0;
+   size_t characters = 0;
+   for (const mojom::TextSegmentPtr& segment : segments) {
++    runs += segment->runs.size();
++    if (runs > 2048 || segment->element.size() > 32 ||
++        segment->attribute.size() > 32) {
++      ReportBadMessageAndDeleteThis("Invalid translation segment metadata");
++      return;
++    }
+     for (const mojom::TextRunPtr& run : segment->runs) {
+       characters += run->text.size();
+     }
+@@ -104,7 +116,13 @@
+ 
+   if (!session_) {
+     session_ =
+-        provider_->StartSession(render_frame_host().GetLastCommittedURL());
++        provider_->StartSession(render_frame_host().GetLastCommittedURL(),
++                                render_frame_host().GetBrowserContext());
++  }
++  if (!session_) {
++    std::move(callback).Run(std::nullopt, source_lang,
++                            TranslateErrors::INITIALIZATION_ERROR);
++    return;
+   }
+ 
+   TranslationRequest request;
+--- a/components/translate/core/common/translate_features.cc
++++ b/components/translate/core/common/translate_features.cc
+@@ -40,6 +40,6 @@
+       kTranslateTrigger.name, base::FeatureList::OVERRIDE_ENABLE_FEATURE);
+ }
+ 
+-BASE_FEATURE(kHeliumTranslate, base::FEATURE_DISABLED_BY_DEFAULT);
++BASE_FEATURE(kHeliumTranslate, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ }  // namespace translate
+--- a/components/on_device_translation/service/translate_kit_client.cc
++++ b/components/on_device_translation/service/translate_kit_client.cc
+@@ -351,8 +351,8 @@
+   std::string output;
+   if (client_->translator_translate_func_(
+           translator_ptr_, TranslateKitInputText(text.c_str(), text.length()),
+-          TranslateCallback, reinterpret_cast<uintptr_t>(&text))) {
+-    return text;
++          TranslateCallback, reinterpret_cast<uintptr_t>(&output))) {
++    return output;
+   }
+   return std::nullopt;
+ }
+--- a/chrome/browser/global_features.cc
++++ b/chrome/browser/global_features.cc
+@@ -89,7 +89,12 @@
+ #endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+ 
+ #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_translate/installer.h"
++#include "chrome/browser/krypton_translate/provider.h"
++#else
+ #include "chrome/browser/on_device_translation/installer_impl.h"
++#endif
+ #endif  // BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
+ 
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY)
+@@ -176,8 +181,13 @@
+       local_network_access::IPAddressSpaceOverridesPrefsObserver>(
+       g_browser_process->local_state());
+ #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
++#if BUILDFLAG(IS_WIN)
++  on_device_translation_installer_ =
++      std::make_unique<krypton::translation::Installer>();
++#else
+   on_device_translation_installer_ = std::make_unique<
+       on_device_translation::OnDeviceTranslationInstallerImpl>();
++#endif
+ #endif  // BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+@@ -275,6 +285,9 @@
+ }
+ 
+ void GlobalFeatures::Init() {
++#if BUILDFLAG(IS_WIN) && BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
++  krypton::translation::RegisterProvider();
++#endif
+   global_browser_collection_ = CreateGlobalBrowserCollection();
+ }
+ 
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1623,6 +1623,9 @@
+     deps += [ "//chrome/browser/background/extensions" ]
+   }
+ 
++  if (enable_on_device_translation && is_win) {
++    deps += [ "//chrome/browser/krypton_translate:local_translation" ]
++  }
+   if (enable_on_device_translation) {
+     deps += [
+       "//chrome/browser/on_device_translation",
+@@ -1633,8 +1636,6 @@
+ 
+   if (is_win) {
+     sources += [
+-      "win/krypton_update_service.cc",
+-      "win/krypton_update_trust.h",
+       "chrome_browser_main_win.cc",
+       "chrome_browser_main_win.h",
+       "font_prewarmer_tab_helper.cc",
+@@ -1644,6 +1645,8 @@
+       "platform_util_win.cc",
+       "process_singleton_win.cc",
+       "shell_integration_win.cc",
++      "win/krypton_update_service.cc",
++      "win/krypton_update_trust.h",
+     ]
+ 
+     libs = [
+@@ -2243,7 +2246,7 @@
+       deps = []
+     }
+     deps += [
+-      "//chrome/browser/ui/webui/help:help",
++      "//chrome/browser/ui/webui/help",
+       "//chrome/browser/win:krypton_update_service_headers",
+     ]
+   }
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -6811,13 +6811,13 @@
+     {
+       name: "TranslationAPI",
+       status: {
+-        "Win": "stable",
++        "Win": "",
+         "Mac": "stable",
+         "Linux": "stable",
+         "ChromeOS": "stable",
+         "default": "",
+       },
+-      base_feature_status: "enabled",
++      base_feature_status: "disabled",
+       copied_from_base_feature_if: "overridden",
+     },
+     {
+--- a/components/translate/content/renderer/translate_agent.cc
++++ b/components/translate/content/renderer/translate_agent.cc
+@@ -599,6 +599,9 @@
+   }
+ 
+   CancelPendingTranslation();
++  // Krypton: closing the document service cancels pending local results and
++  // releases its cached translators. A later translation binds a fresh pipe.
++  text_translator_.reset();
+ 
+   ExecuteScript("cr.googleTranslate.revert()");
+ }
+--- a/chrome/browser/translate/chrome_translate_client.cc
++++ b/chrome/browser/translate/chrome_translate_client.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/translate/chrome_translate_client.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#include "chrome/browser/ui/krypton_ui/translation_bridge.h"
++#endif
+ 
+ #include <memory>
+ #include <vector>
+@@ -371,6 +375,15 @@
+   if (error_type != translate::TranslateErrors::NONE) {
+     step = translate::TRANSLATE_STEP_TRANSLATE_ERROR;
+   }
++#if BUILDFLAG(IS_WIN)
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui::UpdateTranslationUI(
++          web_contents(), error_type != translate::TranslateErrors::NONE,
++          triggered_from_menu &&
++              step == translate::TRANSLATE_STEP_BEFORE_TRANSLATE))
++    return true;
++#endif
++#endif
+ 
+ // Translate uses a bubble UI on desktop and the Message UI on Android (here)
+ // and iOS (in ios/chrome/browser/translate/chrome_ios_translate_client.mm).
+@@ -517,6 +530,11 @@
+ // TranslateDriver::LanguageDetectionObserver implementation.
+ void ChromeTranslateClient::OnLanguageDetermined(
+     const translate::LanguageDetectionDetails& details) {
++#if BUILDFLAG(IS_WIN)
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  krypton_ui::UpdateTranslationUI(web_contents());
++#endif
++#endif
+   if (details.has_run_lang_detection) {
+     translate::TranslateBrowserMetrics::ReportLanguageDetectionContentLength(
+         details.contents.size());
+--- a/chrome/browser/translate/BUILD.gn
++++ b/chrome/browser/translate/BUILD.gn
+@@ -64,6 +64,12 @@
+     "//url",
+   ]
+ 
++  if (is_win) {
++    deps += [
++      "//chrome/browser/ui/krypton_ui:buildflags",
++      "//chrome/browser/ui/krypton_ui:native_headers",
++    ]
++  }
+   if (is_android) {
+     deps += [
+       "//chrome/browser/android:resource_mapper",
+--- a/components/translate/core/browser/translate_ranker_impl.cc
++++ b/components/translate/core/browser/translate_ranker_impl.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/translate/core/browser/translate_ranker_impl.h"
++#include "build/build_config.h"
+ 
+ #include <cmath>
+ #include <memory>
+@@ -173,6 +174,10 @@
+ 
+ // static
+ GURL TranslateRankerImpl::GetModelURL() {
++  if constexpr (BUILDFLAG(IS_WIN)) {
++    // Krypton page translation uses local resources only.
++    return GURL();
++  }
+   if (!base::FeatureList::IsEnabled(kTranslateRankerQuery) &&
+       !base::FeatureList::IsEnabled(kTranslateRankerEnforcement)) {
+     return GURL();
+--- a/components/translate/core/browser/translate_language_list.cc
++++ b/components/translate/core/browser/translate_language_list.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/translate/core/browser/translate_language_list.h"
++#include "build/build_config.h"
+ 
+ #include <stddef.h>
+ 
+@@ -276,6 +277,10 @@
+ }
+ 
+ void TranslateLanguageList::RequestLanguageList() {
++  if constexpr (BUILDFLAG(IS_WIN)) {
++    // Krypton page translation uses local resources only.
++    return;
++  }
+   const base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
+   if (!command_line.HasSwitch(translate::switches::kTranslateScriptURL))
+     return;
+--- a/components/translate/core/browser/translate_script.cc
++++ b/components/translate/core/browser/translate_script.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/translate/core/browser/translate_script.h"
++#include "build/build_config.h"
+ 
+ #include "base/command_line.h"
+ #include "base/feature_list.h"
+@@ -88,6 +89,11 @@
+ void TranslateScript::Request(RequestCallback callback,
+                               bool is_incognito,
+                               PrefService* prefs) {
++  if constexpr (BUILDFLAG(IS_WIN)) {
++    // Krypton fails closed without the local provider; no script fetch.
++    std::move(callback).Run(false);
++    return;
++  }
+   script_fetch_start_time_ = base::Time::Now().InMillisecondsFSinceUnixEpoch();
+ 
+   DCHECK(data_.empty()) << "Do not fetch the script if it is already fetched";

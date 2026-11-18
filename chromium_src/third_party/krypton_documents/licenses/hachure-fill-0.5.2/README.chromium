@@ -1,0 +1,10 @@
+Name: hachure-fill
+Short Name: hachure-fill
+URL: git+https://github.com/pshihn/hachure-fill.git
+Version: 0.5.2
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

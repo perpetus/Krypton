@@ -1,0 +1,10 @@
+Name: es6-promise-pool
+Short Name: es6-promise-pool
+URL: timdp/es6-promise-pool
+Version: 2.5.0
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

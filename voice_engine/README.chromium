@@ -1,0 +1,20 @@
+Name: Krypton local speech ABI adapter
+URL: https://github.com/moonshine-ai/moonshine
+Version: Moonshine 0.1.6; ONNX Runtime 1.32.0
+Security Critical: yes
+Shipped: yes
+License: GPL-3.0 (adapter); MIT (Moonshine and ONNX Runtime)
+
+Source-only integration, not yet built or accepted. The streaming core is
+pinned separately from model bytes. Only MIT Tiny/Small streaming models are
+eligible. Models are fetched for development hash pinning only under explicit
+authorization and are not staged or installed by this build.
+
+The adapter exposes the six existing SODA C exports and runs only in Chromium's
+existing speech-recognition utility sandbox. It uses the existing sandbox's
+read-only model access without adding a file rule. Browser microphone capture
+is mediated by AudioSourceFetcher; websites cannot start this host feature.
+
+No audio or transcript logging, file output, remote providers, telemetry,
+automatic model downloads, or model updates are permitted. Resource use and
+recognition/endpoint quality are unmeasured.

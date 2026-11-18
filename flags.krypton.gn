@@ -14,8 +14,8 @@ krypton_thinlto_opt_level = 3
 krypton_thinlto_codegen_opt_level = 3
 krypton_thinlto_jobs = 1
 # Browser linker workers are separate from automatic compilation parallelism.
-krypton_browser_link_jobs = 1
-krypton_concurrent_links = 1
+krypton_browser_link_jobs = 0
+krypton_concurrent_links = 2
 
 # --- V8 --------------------------------------------------------------------------
 # v8_enable_builtins_optimization is left to derive from chrome_pgo_phase;
@@ -77,3 +77,9 @@ use_fma = true
 # Krypton: optional Cast compilation; requires runtime discovery consent.
 enable_mdns = true
 enable_service_discovery = true
+
+# --- Crash reporting ------------------------------------------------------------
+# Public Crashpad ingestion endpoint; keep authentication tokens out of builds.
+# Consent still defaults to Ask, with user/policy disablement preserved.
+krypton_crash_upload_url = "https://o4512430494646272.ingest.us.sentry.io/api/4512430516207616/minidump/?sentry_key=0c31bb9d5c84459aa873a4dbb60cbdd7"
+krypton_crash_environment = "production"

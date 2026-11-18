@@ -1,0 +1,15 @@
+Name: ONNX Runtime CPU
+URL: https://github.com/microsoft/onnxruntime
+Version: 1.32.0
+Revision: fab30a46491a40f5e4c968b80e8a59acbbb91b53
+License: MIT and bundled third-party notices
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Official signed Windows x64 CPU binary selected by the user. Archive SHA-256: aaa1d04fcf86bd31e84b90bc0cbde80e632bd0720dcc5d8ba05c4fe45c09d127
+Only onnxruntime.dll is used; no Azure, GPU or external execution provider is
+registered or shipped. Telemetry is disabled on environment creation. Two shared
+inference worker threads, no spinning. Microsoft CRT runtime dependencies are
+redistributed from the matching installed Visual Studio redistributable with
+signature and SHA-256 verification. This is not the reduced source build.

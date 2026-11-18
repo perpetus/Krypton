@@ -1,0 +1,10 @@
+Name: w3c-keyname
+Short Name: w3c-keyname
+URL: git+https://github.com/marijnh/w3c-keyname.git
+Version: 2.2.8
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

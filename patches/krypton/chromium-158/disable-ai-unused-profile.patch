@@ -1,0 +1,13 @@
+# Krypton: Drop the Profile local that Helium disable-ai leaves unused.
+# Why: On Chromium 158, disable-ai.patch removes the small-expert-model
+# install call but keeps `profile`, which raises -Wunused-variable.
+--- a/chrome/browser/ui/webui/settings/captions_handler.cc
++++ b/chrome/browser/ui/webui/settings/captions_handler.cc
+@@ -318,7 +318,6 @@ void CaptionsHandler::HandleInstallSpeec
+ void CaptionsHandler::HandleInstallSpeechRecognitionSmallExpertModel(
+     const base::ListValue& /*args*/) {
+   AllowJavascript();
+-  Profile* profile = Profile::FromWebUI(web_ui());
+ }
+ 
+ void CaptionsHandler::HandleDeleteSpeechRecognitionSmallExpertModel(

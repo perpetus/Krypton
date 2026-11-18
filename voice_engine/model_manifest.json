@@ -1,0 +1,1074 @@
+{
+  "source": "moonshine-ai/moonshine",
+  "release": "0.1.6",
+  "commit": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+  "licence": "MIT",
+  "packs": [
+    {
+      "id": "de-small",
+      "language": "de",
+      "revision": "quantized_26_08_24",
+      "architecture": 4,
+      "lightweight": false,
+      "download_size": 121800823,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24/adapter.ort",
+          "size": 2869296,
+          "checksum": "rx5eAg==",
+          "checksum_type": "crc32c",
+          "sha256": "be438a3eb12ba3697a9e474d20f899e52d8e27b43a6fc4c4c809d2a099646744",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24/cross_kv.ort",
+          "size": 5358752,
+          "checksum": "B9ac2w==",
+          "checksum_type": "crc32c",
+          "sha256": "0c329cbf001bebbb9e34835e95676b9eb29e010405da46f65af511b8da16620e",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24/decoder_kv.ort",
+          "size": 61314512,
+          "checksum": "IRMZCQ==",
+          "checksum_type": "crc32c",
+          "sha256": "7da8ac9a1da2a486158ccde88c756fd876bf7f11ef1c2ba14b80e8edcd30028c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24/encoder.ort",
+          "size": 44358376,
+          "checksum": "AI1jZg==",
+          "checksum_type": "crc32c",
+          "sha256": "f31ef482f940e23af87906aeec986bf2e0a4862cad577bbc745264caab5a1858",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24/frontend.model.ort",
+          "size": 26776,
+          "checksum": "nGFUEw==",
+          "checksum_type": "crc32c",
+          "sha256": "a93453223d93aa41d21691568cde3a01125fe00710a5f7004a825e1a322d3025",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24/frontend.weights.ort",
+          "size": 7769280,
+          "checksum": "kUSrbA==",
+          "checksum_type": "crc32c",
+          "sha256": "8b417e2e0ee762e34d7163d24383823bb8bd1d037fb6966c32b3f86a3de4961f",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24/streaming_config.json",
+          "size": 512,
+          "checksum": "Y/oEHw==",
+          "checksum_type": "crc32c",
+          "sha256": "12d16c7f5ea6734d197b79baf47914ea7e996d6fca8d303a19aca10d0617cecc",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24/tokenizer.bin",
+          "size": 103319,
+          "checksum": "x219Qw==",
+          "checksum_type": "crc32c",
+          "sha256": "5725ad3771a1339802f8cebeda0fa8f7723f5282b1ee726c2544774d7399b9a7",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "en-small",
+      "language": "en",
+      "revision": "quantized_26_11_02",
+      "architecture": 4,
+      "lightweight": false,
+      "download_size": 142465862,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-en/quantized_26_11_02/adapter.ort",
+          "size": 2870320,
+          "checksum": "yw6hxQ==",
+          "checksum_type": "crc32c",
+          "sha256": "100d4806a3ba19b739fa9ae5c952e4d5267983090eea4a085e08d3e0bfd6875b",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-en/quantized_26_11_02/cross_kv.ort",
+          "size": 5356496,
+          "checksum": "1rJswQ==",
+          "checksum_type": "crc32c",
+          "sha256": "aa0ed033b7065ef744c36dce00228c708b43f2f2410e8ec782a960105c8595f7",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-en/quantized_26_11_02/decoder_kv.ort",
+          "size": 82043616,
+          "checksum": "+Q3U0Q==",
+          "checksum_type": "crc32c",
+          "sha256": "e4fae3869851b861177b5e1619c77ec9262365b2747ec322298d11753e88b38d",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-en/quantized_26_11_02/encoder.ort",
+          "size": 44148536,
+          "checksum": "vJtYUQ==",
+          "checksum_type": "crc32c",
+          "sha256": "f61486dc7b017cee99196366dcc977a173f45f2f387b0b7977695d0f0565d234",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-en/quantized_26_11_02/frontend.model.ort",
+          "size": 26992,
+          "checksum": "PJW8eA==",
+          "checksum_type": "crc32c",
+          "sha256": "4a8d5ef7e99a5e3011dbf09ffac4176056587f2aec20f885d606b9f55fbed408",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-en/quantized_26_11_02/frontend.weights.ort",
+          "size": 7769416,
+          "checksum": "Fdny+w==",
+          "checksum_type": "crc32c",
+          "sha256": "5379f3dfebe849c6cbacf84f0aa7441956f9572efe1720d44aa267e7dff93056",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-en/quantized_26_11_02/streaming_config.json",
+          "size": 512,
+          "checksum": "dPbFiw==",
+          "checksum_type": "crc32c",
+          "sha256": "26f02b6afb22d60871a5efd85c3d38e569cc0ddb6c5eb6e93d3260152ae8a47a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-en/quantized_26_11_02/tokenizer.bin",
+          "size": 249974,
+          "checksum": "B7s10Q==",
+          "checksum_type": "crc32c",
+          "sha256": "6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "es-small",
+      "language": "es",
+      "revision": "quantized_26_08_24",
+      "architecture": 4,
+      "lightweight": false,
+      "download_size": 121800392,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-es/quantized_26_08_24/adapter.ort",
+          "size": 2869296,
+          "checksum": "ZCOnJw==",
+          "checksum_type": "crc32c",
+          "sha256": "04b54114c8aab534222922640f7ca0882948ff9f6ed76777f6e184e55a8e8b15",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-es/quantized_26_08_24/cross_kv.ort",
+          "size": 5358752,
+          "checksum": "B6G3LA==",
+          "checksum_type": "crc32c",
+          "sha256": "4bfd0a641d72ccdae22751f86bbb2e25ff70c1fba4f81213f2415a1accff9618",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-es/quantized_26_08_24/decoder_kv.ort",
+          "size": 61314512,
+          "checksum": "Q6TnrQ==",
+          "checksum_type": "crc32c",
+          "sha256": "5b77c3d6baf801ef925a5bc54d7eb3db0c35ebbb86f8eaf5390d7f5bb42fef37",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-es/quantized_26_08_24/encoder.ort",
+          "size": 44358376,
+          "checksum": "EYLK1A==",
+          "checksum_type": "crc32c",
+          "sha256": "a9b8d6d5d9348d0e319cceffdb0196ef622df8e4e9f3fb4797dcd8dfafd50857",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-es/quantized_26_08_24/frontend.model.ort",
+          "size": 26776,
+          "checksum": "bvdZXg==",
+          "checksum_type": "crc32c",
+          "sha256": "69c76287f49db365aa278d4908ec450e69ca1b4bfb7e836159d963d623ee0c13",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-es/quantized_26_08_24/frontend.weights.ort",
+          "size": 7769280,
+          "checksum": "ITuX4A==",
+          "checksum_type": "crc32c",
+          "sha256": "2f5a0eb5f3004c9447810d74274a352746319a32144e31d95ef410f425b84dda",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-es/quantized_26_08_24/streaming_config.json",
+          "size": 512,
+          "checksum": "Y/oEHw==",
+          "checksum_type": "crc32c",
+          "sha256": "12d16c7f5ea6734d197b79baf47914ea7e996d6fca8d303a19aca10d0617cecc",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-es/quantized_26_08_24/tokenizer.bin",
+          "size": 102888,
+          "checksum": "/7v8NQ==",
+          "checksum_type": "crc32c",
+          "sha256": "5fbb7d4314dcb18e03c5f975609e4a4cd572b22b01d2b2accb1b3e6830696f36",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "ja-small",
+      "language": "ja",
+      "revision": "quantized_26_08_23",
+      "architecture": 4,
+      "lightweight": false,
+      "download_size": 121803780,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-ja/quantized_26_08_23/adapter.ort",
+          "size": 2869296,
+          "checksum": "GzlnQA==",
+          "checksum_type": "crc32c",
+          "sha256": "edcf20b9d0bc0a92bc0ddf37d8b96599de35a6cbee970368ed74c774b055e546",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-ja/quantized_26_08_23/cross_kv.ort",
+          "size": 5358752,
+          "checksum": "0btjiw==",
+          "checksum_type": "crc32c",
+          "sha256": "fbd18ec7b9514391d7121f4d4abec1be05a60e94a0f174061428380bf772c3e7",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-ja/quantized_26_08_23/decoder_kv.ort",
+          "size": 61314512,
+          "checksum": "qXEgyA==",
+          "checksum_type": "crc32c",
+          "sha256": "1246d81eeb96df05d0163dcd48ce271a061b01aa3aea047239fbde22485248be",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-ja/quantized_26_08_23/encoder.ort",
+          "size": 44358376,
+          "checksum": "fltsVQ==",
+          "checksum_type": "crc32c",
+          "sha256": "1da7cc82cb91d30ad9dc4e338fb80e7a2336b2c8ad634b826419222698fbe3a5",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-ja/quantized_26_08_23/frontend.model.ort",
+          "size": 31208,
+          "checksum": "RhG3gA==",
+          "checksum_type": "crc32c",
+          "sha256": "de65092295f011a39ee569f03d073e3564d94252efd74ebde16d720bcc43e38b",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-ja/quantized_26_08_23/frontend.weights.ort",
+          "size": 7769288,
+          "checksum": "VjqzBw==",
+          "checksum_type": "crc32c",
+          "sha256": "4e89578a495a6c4dd5632e7acaf2fc38841e6831738c2702ef10f873125a14ec",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-ja/quantized_26_08_23/streaming_config.json",
+          "size": 512,
+          "checksum": "Y/oEHw==",
+          "checksum_type": "crc32c",
+          "sha256": "12d16c7f5ea6734d197b79baf47914ea7e996d6fca8d303a19aca10d0617cecc",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/small-streaming-ja/quantized_26_08_23/tokenizer.bin",
+          "size": 101836,
+          "checksum": "M94Ogg==",
+          "checksum_type": "crc32c",
+          "sha256": "9f2599f20c3a9b03d79dbe122e443647c6589ce8e5c73e65e5c5d6f73485d5de",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "ar-tiny",
+      "language": "ar",
+      "revision": "quantized_26_08_24",
+      "architecture": 2,
+      "lightweight": true,
+      "download_size": 32349411,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ar/quantized_26_08_24/adapter.ort",
+          "size": 1318472,
+          "checksum": "Ba/M3A==",
+          "checksum_type": "crc32c",
+          "sha256": "9c1278a338b4ff268fc5741be01446d56ca9cba9ff5f4a75c5e1b2c2e2739361",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ar/quantized_26_08_24/cross_kv.ort",
+          "size": 1288120,
+          "checksum": "BXUe/w==",
+          "checksum_type": "crc32c",
+          "sha256": "e317af289233894f49da429d4561150c2f61ca86c1b9ca91c6edd3fb4fdeecb5",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ar/quantized_26_08_24/decoder_kv.ort",
+          "size": 19717336,
+          "checksum": "s5bwZA==",
+          "checksum_type": "crc32c",
+          "sha256": "5c9a2bf2d9fc543fd4596b3ab4ab8d09f791aac5682eb1379fd8d59e34237db0",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ar/quantized_26_08_24/encoder.ort",
+          "size": 7772792,
+          "checksum": "6tp7Mg==",
+          "checksum_type": "crc32c",
+          "sha256": "6785ca9932d59265375249a8f3bc62f8333fb4dee6ab7db8dfd6f1daef66f59e",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ar/quantized_26_08_24/frontend.model.ort",
+          "size": 23176,
+          "checksum": "lLmrsA==",
+          "checksum_type": "crc32c",
+          "sha256": "04c552e66efe3f7206d0a69779864f93bf3cfaf2fa595c9ce5101c8e3854a414",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ar/quantized_26_08_24/frontend.weights.ort",
+          "size": 2093280,
+          "checksum": "exI8jg==",
+          "checksum_type": "crc32c",
+          "sha256": "6cc4d70efffe757452996574d11065e7dac6a7ff0a9be3e2fec1d0266b062b0e",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ar/quantized_26_08_24/streaming_config.json",
+          "size": 509,
+          "checksum": "wH/VeA==",
+          "checksum_type": "crc32c",
+          "sha256": "d31afd7c2dd5ee9ae3fa232312c5b42cb3e4fe1c6e9c53d885f2bea63023790a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ar/quantized_26_08_24/tokenizer.bin",
+          "size": 135726,
+          "checksum": "y80toQ==",
+          "checksum_type": "crc32c",
+          "sha256": "3acea39a89cdf44fa11f10bfdd7d05d9015d901999f8c8fa18988f19dcc6b267",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "de-tiny",
+      "language": "de",
+      "revision": "quantized_26_08_24",
+      "architecture": 2,
+      "lightweight": true,
+      "download_size": 32317004,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-de/quantized_26_08_24/adapter.ort",
+          "size": 1318472,
+          "checksum": "Q5RVow==",
+          "checksum_type": "crc32c",
+          "sha256": "23b91142a35cfbc533a7f03ad8387d0b6d32856b465c6fe7a14ede44a254a345",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-de/quantized_26_08_24/cross_kv.ort",
+          "size": 1288120,
+          "checksum": "Y8sggQ==",
+          "checksum_type": "crc32c",
+          "sha256": "25e6d9d4f16569c2ede7e23a381fe7c60cc4b0f141adc88580557d4530634f17",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-de/quantized_26_08_24/decoder_kv.ort",
+          "size": 19717336,
+          "checksum": "0Btj7Q==",
+          "checksum_type": "crc32c",
+          "sha256": "768b1464074fc4fb7327e8b863fc13dcd12cb7bbe8d8e9428fa7292f7fd9ca6e",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-de/quantized_26_08_24/encoder.ort",
+          "size": 7772792,
+          "checksum": "UMxvQg==",
+          "checksum_type": "crc32c",
+          "sha256": "74610b818058e396f4b9d9ffd730cf8e36772122464d989dd3011dfa76bd6baf",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-de/quantized_26_08_24/frontend.model.ort",
+          "size": 23176,
+          "checksum": "jBdx4Q==",
+          "checksum_type": "crc32c",
+          "sha256": "4445bb4c2f41b0dd993999e06dc9367a0dde0d42a2e777116e7d93be102dc43d",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-de/quantized_26_08_24/frontend.weights.ort",
+          "size": 2093280,
+          "checksum": "Ljirxw==",
+          "checksum_type": "crc32c",
+          "sha256": "233fda61d583403bbf13ea71b6ba2335fdf57eac71be85a97dcbb90a6c2f4186",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-de/quantized_26_08_24/streaming_config.json",
+          "size": 509,
+          "checksum": "wH/VeA==",
+          "checksum_type": "crc32c",
+          "sha256": "d31afd7c2dd5ee9ae3fa232312c5b42cb3e4fe1c6e9c53d885f2bea63023790a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-de/quantized_26_08_24/tokenizer.bin",
+          "size": 103319,
+          "checksum": "x219Qw==",
+          "checksum_type": "crc32c",
+          "sha256": "5725ad3771a1339802f8cebeda0fa8f7723f5282b1ee726c2544774d7399b9a7",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "en-tiny",
+      "language": "en",
+      "revision": "quantized_26_11_02",
+      "architecture": 2,
+      "lightweight": true,
+      "download_size": 45398523,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_11_02/adapter.ort",
+          "size": 1319616,
+          "checksum": "8tL9VQ==",
+          "checksum_type": "crc32c",
+          "sha256": "c5f9f7cc98c27a965d8e200816f7e5c07b892712bb30cf07444bbde4ffd38199",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_11_02/cross_kv.ort",
+          "size": 1287504,
+          "checksum": "nwGoTw==",
+          "checksum_type": "crc32c",
+          "sha256": "5f68900da4ea20f40fbe67bbec36399f0d47faedbd7198b29abd9dc5f472ef9f",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_11_02/decoder_kv.ort",
+          "size": 32748720,
+          "checksum": "rpn9LA==",
+          "checksum_type": "crc32c",
+          "sha256": "6564f2c9a19de44195a53e336e07d05108f14babab57105d623bb68b79572d75",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_11_02/encoder.ort",
+          "size": 7675392,
+          "checksum": "9j4G6g==",
+          "checksum_type": "crc32c",
+          "sha256": "617e403b2aae48f2474e0b148bf835deb9510bc8692efeabfe27203959a3256e",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_11_02/frontend.model.ort",
+          "size": 23392,
+          "checksum": "AxTn9Q==",
+          "checksum_type": "crc32c",
+          "sha256": "5662679f0e5758646d8eade3bc4b5d9ebda875feb6e696c0cc5f1a08fea2219e",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_11_02/frontend.weights.ort",
+          "size": 2093416,
+          "checksum": "lNoOfg==",
+          "checksum_type": "crc32c",
+          "sha256": "55c91d7efab9f7506d7d753131cba72145ff016be3447319fe414a31e13f25b4",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_11_02/streaming_config.json",
+          "size": 509,
+          "checksum": "HGL0Ug==",
+          "checksum_type": "crc32c",
+          "sha256": "74fe5ddebd63b17caf59e8a3b18c17547ff7bce1642050edbb1c3962674f8950",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_11_02/tokenizer.bin",
+          "size": 249974,
+          "checksum": "B7s10Q==",
+          "checksum_type": "crc32c",
+          "sha256": "6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "es-tiny",
+      "language": "es",
+      "revision": "quantized_26_08_24",
+      "architecture": 2,
+      "lightweight": true,
+      "download_size": 32316573,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-es/quantized_26_08_24/adapter.ort",
+          "size": 1318472,
+          "checksum": "+JOBGg==",
+          "checksum_type": "crc32c",
+          "sha256": "2efd97cd2ee7d89578dd1d429a849be9fe37ac81dd9c4e1d31c8a2e7f85d43e6",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-es/quantized_26_08_24/cross_kv.ort",
+          "size": 1288120,
+          "checksum": "lvRCDw==",
+          "checksum_type": "crc32c",
+          "sha256": "9e268b1b3bb0f9ff79bca6e76055d41298de0a5ba52505ee04907a2642efa3ae",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-es/quantized_26_08_24/decoder_kv.ort",
+          "size": 19717336,
+          "checksum": "KEm/xA==",
+          "checksum_type": "crc32c",
+          "sha256": "7adf56b982df98e385d71823b9a40cf9296ae3a746efcf03f3d7bb4604032db0",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-es/quantized_26_08_24/encoder.ort",
+          "size": 7772792,
+          "checksum": "AAXCVA==",
+          "checksum_type": "crc32c",
+          "sha256": "ec9eb43a01fbfe242a2c6a86050cffe4a31050e1c9f084e98560d6c100004505",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-es/quantized_26_08_24/frontend.model.ort",
+          "size": 23176,
+          "checksum": "v7nfyQ==",
+          "checksum_type": "crc32c",
+          "sha256": "9d19434b861de0c1d2aff52556911ae565cf3212ebe6d7f797c76c5c5066c2fc",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-es/quantized_26_08_24/frontend.weights.ort",
+          "size": 2093280,
+          "checksum": "LYbiaA==",
+          "checksum_type": "crc32c",
+          "sha256": "5e4d5471cd5d984d4b94a603d861539ebf1dc72de11b0cf13f38316725d5ce48",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-es/quantized_26_08_24/streaming_config.json",
+          "size": 509,
+          "checksum": "wH/VeA==",
+          "checksum_type": "crc32c",
+          "sha256": "d31afd7c2dd5ee9ae3fa232312c5b42cb3e4fe1c6e9c53d885f2bea63023790a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-es/quantized_26_08_24/tokenizer.bin",
+          "size": 102888,
+          "checksum": "/7v8NQ==",
+          "checksum_type": "crc32c",
+          "sha256": "5fbb7d4314dcb18e03c5f975609e4a4cd572b22b01d2b2accb1b3e6830696f36",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "ja-tiny",
+      "language": "ja",
+      "revision": "quantized_26_08_23",
+      "architecture": 2,
+      "lightweight": true,
+      "download_size": 32319961,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ja/quantized_26_08_23/adapter.ort",
+          "size": 1318472,
+          "checksum": "obzOjg==",
+          "checksum_type": "crc32c",
+          "sha256": "25f302e6203028e487d1b1f93db6fe5baf587373498062190160de70e0c4ae58",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ja/quantized_26_08_23/cross_kv.ort",
+          "size": 1288120,
+          "checksum": "gbYCsw==",
+          "checksum_type": "crc32c",
+          "sha256": "170ee70aeb3c82fd067193add0d1a8619cd16d4de80a5e0239dac12d956e8575",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ja/quantized_26_08_23/decoder_kv.ort",
+          "size": 19717336,
+          "checksum": "Mc/YqQ==",
+          "checksum_type": "crc32c",
+          "sha256": "ccc047610727f9fe039212a0b2370a7f970e80776376a229181a76998ff5af20",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ja/quantized_26_08_23/encoder.ort",
+          "size": 7772792,
+          "checksum": "ZS0TPg==",
+          "checksum_type": "crc32c",
+          "sha256": "6420c180be55732d10db7a85f8966237bbbeee3b47addab4790ed81c22dde2cf",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ja/quantized_26_08_23/frontend.model.ort",
+          "size": 27608,
+          "checksum": "BTpcfg==",
+          "checksum_type": "crc32c",
+          "sha256": "c6fdee4c81d421617b9571e43cf952dc1e7e4f45d0cb1dbf13104ee8af4ffd45",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ja/quantized_26_08_23/frontend.weights.ort",
+          "size": 2093288,
+          "checksum": "T4l/3Q==",
+          "checksum_type": "crc32c",
+          "sha256": "673a7177f030da9ce948daa1af44ec5425b6f0825348aacb80f6a01c18e42a07",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ja/quantized_26_08_23/streaming_config.json",
+          "size": 509,
+          "checksum": "wH/VeA==",
+          "checksum_type": "crc32c",
+          "sha256": "d31afd7c2dd5ee9ae3fa232312c5b42cb3e4fe1c6e9c53d885f2bea63023790a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-ja/quantized_26_08_23/tokenizer.bin",
+          "size": 101836,
+          "checksum": "M94Ogg==",
+          "checksum_type": "crc32c",
+          "sha256": "9f2599f20c3a9b03d79dbe122e443647c6589ce8e5c73e65e5c5d6f73485d5de",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "tl-tiny",
+      "language": "tl",
+      "revision": "quantized_26_08_24",
+      "architecture": 2,
+      "lightweight": true,
+      "download_size": 32309481,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-tl/quantized_26_08_24/adapter.ort",
+          "size": 1318472,
+          "checksum": "Zau+Ig==",
+          "checksum_type": "crc32c",
+          "sha256": "a47413f3bab023770a82c3d2426edaac2571d4b6ef11f1de4f5ef04fe8921815",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-tl/quantized_26_08_24/cross_kv.ort",
+          "size": 1288120,
+          "checksum": "iwurdw==",
+          "checksum_type": "crc32c",
+          "sha256": "d449d3b4969cac1c0c07536c5c339bda1d8fa2768cebbfc81f4487f365a933bd",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-tl/quantized_26_08_24/decoder_kv.ort",
+          "size": 19717336,
+          "checksum": "jsOHgA==",
+          "checksum_type": "crc32c",
+          "sha256": "7c34e8da5f52d98883a5a47ea5951fd33b2cdbde871189e623baf4f3accf96fc",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-tl/quantized_26_08_24/encoder.ort",
+          "size": 7772792,
+          "checksum": "nx0MFw==",
+          "checksum_type": "crc32c",
+          "sha256": "6613d539cebdbfc78d492400a4a53042e1eeb2065c9efb2569e08eda2b716988",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-tl/quantized_26_08_24/frontend.model.ort",
+          "size": 27608,
+          "checksum": "s9Ro7g==",
+          "checksum_type": "crc32c",
+          "sha256": "a94955c8ef260db0f9cc04c96ab0d35fd59bab8d61acbb1b8b466dad638e0a87",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-tl/quantized_26_08_24/frontend.weights.ort",
+          "size": 2093288,
+          "checksum": "UEAV9Q==",
+          "checksum_type": "crc32c",
+          "sha256": "83a518fdf989752c52338031fd997d23f84ae9c1c45945a30cac91dcaba93518",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-tl/quantized_26_08_24/streaming_config.json",
+          "size": 509,
+          "checksum": "wH/VeA==",
+          "checksum_type": "crc32c",
+          "sha256": "d31afd7c2dd5ee9ae3fa232312c5b42cb3e4fe1c6e9c53d885f2bea63023790a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-tl/quantized_26_08_24/tokenizer.bin",
+          "size": 91356,
+          "checksum": "4uONfQ==",
+          "checksum_type": "crc32c",
+          "sha256": "f1d4f9f04a3943a535cf3ad53329ae465237dd4a11bd38c5a9db47a9164bf892",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "vi-tiny",
+      "language": "vi",
+      "revision": "quantized_26_08_24",
+      "architecture": 2,
+      "lightweight": true,
+      "download_size": 32309008,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-vi/quantized_26_08_24/adapter.ort",
+          "size": 1318472,
+          "checksum": "cdV7Qw==",
+          "checksum_type": "crc32c",
+          "sha256": "8351344095ce2e7e8dca7a932c102c7976fd5031d9f50946c05fe4e8ea520cab",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-vi/quantized_26_08_24/cross_kv.ort",
+          "size": 1288120,
+          "checksum": "aeNa0A==",
+          "checksum_type": "crc32c",
+          "sha256": "0a245cc6b617f9c3a2aebe3ba5e4e12dc6118750fb7e478ccb95fe629abe56cf",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-vi/quantized_26_08_24/decoder_kv.ort",
+          "size": 19717336,
+          "checksum": "792dSQ==",
+          "checksum_type": "crc32c",
+          "sha256": "b398871f7668c667f9853758e1bd5ffb77d1ddf72f90ae73ecd4b1f05b3df1d9",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-vi/quantized_26_08_24/encoder.ort",
+          "size": 7772792,
+          "checksum": "5vA9hw==",
+          "checksum_type": "crc32c",
+          "sha256": "4774270b09a51af0bc7d7a6f5d687aa832ef6ca049ea965ba0ca23f965f3f3dd",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-vi/quantized_26_08_24/frontend.model.ort",
+          "size": 23176,
+          "checksum": "T4ZpJw==",
+          "checksum_type": "crc32c",
+          "sha256": "fb8c8ae3cbc72f28e56a6f7577440b4e41e41a86b183d50ebd3d35215b712a7d",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-vi/quantized_26_08_24/frontend.weights.ort",
+          "size": 2093280,
+          "checksum": "QeZo8Q==",
+          "checksum_type": "crc32c",
+          "sha256": "beb51a94a57cb33ea740c23d7841ca2855e39fd9df7468a407dfd5eea471d8ca",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-vi/quantized_26_08_24/streaming_config.json",
+          "size": 509,
+          "checksum": "wH/VeA==",
+          "checksum_type": "crc32c",
+          "sha256": "d31afd7c2dd5ee9ae3fa232312c5b42cb3e4fe1c6e9c53d885f2bea63023790a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-vi/quantized_26_08_24/tokenizer.bin",
+          "size": 95323,
+          "checksum": "7zvjaA==",
+          "checksum_type": "crc32c",
+          "sha256": "004723b832413eca43dc95f5c1e14311fa78206f81e6bf99ce0e561c657ab209",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "zh-tiny",
+      "language": "zh",
+      "revision": "quantized_26_08_24",
+      "architecture": 2,
+      "lightweight": true,
+      "download_size": 32290152,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-zh/quantized_26_08_24/adapter.ort",
+          "size": 1318472,
+          "checksum": "hr7j6g==",
+          "checksum_type": "crc32c",
+          "sha256": "84d1bed88310f5b6dd452203bcaffb765f017a7d06da8d84a898235ef5c90e12",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-zh/quantized_26_08_24/cross_kv.ort",
+          "size": 1288120,
+          "checksum": "fiGyHw==",
+          "checksum_type": "crc32c",
+          "sha256": "22c2261f3120b766a91deceb4f32ca0bef0a8f2b181509ad0dc9fe6adbd0c23a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-zh/quantized_26_08_24/decoder_kv.ort",
+          "size": 19717336,
+          "checksum": "rr9O2A==",
+          "checksum_type": "crc32c",
+          "sha256": "5caf9e4e9eaa39b93122338bfbad2917630afc51293f6229b935ae7df28bed33",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-zh/quantized_26_08_24/encoder.ort",
+          "size": 7772792,
+          "checksum": "BHPY3w==",
+          "checksum_type": "crc32c",
+          "sha256": "4270ca0e1ecd10e78d658b08b91d81c7f913511177e1ad461c8a9d9d0903503d",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-zh/quantized_26_08_24/frontend.model.ort",
+          "size": 27608,
+          "checksum": "4gF+xg==",
+          "checksum_type": "crc32c",
+          "sha256": "d27a9c994b43fa6568121f502e8b99d511ffd0425d4090ffddcc82c9a5667971",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-zh/quantized_26_08_24/frontend.weights.ort",
+          "size": 2090728,
+          "checksum": "Kv1kYQ==",
+          "checksum_type": "crc32c",
+          "sha256": "ac56e8ee7780e1f254ee26f2d9c9a3b3c6cfd2f6822cb3944924ae321f86dc50",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-zh/quantized_26_08_24/streaming_config.json",
+          "size": 509,
+          "checksum": "wH/VeA==",
+          "checksum_type": "crc32c",
+          "sha256": "d31afd7c2dd5ee9ae3fa232312c5b42cb3e4fe1c6e9c53d885f2bea63023790a",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/tiny-streaming-zh/quantized_26_08_24/tokenizer.bin",
+          "size": 74587,
+          "checksum": "nQJxPQ==",
+          "checksum_type": "crc32c",
+          "sha256": "f172da002a818b9968d5c7a995cc7c51acf2168331ab5f914b5b0860ceab8236",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93"
+        }
+      ]
+    },
+    {
+      "id": "en-medium",
+      "language": "en",
+      "revision": "quantized_26_11_02",
+      "architecture": 5,
+      "lightweight": false,
+      "download_size": 269306511,
+      "files": [
+        {
+          "url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_11_02/adapter.ort",
+          "size": 3651256,
+          "checksum": "z/YpJw==",
+          "checksum_type": "crc32c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+          "sha256": "cbc25da09b781d3c7e4519fe7e7869d47caa6659e73b7d6f3dcc00613a5947af"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_11_02/cross_kv.ort",
+          "size": 11643720,
+          "checksum": "B8yR7Q==",
+          "checksum_type": "crc32c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+          "sha256": "5a93856515ee2ba577ab968f1238a55b84e6d4cc55b005f7d82d618d7b2db0fc"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_11_02/decoder_kv.ort",
+          "size": 147137432,
+          "checksum": "XHfhHg==",
+          "checksum_type": "crc32c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+          "sha256": "83916c35fe11999ab1034cbc840602268b4f054282d4d7e0376ff2e55dcd4810"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_11_02/encoder.ort",
+          "size": 94705336,
+          "checksum": "NOcutw==",
+          "checksum_type": "crc32c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+          "sha256": "29ceb7c83876b44a2c47200f5f864c602e4a91d80fd8a09b17246b5b64f2341d"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_11_02/frontend.model.ort",
+          "size": 28768,
+          "checksum": "8DJD0w==",
+          "checksum_type": "crc32c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+          "sha256": "70d3b8de94e3b8e3b81b0fbb019e32a67d3eb40a174292e0db2e3536bdd833ba"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_11_02/frontend.weights.ort",
+          "size": 11889512,
+          "checksum": "IvbcFg==",
+          "checksum_type": "crc32c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+          "sha256": "627934b415c8db6f275a14e59ff419436b27279e00bbc8ea30a274973dfc6dec"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_11_02/streaming_config.json",
+          "size": 513,
+          "checksum": "+1bE9Q==",
+          "checksum_type": "crc32c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+          "sha256": "28e83b7a28e91472692a035e0dae3116422ae43aeb2bef5ed822c44ce89b88af"
+        },
+        {
+          "url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_11_02/tokenizer.bin",
+          "size": 249974,
+          "checksum": "B7s10Q==",
+          "checksum_type": "crc32c",
+          "licence": "MIT",
+          "source_revision": "d8d8fa29d05ca67441a7719e70099f9f48917a93",
+          "sha256": "6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d"
+        }
+      ]
+    }
+  ]
+}

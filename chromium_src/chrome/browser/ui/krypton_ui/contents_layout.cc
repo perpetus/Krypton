@@ -14,9 +14,11 @@
 #include "base/check.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/trace_event/trace_event.h"
+#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
 #include "chrome/browser/ui/krypton_ui/content_regions.h"
 #include "chrome/browser/ui/krypton_ui/window_session.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/layout/browser_view_layout_delegate.h"
 #include "chrome/browser/ui/views/frame/multi_contents_view.h"
 #include "chrome/browser/ui/views/infobars/infobar_container_view.h"
@@ -151,6 +153,11 @@ void ContentsLayout::Layout(views::View* host) {
   contents->SetBackgroundRadii(
       gfx::RoundedCornersF(session_->geometry().corner_radius()));
   SetPhysicalBounds(contents, contents_bounds_);
+  if (auto* browser = views::AsViewClass<BrowserView>(host)) {
+    if (auto* adapter = browser->krypton_ui()) {
+      adapter->UpdatePageCornerOverlays();
+    }
+  }
   // MultiContentsView retains WebContents, docked DevTools and their clipping.
   // Existing bubble/dialog hosts continue reading the final content bounds.
   UpdateBubbles();

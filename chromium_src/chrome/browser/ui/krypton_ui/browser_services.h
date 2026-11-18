@@ -29,6 +29,7 @@ class Profile;
 class TemplateURLService;
 namespace krypton_ui {
 class WindowSession;
+class LocalModelSettings;
 
 // Per-window services behind the optional onboarding/settings ABI. Browser
 // mutations are deferred through WindowSession; observation is visibility
@@ -104,6 +105,7 @@ class BrowserServices : public TemplateURLServiceObserver,
   PrefChangeRegistrar prefs_, local_prefs_;
   base::flat_map<KrSearchEngineId, Engine> engines_;
   std::unique_ptr<ImporterList> importer_list_;
+  std::unique_ptr<LocalModelSettings> models_;
   std::vector<Source> sources_;
   // ExternalProcessImporterHost deletes itself after ImportEnded().
   raw_ptr<ExternalProcessImporterHost> importer_ = nullptr;

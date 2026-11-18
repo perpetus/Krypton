@@ -11,6 +11,7 @@
 #include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/ui/krypton_ui/layout_menus.h"
 #include "krypton_ui/abi.h"
 #include "ui/actions/actions.h"
 #include "ui/menus/simple_menu_model.h"
@@ -27,6 +28,10 @@ class SidebarMenuModel final : public ui::SimpleMenuModel,
     kSidebarRight,
     kAppearance,
     kEditTheme,
+    kNewFolder,
+    kToggleEssential,
+    kAppearanceMenu,
+    kPageMenu,
   };
   struct Action {
     int command;
@@ -38,6 +43,9 @@ class SidebarMenuModel final : public ui::SimpleMenuModel,
     bool can_create_workspace = false;
     bool can_show_settings = false;
     bool can_edit_theme = false;
+    bool can_create_folder = false;
+    bool can_set_essential = false;
+    bool essential = false;
   };
   using ReadState = base::RepeatingCallback<std::optional<State>()>;
   using CanExecute = base::RepeatingCallback<bool(int)>;
@@ -46,7 +54,8 @@ class SidebarMenuModel final : public ui::SimpleMenuModel,
   SidebarMenuModel(base::span<const Action> actions,
                    ReadState read_state,
                    CanExecute can_execute,
-                   Dispatch dispatch);
+                   Dispatch dispatch,
+                   uint64_t zone = KR_SIDEBAR_FRAME);
   ~SidebarMenuModel() override;
 
   bool IsCommandIdChecked(int command) const override;
@@ -55,6 +64,9 @@ class SidebarMenuModel final : public ui::SimpleMenuModel,
   bool GetAcceleratorForCommandId(int command,
                                   ui::Accelerator* accelerator) const override;
   void ExecuteCommand(int command, int event_flags) override;
+  bool IsItemForCommandIdDynamic(int command) const override;
+  std::u16string GetLabelForCommandId(int command) const override;
+  ui::ImageModel GetIconForCommandId(int command) const override;
   bool IsItemDynamicAt(size_t index) const override;
   std::u16string GetLabelAt(size_t index) const override;
   ui::ImageModel GetIconAt(size_t index) const override;
@@ -67,6 +79,9 @@ class SidebarMenuModel final : public ui::SimpleMenuModel,
   const ReadState read_state_;
   const CanExecute can_execute_;
   const Dispatch dispatch_;
+  LayoutMenus layout_menus_;
+  ui::SimpleMenuModel appearance_;
+  ui::SimpleMenuModel page_;
 };
 }  // namespace krypton_ui
 #endif

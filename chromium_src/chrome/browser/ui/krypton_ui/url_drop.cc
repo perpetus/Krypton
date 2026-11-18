@@ -92,7 +92,7 @@ base::OnceClosure BrowserAdapter::CaptureUrlDrop(const ui::OSExchangeData& data,
                                                          space);
               NavigateParams params(&*owner->browser_, url,
                                     ui::PAGE_TRANSITION_LINK);
-              params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+              params.disposition = WindowOpenDisposition::kNewForegroundTab;
               params.window_action = NavigateParams::WindowAction::kShowWindow;
               Navigate(&params);
             },

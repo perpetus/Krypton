@@ -1,0 +1,13 @@
+Name: ssplit
+URL: https://github.com/browsermt/ssplit-cpp
+Version: a311f9865ade34db1e8e080e6cc146f55dafb067
+License: Apache 2.0
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+Pinned support code for the sandboxed local translation engine.
+Source: https://codeload.github.com/browsermt/ssplit-cpp/zip/a311f9865ade34db1e8e080e6cc146f55dafb067
+Archive SHA-256: c9124e6c02128764d3f85cf789fec50221bd8724a41d9796714b0a1b7033d093
+The optional protected-prefix data is not bundled or loaded.

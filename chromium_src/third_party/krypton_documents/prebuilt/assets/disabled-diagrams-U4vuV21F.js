@@ -1,0 +1,1 @@
+async function e(){throw Error(`Diagram import is unavailable.`)}export{e as default,e as parseMermaidToExcalidraw};

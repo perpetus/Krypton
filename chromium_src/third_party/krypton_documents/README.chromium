@@ -1,0 +1,15 @@
+Name: Krypton offline document editor bundle
+Short Name: krypton_documents
+URL: https://github.com/perpetus/Krypton
+Version: 1
+License: Multiple; see licenses/*/README.chromium and LICENSE
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Produced outside GN from web_documents/package-lock.json. Individual package
+versions, integrity hashes, license hashes and runtime SHA-256 hashes are in
+sha256-manifest.json. Third-party code runs only in an untrusted renderer.
+Source modifications disable static external service/help/CDN targets; the
+final bundler refuses remaining runtime remote origins. All fonts are local.
+SVG/XML namespace identifiers are inert and exempt from the origin scan.

@@ -1,0 +1,10 @@
+Name: fractional-indexing
+Short Name: fractional-indexing
+URL: https://github.com/rocicorp/fractional-indexing.git
+Version: 3.2.0
+License: CC0-1.0
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

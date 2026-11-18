@@ -1,0 +1,10 @@
+Name: @braintree/sanitize-url
+Short Name: @braintree/sanitize-url
+URL: git+https://github.com/braintree/sanitize-url.git
+Version: 6.0.2
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

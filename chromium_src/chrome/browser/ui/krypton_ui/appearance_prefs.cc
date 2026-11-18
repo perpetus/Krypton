@@ -23,7 +23,7 @@ KrAppearancePrefs ReadAppearancePrefs(const PrefService& prefs) {
           bounded(kMenuMaterialPref, KR_MENU_MATERIAL_ACRYLIC_THIN),
           static_cast<uint32_t>(prefs.GetInteger(kAppearanceFlagsPref)),
           bounded(kIconPackPref, KR_ICON_PACK_RADIX),
-          bounded(kGlassModePref, KR_GLASS_QUALITY)};
+          KR_GLASS_OFF};
 }
 bool WriteAppearancePrefs(PrefService& prefs,
                           const KrAppearancePrefs* appearance) {
@@ -46,7 +46,7 @@ bool WriteAppearancePrefs(PrefService& prefs,
                    static_cast<int>(appearance->menu_material));
   prefs.SetInteger(kAppearanceFlagsPref, static_cast<int>(appearance->flags));
   prefs.SetInteger(kIconPackPref, static_cast<int>(icon_pack));
-  prefs.SetInteger(kGlassModePref, static_cast<int>(glass_mode));
+  prefs.SetInteger(kGlassModePref, KR_GLASS_OFF);
   return true;
 }
 }  // namespace krypton_ui

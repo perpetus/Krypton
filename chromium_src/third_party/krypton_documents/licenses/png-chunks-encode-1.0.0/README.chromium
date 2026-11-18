@@ -1,0 +1,10 @@
+Name: png-chunks-encode
+Short Name: png-chunks-encode
+URL: git://github.com/hughsk/png-chunks-encode.git
+Version: 1.0.0
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

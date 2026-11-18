@@ -33,6 +33,7 @@ KRYPTON_VERSION = ROOT / 'version.txt'
 KRYPTON_DEPS = ROOT / 'deps.ini'
 HELIUM_CORE_REF = ROOT / 'helium-core-ref.txt'
 WINDOWS_PATCH_OVERRIDES = KRYPTON_PATCHES / 'helium-windows-overrides.json'
+CORE_PATCH_OVERRIDES = KRYPTON_PATCHES / 'helium-overrides.json'
 
 # KryptonUI's C contract as Chromium compiles it.
 KRYPTON_UI_ABI = (KRYPTON_CHROMIUM_SRC / 'chrome' / 'browser' / 'ui' / 'krypton_ui' /
@@ -105,12 +106,14 @@ def layer_patches(layer):
         raise ValueError(f'{SKIP_LISTS[layer].name} names patches {layer} no longer has: ' +
                          ', '.join(sorted(unknown)))
     selected = [p for p in paths if p.relative_to(patch_dir).as_posix() not in skip]
-    if layer != 'helium-windows' or not WINDOWS_PATCH_OVERRIDES.exists():
+    override_file = {'helium': CORE_PATCH_OVERRIDES,
+                     'helium-windows': WINDOWS_PATCH_OVERRIDES}.get(layer)
+    if override_file is None or not override_file.exists():
         return selected
-    overrides = json.loads(WINDOWS_PATCH_OVERRIDES.read_text(encoding='utf-8'))
+    overrides = json.loads(override_file.read_text(encoding='utf-8'))
     known = {p.relative_to(patch_dir).as_posix() for p in selected}
     if overrides.keys() - known:
-        raise ValueError('Windows patch override no longer names a selected upstream patch')
+        raise ValueError('Owned patch override no longer names a selected upstream patch')
     result = []
     for original in selected:
         entry = overrides.get(original.relative_to(patch_dir).as_posix())
@@ -118,10 +121,10 @@ def layer_patches(layer):
             result.append(original)
             continue
         if hashlib.sha256(original.read_bytes()).hexdigest() != entry['upstream_sha256']:
-            raise ValueError(f'Windows patch changed upstream; refresh its override: {original}')
+            raise ValueError(f'Pinned upstream patch changed; refresh its owned override: {original}')
         replacement = (KRYPTON_PATCHES / entry['patch']).resolve()
         if not replacement.is_relative_to(KRYPTON_PATCHES.resolve()):
-            raise ValueError('Windows patch override escapes Krypton patches')
+            raise ValueError('Owned patch override escapes Krypton patches')
         result.append(replacement)
     return result
 

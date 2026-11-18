@@ -1,0 +1,6 @@
+{
+  "helium/core/increase-incognito-storage-quota.patch": {
+    "upstream_sha256": "9f71b7a82591f5189fed5a0f51d8731c85bbba7ac05516992bf7b25a0d1af1d3",
+    "patch": "upstream-overrides/helium/helium/core/increase-incognito-storage-quota.patch"
+  }
+}

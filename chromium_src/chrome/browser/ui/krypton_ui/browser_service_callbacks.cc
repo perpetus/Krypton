@@ -4,6 +4,7 @@
 
 #include "base/functional/bind.h"
 #include "chrome/browser/ui/krypton_ui/browser_services.h"
+#include "chrome/browser/ui/krypton_ui/local_model_settings.h"
 #include "chrome/browser/ui/krypton_ui/site_permissions.h"
 
 namespace krypton_ui {
@@ -59,6 +60,13 @@ void BrowserAdapter::BindBrowserServices(KrBrowser& host) {
           base::BindOnce(&BrowserServices::SettingsVisibility,
                          owner.browser_services_->weak_factory_.GetWeakPtr(),
                          section, visible));
+  };
+  host.manage_local_model = [](void* self, uint32_t kind, uint32_t id,
+                               uint32_t command) noexcept {
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    return owner.browser_services_ && owner.browser_services_->models_
+               ? owner.browser_services_->models_->Command(kind, id, command)
+               : KR_ERR_UNSUPPORTED;
   };
   host.start_import = [](void* self, KrImportSourceId source,
                          uint32_t items) noexcept {

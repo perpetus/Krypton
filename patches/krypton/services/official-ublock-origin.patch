@@ -8,7 +8,7 @@
 
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -1676,12 +1676,6 @@
+@@ -1744,12 +1744,6 @@
          Helium will automatically check for component updates and install them. We recommend keeping this setting enabled. On Linux, browser updates are handled by your distro's package manager. Please check for Helium package updates at least every week.
        </message>
      </if>
@@ -18,20 +18,20 @@
 -    <message name="IDS_SETTINGS_HELIUM_SERVICES_UBO_DESCRIPTION" desc="Description of the toggle for automatic update downloads">
 -      Helium will fetch fresh filter lists for uBlock Origin. All requests to lists are proxied to protect your privacy. When disabled, default filter lists will be loaded from local storage, which are only updated along with Helium. Optional filter lists will be requested without proxying.
 -    </message>
-     <message name="IDS_SETTINGS_HELIUM_SERVICES_OVERRIDE" desc="Text input for overriding the Helium services server">
-       Use your own instance of Helium services
+     <message name="IDS_SETTINGS_HELIUM_SERVICES_WEB_PUSH" desc="Toggle for receiving web push notifications">
+       Allow receiving push notifications
      </message>
 --- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
 +++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-@@ -460,8 +460,6 @@
+@@ -461,8 +461,6 @@
        settings_api::PrefType::kBoolean;
    (*s_allowlist)[::prefs::kHeliumUpdateFetchingEnabled] =
        settings_api::PrefType::kBoolean;
 -  (*s_allowlist)[::prefs::kHeliumUBlockAssetsEnabled] =
 -      settings_api::PrefType::kBoolean;
-   (*s_allowlist)[::prefs::kHeliumServicesOrigin] =
-       settings_api::PrefType::kString;
-   (*s_allowlist)[::prefs::kHeliumServicesConsented] =
+   (*s_allowlist)[::prefs::kHeliumWebPushEnabled] =
+       settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kHeliumPushServer] = settings_api::PrefType::kString;
 --- a/chrome/browser/extensions/extension_service.cc
 +++ b/chrome/browser/extensions/extension_service.cc
 @@ -31,7 +31,6 @@
@@ -42,7 +42,7 @@
  #include "base/threading/thread_restrictions.h"
  #include "base/time/time.h"
  #include "base/trace_event/trace_event.h"
-@@ -69,9 +68,6 @@
+@@ -68,9 +67,6 @@
  #include "chrome/common/pref_names.h"
  #include "chrome/common/url_constants.h"
  #include "components/crx_file/id_util.h"
@@ -52,7 +52,7 @@
  #include "components/policy/core/common/policy_pref_names.h"
  #include "components/supervised_user/core/browser/supervised_user_preferences.h"
  #include "content/public/browser/browser_thread.h"
-@@ -217,7 +213,6 @@
+@@ -216,7 +212,6 @@
        ready_(ready),
        updater_(ExtensionUpdater::Get(profile)),
        component_loader_(ComponentLoader::Get(profile_)),
@@ -60,7 +60,7 @@
        error_controller_(error_controller),
        external_install_manager_(ExternalInstallManager::Get(profile)),
        extension_registrar_delegate_(
-@@ -299,33 +294,6 @@
+@@ -295,33 +290,6 @@
        prefs::kExtensionsUIDeveloperMode,
        base::BindRepeating(&ExtensionService::OnDeveloperModePrefChanged,
                            base::Unretained(this)));
@@ -96,7 +96,7 @@
  base::WeakPtr<ExtensionServiceInterface> ExtensionService::AsWeakPtr() {
 --- a/chrome/browser/extensions/extension_service.h
 +++ b/chrome/browser/extensions/extension_service.h
-@@ -169,8 +169,6 @@
+@@ -168,8 +168,6 @@
    // KeyedService two-phase shutdown.
    void Shutdown();
  
@@ -105,7 +105,7 @@
    // Performs action based on verdicts received from the Extension Telemetry
    // server. Currently, these verdicts are limited to off-store extensions.
    void PerformActionBasedOnExtensionTelemetryServiceVerdicts(
-@@ -363,8 +361,6 @@
+@@ -362,8 +360,6 @@
    // Used in test to ensure the service's shutdown method has been called.
    bool is_shut_down_executed_ = false;
  
@@ -116,31 +116,31 @@
    raw_ptr<ExtensionErrorController> error_controller_ = nullptr;
 --- a/chrome/browser/resources/settings/privacy_page/services_page.html
 +++ b/chrome/browser/resources/settings/privacy_page/services_page.html
-@@ -99,11 +99,6 @@
+@@ -105,11 +105,6 @@
                  label="$i18n{heliumUpdatesToggle}"
                  sub-label="$i18n{heliumUpdatesToggleDescription}">
              </settings-toggle-button>
 -            <settings-toggle-button id="filterlistToggleButton"
--                pref="{{prefs.helium.services.ublock_assets}}"
+-                pref-key="helium.services.ublock_assets"
 -                label="$i18n{heliumUboToggle}"
 -                sub-label="$i18n{heliumUboToggleDescription}">
 -            </settings-toggle-button>
-         </cr-collapse>
-     </div>
-     </template>
+             <template is="dom-if" if="[[webPushAvailable_]]">
+             <settings-toggle-button id="webPushToggleButton"
+                 pref-key="helium.services.web_push"
 --- a/chrome/browser/ui/browser_ui_prefs.cc
 +++ b/chrome/browser/ui/browser_ui_prefs.cc
-@@ -247,7 +247,6 @@
+@@ -251,7 +251,6 @@
      registry->RegisterBooleanPref(prefs::kHeliumDidOnboarding, false);
      registry->RegisterBooleanPref(prefs::kHeliumServicesConsented, false);
      registry->RegisterBooleanPref(prefs::kHeliumUpdateFetchingEnabled, true);
 -    registry->RegisterBooleanPref(prefs::kHeliumUBlockAssetsEnabled, true);
+     registry->RegisterBooleanPref(prefs::kHeliumWebPushEnabled, true);
+     registry->RegisterStringPref(prefs::kHeliumPushServer, "");
    }
- 
-   registry->RegisterBooleanPref(
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -2656,10 +2656,6 @@
+@@ -2688,10 +2688,6 @@
        {"heliumUpdatesToggle", IDS_SETTINGS_HELIUM_SERVICES_UPDATE},
        {"heliumUpdatesToggleDescription",
          IDS_SETTINGS_HELIUM_SERVICES_UPDATE_DESCRIPTION},
@@ -148,9 +148,9 @@
 -        IDS_SETTINGS_HELIUM_SERVICES_UBO},
 -      {"heliumUboToggleDescription",
 -        IDS_SETTINGS_HELIUM_SERVICES_UBO_DESCRIPTION},
-       {"heliumOriginOverride", IDS_SETTINGS_HELIUM_SERVICES_OVERRIDE},
-       {"heliumOriginOverrideDescription",
-         IDS_SETTINGS_HELIUM_SERVICES_OVERRIDE_DESCRIPTION},
+       {"heliumWebPushToggle", IDS_SETTINGS_HELIUM_SERVICES_WEB_PUSH},
+       {"heliumWebPushToggleDescription",
+        IDS_SETTINGS_HELIUM_SERVICES_WEB_PUSH_DESCRIPTION},
 --- a/components/helium_services/extension_ids.h
 +++ b/components/helium_services/extension_ids.h
 @@ -11,11 +11,11 @@
@@ -169,19 +169,19 @@
  
 --- a/components/helium_services/helium_services_helpers.cc
 +++ b/components/helium_services/helium_services_helpers.cc
-@@ -109,11 +109,6 @@
+@@ -107,11 +107,6 @@
+     return ShouldAccessServices(prefs) &&
+             HasAcceptedSchema(prefs, 1) &&
              prefs.GetBoolean(prefs::kHeliumUpdateFetchingEnabled);
- }
- 
+-}
+-
 -bool ShouldAccessUBlockAssets(const PrefService& prefs) {
 -    return ShouldAccessServices(prefs) &&
 -            prefs.GetBoolean(prefs::kHeliumUBlockAssetsEnabled);
--}
--
- // Krypton: extensions always come from the Chrome Web Store itself, never
- // through the services proxy.
- GURL GetExtensionUpdateURL(const PrefService& prefs) {
-@@ -181,14 +176,6 @@
+ }
+ 
+ bool ShouldAccessPushService(const PrefService& prefs) {
+@@ -186,14 +181,6 @@
      return GetDummyURL();
  }
  
@@ -193,27 +193,27 @@
 -    return GetServicesBaseURL(prefs).Resolve("/ubo/assets.json");
 -}
 -
- void ConfigurePrefChangeRegistrarFor(std::string_view pref_name,
-     PrefChangeRegistrar& registrar, const base::RepeatingClosure& observer) {
-   registrar.Add(prefs::kHeliumServicesEnabled, observer);
+ GURL GetPushServiceURL(const PrefService& prefs) {
+   if (!ShouldAccessPushService(prefs)) {
+     return GetDummyURL();
 --- a/components/helium_services/helium_services_helpers.h
 +++ b/components/helium_services/helium_services_helpers.h
-@@ -24,7 +24,6 @@
+@@ -26,7 +26,6 @@
  COMPONENT_EXPORT(HELIUM) bool ShouldAccessExtensionService(const PrefService& prefs);
  COMPONENT_EXPORT(HELIUM) bool ShouldAccessUpdateService(const PrefService& prefs);
  COMPONENT_EXPORT(HELIUM) bool ShouldAccessComponentUpdateService(const PrefService& prefs);
 -COMPONENT_EXPORT(HELIUM) bool ShouldAccessUBlockAssets(const PrefService& prefs);
+ COMPONENT_EXPORT(HELIUM) bool ShouldAccessPushService(const PrefService& prefs);
  COMPONENT_EXPORT(HELIUM) GURL GetServicesBaseURL(const PrefService& prefs);
  COMPONENT_EXPORT(HELIUM) GURL GetDummyURL();
- COMPONENT_EXPORT(HELIUM) GURL GetExtensionUpdateURL(const PrefService& prefs);
-@@ -32,7 +31,6 @@
+@@ -35,7 +34,6 @@
  COMPONENT_EXPORT(HELIUM) GURL GetSpellcheckURL(const PrefService& prefs);
  COMPONENT_EXPORT(HELIUM) GURL GetBrowserUpdateURL(const PrefService& prefs);
  COMPONENT_EXPORT(HELIUM) GURL GetComponentUpdateURL(const PrefService* prefs);
 -COMPONENT_EXPORT(HELIUM) GURL GetUBlockAssetsURL(const PrefService& prefs);
+ COMPONENT_EXPORT(HELIUM) GURL GetPushServiceURL(const PrefService& prefs);
  COMPONENT_EXPORT(HELIUM) std::optional<GURL> GetValidUserOverridenURL(std::string_view user_url_);
  COMPONENT_EXPORT(HELIUM) void ConfigurePrefChangeRegistrarFor(std::string_view pref_name,
-                             PrefChangeRegistrar& registrar, const base::RepeatingClosure& observer);
 --- a/components/helium_services/pref_names.h
 +++ b/components/helium_services/pref_names.h
 @@ -39,8 +39,6 @@
@@ -222,9 +222,9 @@
  
 -inline constexpr char kHeliumUBlockAssetsEnabled[] =
 -    "helium.services.ublock_assets";
- }  // namespace prefs
  
- #endif  // COMPONENTS_HELIUM_SERVICES_PREF_NAMES_H_
+ inline constexpr char kHeliumWebPushEnabled[] = "helium.services.web_push";
+ 
 --- a/extensions/browser/api/storage/BUILD.gn
 +++ b/extensions/browser/api/storage/BUILD.gn
 @@ -54,7 +54,6 @@
@@ -237,7 +237,7 @@
      "//content/public/browser",
 --- a/extensions/browser/api/storage/storage_frontend.cc
 +++ b/extensions/browser/api/storage/storage_frontend.cc
-@@ -20,8 +20,6 @@
+@@ -21,8 +21,6 @@
  #include "base/strings/string_util.h"
  #include "base/strings/stringprintf.h"
  #include "base/trace_event/trace_event.h"
@@ -246,7 +246,7 @@
  #include "components/value_store/value_store_factory.h"
  #include "content/public/browser/browser_context.h"
  #include "content/public/browser/browser_thread.h"
-@@ -283,24 +281,6 @@
+@@ -280,24 +278,6 @@
  
    if (success) {
      get_result.data = result.PassSettings();

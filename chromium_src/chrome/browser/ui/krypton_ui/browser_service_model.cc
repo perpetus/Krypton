@@ -58,6 +58,8 @@ std::optional<std::string_view> SettingsDestination(uint32_t action) {
       return "krypton://credits/";
     case KR_SETTINGS_ACTION_LICENSE:
       return "krypton://terms/";
+    case KR_SETTINGS_ACTION_LOCAL_MODELS:
+      return "chrome://krypton-models/";
     case KR_SETTINGS_ACTION_BROWSER_SETTINGS:
       return "krypton://settings/";
     default:

@@ -175,9 +175,9 @@ def apply(patch_bin, layers):
             str(_TREE), '--no-backup-if-mismatch', '--forward'
         ], capture_output=True, text=True)
         rel = path.relative_to(layout.ROOT).as_posix()
-        # A fuzzy match applies, but possibly in the wrong place; Krypton's
-        # own patches should apply exactly.
-        if name == 'krypton' and 'with fuzz' in result.stdout:
+        # Require exact context in every selected layer. Upstream adaptations
+        # live in hash-pinned owned overrides rather than editing upstream.
+        if 'with fuzz' in result.stdout:
             fuzzy.append(rel)
             print(f'[FUZZ {index}/{len(selected)}] {rel}', flush=True)
             for line in result.stdout.splitlines():
@@ -218,7 +218,8 @@ def _added_lines(path):
             if previous.startswith('--- /dev/null'):
                 created.add(current)
         elif line.startswith('+') and current and not current.endswith('.icon'):
-            added.append((current, line[1:]))
+            if not line[1:].lstrip().startswith('//'):
+                added.append((current, line[1:]))
         previous = line
     return added, created
 
@@ -229,7 +230,8 @@ def _defines(line, token):
     return bool(re.search(
         rf'\b(?:class|struct|enum(?:\s+class)?|namespace)\s+{t}\b'
         rf'|#define\s+{t}\b|\b{t}\s*(?:\[\])?\s*=[^=]|^\s*{t},?\s*(?://.*)?$'
-        rf'|^\s*[\w:<>,*&]+[\s*&]+{t}\s*\(|"{t}"', line))
+        rf'|^\s*(?:(?:inline|static|constexpr|consteval|virtual)\s+)*'
+        rf'[\w:<>,*&]+[\s*&]+{t}\s*\(|"{t}"', line))
 
 
 def check_references():
@@ -253,6 +255,14 @@ def check_references():
         for path in directory.rglob('*'):
             if path.is_file() and path.suffix not in ('.rej', '.orig', '.png', '.ico', '.icon'):
                 text = path.read_text(encoding='utf-8', errors='replace')
+                # Prose in source comments does not name a missing symbol.
+                text = re.sub(r'(?m)^\s*//[^\n]*$', '', text)
+                if path.suffix in ('.html', '.css'):
+                    # Bare CSS property values are built-in keywords, not host
+                    # identifiers. Preserve selectors and var() references.
+                    text = re.sub(
+                        r'(?m)^(\s*[a-z][a-z-]*\s*:\s*)[a-z-]+(\s*;)',
+                        r'\1\2', text)
                 if path.suffix in ('.grd', '.grdp', '.xtb'):
                     # Resource prose is not a host symbol reference. Keep XML
                     # attributes (message IDs, conditions and include paths).

@@ -1,0 +1,12 @@
+Name: PCRE2
+URL: https://github.com/PCRE2Project/pcre2
+Version: 6f9d7c1373262c541324a16a358785b33ef116cf
+License: BSD-3-Clause
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+Pinned support code for the sandboxed local translation engine.
+Source: https://codeload.github.com/PCRE2Project/pcre2/zip/6f9d7c1373262c541324a16a358785b33ef116cf
+Archive SHA-256: e865194164169c4d14a16fbc7c34ec4d91b8422b35ca5216b68d85be970c1603

@@ -1,0 +1,10 @@
+Name: path-data-parser
+Short Name: path-data-parser
+URL: git+https://github.com/pshihn/path-data-parser.git
+Version: 0.1.0
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

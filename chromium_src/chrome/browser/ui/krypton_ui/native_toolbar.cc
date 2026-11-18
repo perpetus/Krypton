@@ -287,6 +287,11 @@ views::MenuItemView* NativeToolbar::GetRootMenuItemViewForTesting() {
   return nullptr;
 }
 
+ActionAppMenu* NativeToolbar::GetActionAppMenuForTesting() {
+  // Neither the Views nor the WebUI action menu exists in KryptonUI.
+  return nullptr;
+}
+
 void NativeToolbar::ExecuteCommandForTesting(int command_id,
                                              int mouse_event_flags) {
   ExecuteCommand(command_id, mouse_event_flags);

@@ -1,0 +1,10 @@
+Name: yjs
+Short Name: yjs
+URL: https://github.com/yjs/yjs.git
+Version: 13.6.33
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

@@ -1,0 +1,10 @@
+Name: aria-hidden
+Short Name: aria-hidden
+URL: git+https://github.com/theKashey/aria-hidden.git
+Version: 1.2.6
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

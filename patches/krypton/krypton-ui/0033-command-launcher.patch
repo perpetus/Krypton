@@ -1,0 +1,23 @@
+Subject: Route the New Tab accelerator to the universal launcher
+
+Krypton separates Ctrl+T (universal launcher) from Ctrl+L (current URL).
+Route the existing captured-accelerator path to an optional ABI-v2 UI tail;
+explicit New tab commands still create a Chromium tab. Preserve command policy,
+keyboard metrics, deferred dispatch and the existing old-runtime fallback.
+This changes browser UI shortcut dispatch only; V8, Blink and rendering stay
+unchanged.
+
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -5577,6 +5577,11 @@
+     return false;
+   UpdateAcceleratorMetrics(accelerator, command_id);
+ 
++  if (command_id == IDC_NEW_TAB && krypton_ui_ &&
++      krypton_ui_->OpenCommandLauncher()) {
++    return true;
++  }
++
+   if (command_id == IDC_CLEAR_BROWSING_DATA) {
+     views::ElementTrackerViews::GetInstance()->NotifyCustomEvent(
+         browsing_data_important_sites_util::

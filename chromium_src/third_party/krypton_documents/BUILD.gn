@@ -1,0 +1,14 @@
+# Copyright 2026 The Krypton Authors
+# Use of this source code is governed by the GPL-3.0 license in LICENSE.
+import("//tools/grit/grit_rule.gni")
+
+# Prebuilt, offline-only web resources. npm/Vite never runs in Chromium builds.
+grit("resources") {
+  source = "krypton_documents_resources.grd"
+  outputs = [
+    "grit/krypton_documents_resources.h",
+    "grit/krypton_documents_resources_map.cc",
+    "grit/krypton_documents_resources_map.h",
+    "krypton_documents_resources.pak",
+  ]
+}

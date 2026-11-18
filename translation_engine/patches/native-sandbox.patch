@@ -1,0 +1,407 @@
+Krypton: native archive build, immutable model mappings and sandbox-safe error handling.
+The service owns mapped files; the engine never opens model or log files.
+
+--- a/inference/CMakeLists.txt
++++ b/inference/CMakeLists.txt
+@@ -66,15 +66,15 @@
+   add_definitions(-DUSE_SSE2=1) # Supposed to fix something in the sse_mathfun.h but not sure it does
+   set(INTRINSICS ${MSVC_BUILD_ARCH}) # ARCH we're targetting on win32. @TODO variable
+ 
+-  set(CMAKE_CXX_FLAGS           "/EHsc /DWIN32 /D_WINDOWS /DUNICODE /D_UNICODE /D_CRT_NONSTDC_NO_WARNINGS /D_CRT_SECURE_NO_WARNINGS /bigobj")
+-  set(CMAKE_CXX_FLAGS_RELEASE   "${CMAKE_CXX_FLAGS} /MT /O2 ${INTRINSICS} /MP /GL /DNDEBUG")
+-  set(CMAKE_CXX_FLAGS_DEBUG     "${CMAKE_CXX_FLAGS} /MTd /Od /Ob0 ${INTRINSICS} /RTC1 /Zi /D_DEBUG")
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
+ 
+   # ignores warning LNK4049: locally defined symbol free imported - this comes from zlib
+-  set(CMAKE_EXE_LINKER_FLAGS         "${CMAKE_EXE_LINKER_FLAGS} /DEBUG /LTCG:incremental /INCREMENTAL:NO /ignore:4049")
+-  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB:MSVCRT")
+-  set(CMAKE_EXE_LINKER_FLAGS_DEBUG   "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB:MSVCRTD")
+-  set(CMAKE_STATIC_LINKER_FLAGS      "${CMAKE_STATIC_LINKER_FLAGS} /LTCG:incremental")
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
+ endif(MSVC)
+ 
+ include(CMakeDependentOption)
+--- a/inference/marian-fork/CMakeLists.txt
++++ b/inference/marian-fork/CMakeLists.txt
+@@ -225,16 +225,16 @@
+   set(INTRINSICS ${MSVC_BUILD_ARCH})
+   # set(INTRINSICS "/arch:AVX512")
+ 
+-  set(CMAKE_CXX_FLAGS                  "/EHsc /DWIN32 /D_WINDOWS /DUNICODE /D_UNICODE /D_CRT_NONSTDC_NO_WARNINGS /D_CRT_SECURE_NO_WARNINGS ${DISABLE_GLOBALLY}")
+-  set(CMAKE_CXX_FLAGS_RELEASE          "${CMAKE_CXX_FLAGS} /MT /O2 ${INTRINSICS} /MP /GL /DNDEBUG")
+-  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO   "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
+-  set(CMAKE_CXX_FLAGS_DEBUG            "${CMAKE_CXX_FLAGS} /MTd /Od /Ob0 ${INTRINSICS} /RTC1 /Zi /D_DEBUG /bigobj")
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
+ 
+   # ignores warning LNK4049: locally defined symbol free imported - this comes from zlib
+-  set(CMAKE_EXE_LINKER_FLAGS         "${CMAKE_EXE_LINKER_FLAGS} /DEBUG /LTCG:incremental /INCREMENTAL:NO /ignore:4049")
+-  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB:MSVCRT")
+-  set(CMAKE_EXE_LINKER_FLAGS_DEBUG   "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB:MSVCRTD")
+-  set(CMAKE_STATIC_LINKER_FLAGS      "${CMAKE_STATIC_LINKER_FLAGS} /LTCG:incremental")
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
++# Krypton: retain the parent static-CRT clang-cl flags.
+ 
+   find_library(SHLWAPI Shlwapi.lib)
+   set(EXT_LIBS ${EXT_LIBS} SHLWAPI)
+--- a/inference/marian-fork/src/CMakeLists.txt
++++ b/inference/marian-fork/src/CMakeLists.txt
+@@ -144,23 +144,7 @@
+ #
+ # We set MARIAN_GIT_DIR to the appropriate path, depending on whether
+ # ${CMAKE_CURRENT_SOURCE_DIR}/../.git is a directory or file.
+-set(MARIAN_GIT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../.git)
+-if(NOT IS_DIRECTORY ${MARIAN_GIT_DIR}) # i.e., it's a submodule
+-  file(READ ${MARIAN_GIT_DIR} MARIAN_GIT_DIR)
+-  string(REGEX REPLACE "gitdir: (.*)\n" "\\1" MARIAN_GIT_DIR ${MARIAN_GIT_DIR})
+-  if(NOT IS_ABSOLUTE ${MARIAN_GIT_DIR})
+-    get_filename_component(MARIAN_GIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../${MARIAN_GIT_DIR}" ABSOLUTE)
+-  endif()
+-endif(NOT IS_DIRECTORY ${MARIAN_GIT_DIR})
+-
+-add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/common/git_revision.h
+-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+-  COMMAND git log -1 --pretty=format:\#define\ GIT_REVISION\ \"\%h\ \%ai\" > ${CMAKE_CURRENT_SOURCE_DIR}/common/git_revision.h
+-  DEPENDS ${MARIAN_GIT_DIR}/logs/HEAD
+-  VERBATIM
+-)
+-add_custom_target(marian_version DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/common/git_revision.h)
+-add_dependencies(marian marian_version) # marian must depend on it so that it gets created first
++file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/common/git_revision.h" "#define GIT_REVISION \"eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d\"\n")
+ # make sure all local dependencies are installed first before this is built
+ add_dependencies(marian 3rd_party_installs)
+ 
+--- a/inference/src/translator/aligned.h
++++ b/inference/src/translator/aligned.h
+@@ -42,7 +42,7 @@
+ #endif
+     }
+ 
+-    AlignedVector(AlignedVector &&from) : mem_(from.mem_), size_(from.size_) {
++    AlignedVector(AlignedVector &&from) : mem_(from.mem_), size_(from.size_), borrowed_(from.borrowed_) {
+       from.mem_ = nullptr;
+       from.size_ = 0;
+     }
+@@ -52,6 +52,7 @@
+       release();
+       mem_ = from.mem_;
+       size_ = from.size_;
++      borrowed_ = from.borrowed_;
+       from.mem_ = nullptr;
+       from.size_ = 0;
+       return *this;
+@@ -62,6 +63,14 @@
+ 
+     ~AlignedVector() { release(); }
+ 
++    // Krypton: the mapping owner must outlive this read-only descriptor.
++    static AlignedVector BorrowReadOnly(const void* memory, std::size_t size) {
++      AlignedVector result;
++      result.mem_ = const_cast<T*>(static_cast<const T*>(memory));
++      result.size_ = size;
++      result.borrowed_ = true;
++      return result;
++    }
+     std::size_t size() const { return size_; }
+ 
+     T &operator[](std::size_t offset) { return mem_[offset]; }
+@@ -76,16 +85,22 @@
+     ReturnType *as() { return reinterpret_cast<ReturnType*>(mem_); }
+ 
+     void release() {
++      if (!borrowed_) {
+ #ifdef _MSC_VER
+       _aligned_free(mem_);
+ #else
+       std::free(mem_);
+ #endif
++      }
++      mem_ = nullptr;
++      size_ = 0;
++      borrowed_ = false;
+     }
+ 
+   private:
+     T *mem_;
+     std::size_t size_;
++    bool borrowed_ = false;
+ };
+ 
+ } // namespace bergamot
+--- a/inference/src/translator/byte_array_util.cpp
++++ b/inference/src/translator/byte_array_util.cpp
+@@ -82,6 +82,8 @@
+ }
+ 
+ AlignedMemory loadFileToMemory(const std::string& path, size_t alignment) {
++  throw std::runtime_error("Krypton translation requires mapped model data");
++#if 0
+   uint64_t fileSize = filesystem::fileSize(path);
+   io::InputFileStream in(path);
+   ABORT_IF(in.bad(), "Failed opening file stream: {}", path);
+@@ -89,6 +91,7 @@
+   in.read(reinterpret_cast<char*>(alignedMemory.begin()), fileSize);
+   ABORT_IF(alignedMemory.size() != fileSize, "Error reading file {}", path);
+   return alignedMemory;
++#endif
+ }
+ 
+ std::vector<AlignedMemory> getModelMemoryFromConfig(marian::Ptr<marian::Options> options) {
+--- a/inference/marian-fork/src/common/logging.cpp
++++ b/inference/marian-fork/src/common/logging.cpp
+@@ -26,6 +26,8 @@
+                                                    bool quiet) {
+   std::vector<spdlog::sink_ptr> sinks;
+ 
++  return spdlog::create<spdlog::sinks::null_sink_mt>(name);
++#if 0
+   auto stderr_sink = spdlog::sinks::stderr_sink_mt::instance();
+   if(!quiet)
+     sinks.push_back(stderr_sink);
+@@ -40,6 +42,7 @@
+   spdlog::register_logger(logger);
+   logger->set_pattern(pattern);
+   return logger;
++#endif
+ }
+ 
+ bool setLoggingLevel(spdlog::logger& logger, std::string const level) {
+@@ -105,7 +108,7 @@
+     tzset();
+   }
+ 
+-  setErrorHandlers();
++  // Krypton: preserve the utility process exception and signal handlers.
+   return loggers;
+ }
+ 
+--- a/inference/3rd_party/ssplit-cpp/CMakeLists.txt
++++ b/inference/3rd_party/ssplit-cpp/CMakeLists.txt
+@@ -37,7 +37,10 @@
+ ENDIF(SSPLIT_PREFER_STATIC_COMPILE)
+ 
+ include(GNUInstallDirs)
+-include(FindPCRE2)
++# Krypton: pinned static dependency, no discovery/download or JIT.
++set(PCRE2_FOUND TRUE)
++set(PCRE2_INCLUDE_DIRS "${CMAKE_BINARY_DIR}/pcre2")
++set(PCRE2_LIBRARIES pcre2-8-static)
+ if(PCRE2_FOUND)
+   include_directories(${PCRE2_INCLUDE_DIRS})
+   set(EXT_LIBS ${EXT_LIBS} ${PCRE2_LIBRARIES})
+--- a/inference/marian-fork/CMakeLists.txt
++++ b/inference/marian-fork/CMakeLists.txt
+@@ -399,7 +399,7 @@
+ if(USE_SENTENCEPIECE)
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_SENTENCEPIECE -D_USE_INTERNAL_STRING_VIEW")
+   LIST(APPEND CUDA_NVCC_FLAGS -DUSE_SENTENCEPIECE; )
+-  set(EXT_LIBS ${EXT_LIBS} sentencepiece sentencepiece_train)
++  set(EXT_LIBS ${EXT_LIBS} sentencepiece)
+ endif()
+ 
+ if(USE_ONNX)
+--- a/inference/marian-fork/src/3rd_party/spdlog/details/format.h
++++ b/inference/marian-fork/src/3rd_party/spdlog/details/format.h
+@@ -4447,12 +4447,12 @@
+ \endrst
+ */
+ inline internal::UdlFormat<char>
+-operator"" _format(const char *s, std::size_t)
++operator""_format(const char *s, std::size_t)
+ {
+     return { s };
+ }
+ inline internal::UdlFormat<wchar_t>
+-operator"" _format(const wchar_t *s, std::size_t)
++operator""_format(const wchar_t *s, std::size_t)
+ {
+     return { s };
+ }
+@@ -4468,12 +4468,12 @@
+ \endrst
+ */
+ inline internal::UdlArg<char>
+-operator"" _a(const char *s, std::size_t)
++operator""_a(const char *s, std::size_t)
+ {
+     return { s };
+ }
+ inline internal::UdlArg<wchar_t>
+-operator"" _a(const wchar_t *s, std::size_t)
++operator""_a(const wchar_t *s, std::size_t)
+ {
+     return { s };
+ }
+--- a/inference/marian-fork/src/3rd_party/spdlog/details/os.h
++++ b/inference/marian-fork/src/3rd_party/spdlog/details/os.h
+@@ -209,7 +209,7 @@
+     auto rv = GetDynamicTimeZoneInformation(&tzinfo);
+ #endif
+     if (rv == TIME_ZONE_ID_INVALID)
+-        throw spdlog::spdlog_ex("Failed getting timezone info. Last error: " + GetLastError());
++        throw spdlog::spdlog_ex(std::string("Failed getting timezone info. Last error: ") + std::to_string(GetLastError()));
+ 
+     int offset = -tzinfo.Bias;
+     if (tm.tm_isdst)
+--- a/inference/marian-fork/src/common/logging.cpp
++++ b/inference/marian-fork/src/common/logging.cpp
+@@ -24,6 +24,7 @@
+                                                    const std::string& pattern,
+                                                    const std::vector<std::string>& files,
+                                                    bool quiet) {
++  (void)pattern; (void)files; (void)quiet;
+   std::vector<spdlog::sink_ptr> sinks;
+ 
+   return spdlog::create<spdlog::sinks::null_sink_mt>(name);
+--- a/inference/marian-fork/src/common/logging.cpp
++++ b/inference/marian-fork/src/common/logging.cpp
+@@ -153,6 +153,7 @@
+ 
+ namespace marian {
+   std::string noinline getCallStack(size_t skipLevels) {
++    (void)skipLevels;
+   #if defined(WASM_COMPATIBLE_SOURCE) || defined(__ANDROID__)
+     return "Callstacks not supported in WASM or Android builds currently";
+   #else
+--- a/inference/marian-fork/src/common/logging.cpp
++++ b/inference/marian-fork/src/common/logging.cpp
+@@ -68,7 +68,7 @@
+   return true;
+ }
+ 
+-static void setErrorHandlers();
++[[maybe_unused]] static void setErrorHandlers();
+ std::vector<Logger> createLoggers(const marian::Config* config) {
+   std::vector<std::string> generalLogs;
+   std::vector<std::string> validLogs;
+@@ -127,7 +127,7 @@
+   }
+ }
+ 
+-static void setErrorHandlers() {
++[[maybe_unused]] static void setErrorHandlers() {
+   // call stack for unhandled exceptions
+   std::set_terminate(unhandledException);
+ #ifdef __unix__
+--- a/inference/marian-fork/src/data/sentencepiece_vocab.cpp
++++ b/inference/marian-fork/src/data/sentencepiece_vocab.cpp
+@@ -134,58 +134,9 @@
+   virtual Word getEosId() const override { return Word::fromWordIndex(spm_->eos_id()); }
+   virtual Word getUnkId() const override { return Word::fromWordIndex(spm_->unk_id()); }
+ 
+-  void create(const std::string& vocabPath,
+-              const std::vector<std::string>& trainPaths,
+-              size_t maxSize) override {
+-
+-    size_t defaultMaxSize = 32000;
+-    size_t maxLines = options_->get<size_t>("sentencepiece-max-lines");
+-    size_t maxBytes = 2048;
+-
+-    LOG(info, "[SentencePiece] Training SentencePiece vocabulary {}", vocabPath);
+-
+-    if(maxSize == 0) {
+-      LOG(info, "[SentencePiece] Vocabulary size is undefined (set with --dim-vocabs ...) - setting to {}", defaultMaxSize);
+-      maxSize = defaultMaxSize;
+-    }
+-
+-    // Create temporary file to hold the sample for the SentencePiece trainer
+-    io::TemporaryFile temp(options_->get<std::string>("tempdir"), false);
+-    std::string tempFileName = temp.getFileName();
+-    LOG(info, "[SentencePiece] Creating temporary file {}", tempFileName);
+-
+-    size_t seenLines = 0;
+-    if(maxLines == 0)
+-      seenLines = dumpAll(temp, trainPaths, maxBytes);
+-    else
+-      seenLines = reservoirSamplingAll(temp, trainPaths, maxLines, maxBytes);
+-
+-    // Compose the SentencePiece training command from filenames and parameters0
+-    std::stringstream command;
+-    command
+-      << " --bos_id=-1 --eos_id=0 --unk_id=1" // these should not be changed as they match Marian defaults
+-      << " --input="               << tempFileName
+-      << " --model_prefix="        << vocabPath
+-      << " --vocab_size="          << maxSize
+-      << " --max_sentence_length=" << maxBytes
+-      << " --input_sentence_size=" << seenLines
+-      << " " << options_->get<std::string>("sentencepiece-options"); // these are SentencePiece command line options
+-
+-    // Train the SentencePiece model
+-    const auto status = sentencepiece::SentencePieceTrainer::Train(command.str());
+-    ABORT_IF(!status.ok(),
+-             "SentencePiece vocabulary error: {}",
+-             status.ToString());
+-
+-    LOG(info, "[SentencePiece] Removing {}", vocabPath + ".vocab");
+-    ABORT_IF(remove((vocabPath + ".vocab").c_str()) != 0,
+-             "Could not remove {}",
+-             vocabPath + ".vocab");
+-
+-    LOG(info, "[SentencePiece] Renaming {} to {}", vocabPath + ".model", vocabPath);
+-    ABORT_IF(rename((vocabPath + ".model").c_str(), vocabPath.c_str()) != 0,
+-             "Could not rename {} to {}",
+-             vocabPath + ".model", vocabPath);
++  void create(const std::string&, const std::vector<std::string>&,
++              size_t) override {
++    ABORT("Krypton translation does not support vocabulary training");
+   }
+ 
+   void createFake() override {
+@@ -289,21 +240,8 @@
+     return spm_->GetPieceSize();
+   }
+ 
+-  size_t load(const std::string& vocabPath, size_t /*maxSize*/) override {
+-    LOG(info, "[data] Loading SentencePiece vocabulary from file {}", vocabPath);
+-
+-    ABORT_IF(!filesystem::exists(vocabPath),
+-             "SentencePiece vocabulary file {} does not exist",
+-             vocabPath);
+-
+-    spm_.reset(new sentencepiece::SentencePieceProcessor());
+-    const auto status = spm_->Load(vocabPath);
+-
+-    ABORT_IF(!status.ok(),
+-             "SentencePiece vocabulary error: {}",
+-             status.ToString());
+-
+-    return spm_->GetPieceSize();
++  size_t load(const std::string&, size_t) override {
++    ABORT("Krypton translation requires mapped vocabulary data");
+   }
+ 
+   // loadFromSerialized() is based on `absl::string_view` which does *not* own the
+--- a/inference/marian-fork/src/3rd_party/CMakeLists.txt
++++ b/inference/marian-fork/src/3rd_party/CMakeLists.txt
+@@ -144,7 +144,7 @@
+ include_directories(./CLI)
+ include_directories(./pathie-cpp/include)
+ 
+-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
++if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT MSVC)
+   set_property(TARGET libyaml-cpp APPEND_STRING PROPERTY COMPILE_FLAGS
+     " -fPIC -Wno-unused-value")
+   set_property(TARGET pathie-cpp APPEND_STRING PROPERTY COMPILE_FLAGS
+
+--- a/inference/marian-fork/CMakeLists.txt
++++ b/inference/marian-fork/CMakeLists.txt
+@@ -195,8 +195,8 @@
+ message(STATUS "Project name: ${PROJECT_NAME}")
+ message(STATUS "Project version: ${PROJECT_VERSION_STRING_FULL}")
+ 
+-execute_process(COMMAND git submodule update --init --recursive --no-fetch
+-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
++# Krypton: dependencies come from pinned archives. Never let Git discover
++# and update submodules in an enclosing application repository.
+ 
+ # Note that with CMake MSVC build, the option CMAKE_BUILD_TYPE is automatically derived from the key
+ # 'configurationType' in CMakeSettings.json configurations

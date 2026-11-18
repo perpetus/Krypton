@@ -108,3 +108,7 @@ helium/ui/layout/zen-mode-wiring.patch
 helium/ui/layout/zen-caption-buttons.patch
 helium/ui/layout/zen-mode.patch
 helium/ui/layout/min-window-width.patch
+
+# Native KryptonUI owns these stock browser menus and translation surfaces.
+helium/ui/add-copy-download-link-context-menu.patch
+helium/ui/translate-ui.patch

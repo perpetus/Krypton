@@ -420,7 +420,9 @@ class SiteCustomization::Impl {
           weak_.GetWeakPtr(), tab->GetWeakPtr()));
     }
   }
-  void ApplyStyles(content::RenderFrameHost& frame, const GURL& url) {
+  void ApplyStyles(content::RenderFrameHost& frame,
+                   const GURL& url,
+                   bool new_document = false) {
     if (!frame.IsRenderFrameLive() || !url.SchemeIsHTTPOrHTTPS()) {
       return;
     }
@@ -453,6 +455,11 @@ class SiteCustomization::Impl {
         sheets.push_back(preview_->compiled);
       }
     }
+    // A new document has no Krypton sheets. Refreshes and same-document
+    // navigations must still send an empty list to clear any existing styles.
+    if (new_document && sheets.empty()) {
+      return;
+    }
     mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame> remote;
     frame.GetRemoteAssociatedInterfaces()->GetInterface(&remote);
     remote->SetKryptonSiteStyle(url.GetWithoutRef(), sheets);
@@ -462,7 +469,9 @@ class SiteCustomization::Impl {
     if (!nav.HasCommitted() || nav.IsErrorPage()) {
       return;
     }
-    ApplyStyles(*nav.GetRenderFrameHost(), nav.GetURL());
+    if (nav.IsSameDocument()) {
+      ApplyStyles(*nav.GetRenderFrameHost(), nav.GetURL());
+    }
     if (Private() || !nav.IsInPrimaryMainFrame() || nav.IsSameDocument() ||
         EssentialForTab(tab.GetContents()) ||
         IsTransientGlance(tab.GetContents())) {
@@ -1430,7 +1439,8 @@ std::unique_ptr<ui::MenuModel> SiteCustomization::BoostMenu(
                                       item & kRuleIdMask);
 }
 void SiteCustomization::NavigationReady(content::NavigationHandle& nav) {
-  impl_->ApplyStyles(*nav.GetRenderFrameHost(), nav.GetURL());
+  impl_->ApplyStyles(*nav.GetRenderFrameHost(), nav.GetURL(),
+                     /*new_document=*/!nav.IsSameDocument());
 }
 void SiteCustomization::NavigationFinished(tabs::TabInterface& tab,
                                            content::NavigationHandle& nav) {

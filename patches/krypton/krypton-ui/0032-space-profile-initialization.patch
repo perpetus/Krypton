@@ -1,0 +1,102 @@
+Subject: Keep profile host presentation after window feature initialization
+
+Creating a Space with a new profile resized the hidden host during widget
+construction. Layout queried GetWidgetForAnchoring, which presented/activated
+that host before InitPostWindowConstruction created its extension keyboard
+registry. The null registry caused an access violation at address 0xb0.
+
+Keep the anchor getter free of presentation side effects. Chromium's existing
+embedder post-window hook marks the owned adapter initialized only after its
+window-dependent services exist. Ignore premature show/activation notifications
+and tolerate an absent optional keyboard registry. Owned host code also gates
+presentation/resizing and explicitly deactivates each newly created registry.
+No profile data is copied, migrated, deleted or read by this initialization fix.
+
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1739,11 +1739,6 @@
+ }
+ 
+ views::Widget* BrowserView::GetWidgetForAnchoring() {
+-#if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_) {
+-    krypton_ui_->PresentForBrowserUI();
+-  }
+-#endif
+ #if BUILDFLAG(IS_MAC)
+   if (WindowFeatureController::From(browser())->UsesImmersiveFullscreenMode()) {
+     return IsFullscreen() ? overlay_widget_.get() : GetWidget();
+@@ -1795,6 +1790,9 @@
+ void BrowserView::Show() {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+   if (krypton_ui_) {
++    if (!krypton_ui_->browser_initialized()) {
++      return;
++    }
+     krypton_ui_->PresentForBrowserUI();
+   }
+ #endif
+@@ -4460,6 +4458,11 @@
+ void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
+                                             bool active) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Native child widgets can notify while Browser is still constructing its
++  // window. Per-browser features are ready only after the embedder init hook.
++  if (krypton_ui_ && !krypton_ui_->browser_initialized()) {
++    return;
++  }
+   if (krypton_ui_)
+     krypton_ui_->PublishWindowState();
+ #endif
+@@ -4479,8 +4482,9 @@
+     }
+   }
+ 
+-  ExtensionKeybindingRegistryViews::From(browser_)->OnHostActivationChanged(
+-      active);
++  if (auto* keys = ExtensionKeybindingRegistryViews::From(browser_)) {
++    keys->OnHostActivationChanged(active);
++  }
+ 
+   if (active) {
+     UpdatePlatformAccelerators();
+--- a/chrome/browser/ui/browser_window/internal/embedder_browser_window_features.cc
++++ b/chrome/browser/ui/browser_window/internal/embedder_browser_window_features.cc
+@@ -5,6 +5,10 @@
+ #include "chrome/browser/ui/browser_window/public/embedder_browser_window_features.h"
+ 
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#endif
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ 
+ DEFINE_USER_DATA(EmbedderBrowserWindowFeatures);
+@@ -26,7 +30,14 @@
+ 
+ void EmbedderBrowserWindowFeatures::InitPostWindowConstruction(
+     BrowserWindowInterface* browser) {
+-  // Embedder implementation goes here.
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Chromium has initialized the window-dependent features, including the
++  // extension keyboard registry. Profile hosts can now handle presentation.
++  if (auto* view = BrowserView::GetBrowserViewForBrowser(browser);
++      view && view->krypton_ui()) {
++    view->krypton_ui()->OnBrowserWindowInitialized();
++  }
++#endif
+ }
+ 
+ void EmbedderBrowserWindowFeatures::InitPostBrowserViewConstruction(
+--- a/chrome/browser/ui/browser_window/internal/BUILD.gn
++++ b/chrome/browser/ui/browser_window/internal/BUILD.gn
+@@ -112,6 +112,8 @@
+       "//chrome/browser/ui/find_bar",
+       "//chrome/browser/ui/focus",
+       "//chrome/browser/ui/fullscreen",
++      "//chrome/browser/ui/krypton_ui:buildflags",
++      "//chrome/browser/ui/krypton_ui:native_headers",
+       "//chrome/browser/ui/lens",
+       "//chrome/browser/ui/performance_controls",
+       "//chrome/browser/ui/send_tab_to_self",

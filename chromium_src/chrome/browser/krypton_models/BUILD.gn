@@ -1,0 +1,9 @@
+# Copyright 2026 The Krypton Authors. GPL-3.0.
+source_set("files") {
+  sources = [
+    "files.cc",
+    "files.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [ "//crypto" ]
+}

@@ -1,0 +1,10 @@
+Name: lodash.debounce
+Short Name: lodash.debounce
+URL: lodash/lodash
+Version: 4.0.8
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

@@ -1,0 +1,7 @@
+Name: Liberation font
+URL: https://raw.githubusercontent.com/liberationfonts/liberation-fonts/main/LICENSE
+Version: bundled with Excalidraw 0.18.1
+License: SIL Open Font License 1.1
+License File: LICENSE
+Security Critical: yes
+Shipped: yes

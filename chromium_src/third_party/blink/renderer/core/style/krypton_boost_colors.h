@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <utility>
@@ -21,6 +22,8 @@
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
 namespace blink::krypton_boost {
+// Monotonic for the renderer lifetime; ordinary page CSS cannot enable Boosts.
+inline std::atomic<bool> palette_in_use{false};
 inline thread_local unsigned paint_depth = 0;
 inline thread_local unsigned resolve_depth = 0;
 
@@ -37,8 +40,21 @@ inline const AtomicString& PropertyName() {
   return *name;
 }
 
+inline bool PaletteInUse() {
+  return palette_in_use.load(std::memory_order_relaxed);
+}
+
+inline void ObserveUserStyleSheet(const String& source) {
+  if (source.contains("--krypton-boost-palette")) {
+    palette_in_use.store(true, std::memory_order_relaxed);
+  }
+}
+
 inline bool ThemeChanged(const ComputedStyle& before,
                          const ComputedStyle& after) {
+  if (!PaletteInUse()) {
+    return false;
+  }
   const auto* a = before.GetVariableData(PropertyName());
   const auto* b = after.GetVariableData(PropertyName());
   return a != b && (!a || !b || !(*a == *b));
@@ -192,7 +208,8 @@ inline Color MapColor(Theme& theme, const Color& original) {
 
 template <class Read>
 Color Resolve(const ComputedStyle& style, Read&& read) {
-  if (!paint_depth || resolve_depth || style.InForcedColorsMode()) {
+  if (!PaletteInUse() || !paint_depth || resolve_depth ||
+      style.InForcedColorsMode()) {
     return read();
   }
   ++resolve_depth;

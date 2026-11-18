@@ -1,0 +1,12 @@
+Name: cnpy
+URL: https://github.com/mozilla/translations
+Version: eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+Pinned support code for the sandboxed local translation engine.
+Source: https://codeload.github.com/mozilla/translations/zip/eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d
+Archive SHA-256: 6f935c4992475fd0fd268d4c094e62e3b94d35d458eb7b3f17479749ec83de10

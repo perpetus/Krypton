@@ -18,6 +18,7 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/krypton_ui/browser_service_model.h"
+#include "chrome/browser/ui/krypton_ui/local_model_settings.h"
 #include "chrome/browser/ui/krypton_ui/window_session.h"
 #include "chrome/browser/ui/profiles/profile_picker.h"
 #include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
@@ -96,6 +97,16 @@ void BrowserServices::SettingsVisibility(uint32_t section, bool visible) {
     return;
   settings_section_ = section;
   settings_visible_ = visible;
+  const auto* api = session_->api();
+  const bool use_native_models =
+      profile_->IsRegularProfile() && !profile_->IsOffTheRecord() && api &&
+      KR_HAS_SLOT(api, KrShellUI, set_local_models) && api->set_local_models;
+  if (visible && section == KR_SETTINGS_LANGUAGES && use_native_models) {
+    if (!models_)
+      models_ = std::make_unique<LocalModelSettings>(*profile_, *session_);
+  } else {
+    models_.reset();
+  }
   UpdateObservation();
 }
 
@@ -148,7 +159,7 @@ void BrowserServices::PublishSettings() {
   value.struct_size = sizeof(value);
   value.revision = ++snapshot_revision_;
   value.controls = Bit(KR_SETTINGS_VERSION);
-  for (uint32_t action = 0; action <= KR_SETTINGS_ACTION_BROWSER_SETTINGS;
+  for (uint32_t action = 0; action <= KR_SETTINGS_ACTION_LOCAL_MODELS;
        ++action) {
     if (ActionAllowed(action))
       value.actions |= Bit(action);
@@ -249,7 +260,7 @@ void BrowserServices::ApplySetting(KrSettingsEdit edit) {
 }
 
 bool BrowserServices::ActionAllowed(uint32_t action) const {
-  if (action > KR_SETTINGS_ACTION_BROWSER_SETTINGS)
+  if (action > KR_SETTINGS_ACTION_LOCAL_MODELS)
     return false;
   const bool regular =
       !profile_->IsOffTheRecord() && !profile_->IsGuestSession();
@@ -265,6 +276,8 @@ bool BrowserServices::ActionAllowed(uint32_t action) const {
     case KR_SETTINGS_ACTION_MANAGE_PROFILE:
     case KR_SETTINGS_ACTION_IMPORT:
       return regular;
+    case KR_SETTINGS_ACTION_LOCAL_MODELS:
+      return regular && !models_;
     default:
       return SettingsDestination(action).has_value();
   }

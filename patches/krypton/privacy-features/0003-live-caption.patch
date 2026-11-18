@@ -30,15 +30,15 @@ Turning the switch off preserves Helium's support/menu behavior after restart.
  
  #include <stddef.h>
  
-@@ -2594,6 +2595,7 @@
+@@ -2583,6 +2584,7 @@
      menu_model_.AddItemWithStringId(IDC_SAVE_PAGE,
                                      IDS_CONTENT_CONTEXT_SAVEPAGEAS);
      menu_model_.AddItemWithStringId(IDC_PRINT, IDS_CONTENT_CONTEXT_PRINT);
 +    AppendLiveCaptionItem();
  
-     menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
-     return;
-@@ -3354,7 +3356,9 @@
+     // Translate to language
+     if (CanTranslate(/*menu_logging=*/true)) {
+@@ -3352,7 +3354,9 @@
  
  void RenderViewContextMenu::AppendLiveCaptionItem() {
    if (captions::IsLiveCaptionFeatureSupported() &&

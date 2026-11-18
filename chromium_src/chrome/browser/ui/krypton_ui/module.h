@@ -24,8 +24,11 @@ class Module {
   Module& operator=(const Module&) = delete;
 
   [[nodiscard]] base::expected<void, std::string> Initialize();
-  [[nodiscard]] base::expected<KrShellUI, std::string>
-  Create(HWND window, const KrBrowser& browser, const KrTheme& initial_theme);
+  [[nodiscard]] base::expected<KrShellUI, std::string> Create(
+      HWND window,
+      const KrBrowser& browser,
+      const KrTheme& initial_theme,
+      bool hosted = false);
   void Destroy(KrShellUI& shell);
 
   // Terminal; call once at UI-thread shutdown, never on an ordinary close.

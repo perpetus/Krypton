@@ -1,0 +1,10 @@
+Name: open-color
+Short Name: open-color
+URL: git+https://github.com/yeun/open-color.git
+Version: 1.9.1
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

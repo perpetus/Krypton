@@ -1,0 +1,10 @@
+Name: sliced
+Short Name: sliced
+URL: git://github.com/aheckmann/sliced
+Version: 1.0.1
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

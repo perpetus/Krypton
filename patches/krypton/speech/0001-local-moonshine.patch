@@ -1,0 +1,378 @@
+Krypton: Replace the Windows speech installer with opt-in hash-pinned local
+Moonshine packs. Reuse the existing speech sandbox, audio capture and idle
+teardown; pass each recognizer its exact verified model and keep the web API
+disabled. Never register or download Google speech components.
+
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1722,6 +1722,9 @@
+     deps += [ "//chrome/browser/background/extensions" ]
+   }
+ 
++  if (is_win) {
++    deps += [ "//chrome/browser/krypton_speech:local_speech" ]
++  }
+   if (enable_on_device_translation && is_win) {
+     deps += [ "//chrome/browser/krypton_translate:local_translation" ]
+   }
+--- a/chrome/browser/browser_process_impl.cc
++++ b/chrome/browser/browser_process_impl.cc
+@@ -45,7 +45,11 @@
+ #include "build/build_config.h"
+ #include "build/chromeos_buildflags.h"
+ #include "build/config/linux/dbus/buildflags.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_speech/installer.h"
++#else
+ #include "chrome/browser/accessibility/soda_installer_impl.h"
++#endif
+ #include "chrome/browser/battery/battery_metrics.h"
+ #include "chrome/browser/browser_process_platform_part.h"
+ #include "chrome/browser/buildflags.h"
+@@ -575,15 +579,19 @@
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+   int max_connections_per_host = 0;
+-  auto switch_value = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+-      switches::kMaxConnectionsPerHost);
+-  if (!switch_value.empty() && !base::StringToInt(switch_value, &max_connections_per_host)) {
++  auto switch_value =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          switches::kMaxConnectionsPerHost);
++  if (!switch_value.empty() &&
++      !base::StringToInt(switch_value, &max_connections_per_host)) {
+     LOG(DFATAL) << "--" << switches::kMaxConnectionsPerHost
+-      << " expected integer; got (\"" << switch_value << "\" instead)";
++                << " expected integer; got (\"" << switch_value
++                << "\" instead)";
+   }
+   if (max_connections_per_host != 0) {
+     net::ClientSocketPoolManager::set_max_sockets_per_group_for_test(
+-        net::HttpNetworkSession::SocketPoolType::kNormal, max_connections_per_host);
++        net::HttpNetworkSession::SocketPoolType::kNormal,
++        max_connections_per_host);
+   }
+ 
+   CHECK(!webrtc_event_log_manager_, base::NotFatalUntil::M162);
+@@ -1420,7 +1428,6 @@
+   return features_.get();
+ }
+ 
+-
+ DownloadRequestLimiter* BrowserProcessImpl::download_request_limiter() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+   if (!download_request_limiter_.get()) {
+@@ -1772,14 +1779,15 @@
+ #endif
+ 
+ // Create the global SodaInstaller instance.
+-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
++#if BUILDFLAG(IS_WIN)
++  soda_installer_impl_ = std::make_unique<krypton::speech::Installer>();
++#elif !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+   soda_installer_impl_ = std::make_unique<speech::SodaInstallerImpl>();
+ #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+   soda_installer_impl_ = std::make_unique<speech::SodaInstallerImplChromeOS>();
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+-
+ 
+   base::FilePath user_data_dir;
+   bool result = base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
+--- a/chrome/browser/speech/BUILD.gn
++++ b/chrome/browser/speech/BUILD.gn
+@@ -115,6 +115,10 @@
+     "//mojo/public/cpp/bindings",
+     "//url",
+   ]
++
++  if (is_win) {
++    deps += [ "//chrome/browser/krypton_speech:local_speech" ]
++  }
+ 
+   if (!is_android) {
+     sources += [
+--- a/chrome/browser/speech/chrome_speech_recognition_service.cc
++++ b/chrome/browser/speech/chrome_speech_recognition_service.cc
+@@ -34,6 +34,9 @@
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "services/on_device_model/public/mojom/on_device_model.mojom.h"
+ 
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_speech/installer.h"
++#endif
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_features.h"
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+@@ -58,13 +61,16 @@
+   if (soda_installer) {
+     soda_installer_observer_.Observe(soda_installer);
+   }
+-
+ }
+ 
+ ChromeSpeechRecognitionService::~ChromeSpeechRecognitionService() = default;
+ 
+ void ChromeSpeechRecognitionService::BindSpeechRecognitionContext(
+     mojo::PendingReceiver<media::mojom::SpeechRecognitionContext> receiver) {
++#if BUILDFLAG(IS_WIN)
++  if (context_->IsOffTheRecord())
++    return;
++#endif
+   speech_recognition_contexts_.Add(this, std::move(receiver));
+ }
+ 
+@@ -86,7 +92,6 @@
+     options->language = language_name;
+   }
+ 
+-
+   BindSodaRecognizer(std::move(receiver), std::move(client), std::move(options),
+                      std::move(callback));
+ }
+@@ -102,6 +107,12 @@
+     int sample_rate,
+     media::mojom::SpeechRecognitionOptionsPtr options,
+     bool continuous) {
++  if constexpr (BUILDFLAG(IS_WIN)) {
++    // The website-facing API stays unavailable. Only browser-owned clients
++    // may use the local engine through the recognizer/audio-source
++    // interfaces.
++    return;
++  }
+   LaunchIfNotRunning();
+   if (speech_recognition_service_.is_bound()) {
+     if (!speech_recognition_context_remote_.is_bound() ||
+@@ -194,6 +205,10 @@
+ void ChromeSpeechRecognitionService::BindAudioSourceSpeechRecognitionContext(
+     mojo::PendingReceiver<media::mojom::AudioSourceSpeechRecognitionContext>
+         receiver) {
++#if BUILDFLAG(IS_WIN)
++  if (context_->IsOffTheRecord())
++    return;
++#endif
+   LaunchIfNotRunning();
+ 
+   if (speech_recognition_service_.is_bound()) {
+@@ -234,21 +249,38 @@
+   // SpeechRecognitionRecognizer to allow multiple features to use Speech
+   // recognition. For now, only Live Caption uses SpeechRecognitionService on
+   // non-Chrome OS Chrome, so hard-coding to the Live Caption language code.
+-  const std::string language_name =
+-      prefs::GetLiveCaptionLanguageCode(profile_prefs);
+-
++  std::string language_name = prefs::GetLiveCaptionLanguageCode(profile_prefs);
++
++#if !BUILDFLAG(IS_WIN)
+   std::optional<speech::SodaLanguagePackComponentConfig> language_config =
+       speech::GetLanguageComponentConfig(language_name);
+   CHECK(language_config);
+   base::UmaHistogramEnumeration("Accessibility.LiveCaption.SodaLanguage",
+                                 language_config.value().language_code);
+ 
++#endif
+   base::FilePath binary_path;
++#if BUILDFLAG(IS_WIN)
++  if (context_->IsOffTheRecord())
++    return;
++  auto* installer = krypton::speech::Installer::Get();
++  if (!installer)
++    return;
++  binary_path = installer->GetSodaBinaryPath();
++#else
+   binary_path = global_prefs->GetFilePath(prefs::kSodaBinaryPath);
++#endif
+   base::flat_map<std::string, base::FilePath> config_paths =
+       ChromeSpeechRecognitionService::GetSodaConfigPaths();
+ 
+-  if (binary_path.empty() || config_paths[language_name].empty()) {
++#if BUILDFLAG(IS_WIN)
++  // This language only bootstraps the service. Each recognizer requires its
++  // own exact verified pack, including a selected lightweight variant.
++  if (!config_paths.contains(language_name) && !config_paths.empty())
++    language_name = config_paths.begin()->first;
++#endif
++  if (binary_path.empty() || config_paths.empty() ||
++      !config_paths.contains(language_name)) {
+     LOG(ERROR) << "Unable to find SODA files on the device.";
+     return;
+   }
+@@ -284,6 +316,11 @@
+ 
+ base::flat_map<std::string, base::FilePath>
+ ChromeSpeechRecognitionService::GetSodaConfigPaths() {
++#if BUILDFLAG(IS_WIN)
++  auto* installer = krypton::speech::Installer::Get();
++  return installer ? installer->InstalledPaths()
++                   : base::flat_map<std::string, base::FilePath>();
++#else
+   base::flat_map<std::string, base::FilePath> config_file_paths;
+   std::unordered_set<std::string_view> registered_language_packs;
+   for (const auto& language : g_browser_process->local_state()->GetList(
+@@ -303,6 +340,7 @@
+   }
+ 
+   return config_file_paths;
++#endif
+ }
+ 
+ void ChromeSpeechRecognitionService::CloseOnDeviceModelServiceHandles() {
+--- a/chrome/services/speech/audio_source_fetcher_impl.cc
++++ b/chrome/services/speech/audio_source_fetcher_impl.cc
+@@ -99,8 +99,14 @@
+ 
+   // Resample only if the recognizer is server based and the device's sample
+   // rate is > 16khz.
+-  if (is_server_based_ && audio_parameters_.sample_rate() >
+-                              kServerBasedRecognitionAudioSampleRate) {
++  if (
++#if BUILDFLAG(IS_WIN)
++      audio_parameters_.sample_rate() != kServerBasedRecognitionAudioSampleRate
++#else
++      is_server_based_ &&
++      audio_parameters_.sample_rate() > kServerBasedRecognitionAudioSampleRate
++#endif
++  ) {
+     server_based_recognition_params_ = media::AudioParameters(
+         media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+         is_multi_channel_supported_ ? audio_parameters_.channel_layout_config()
+@@ -132,7 +138,7 @@
+ 
+   // TODO(crbug.com/40753481): Check implementation / sandbox policy on Mac and
+   // Windows.
+-#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
++#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+   is_started_ = true;
+   // Initialize the AudioCapturerSource with |this| as the CaptureCallback,
+   // get the parameters for the device ID, then start audio capture.
+--- a/chrome/services/speech/speech_recognition_recognizer_impl.cc
++++ b/chrome/services/speech/speech_recognition_recognizer_impl.cc
+@@ -374,7 +374,12 @@
+     : options_(std::move(options)),
+       client_remote_(std::move(remote)),
+       config_paths_(config_paths),
+-      primary_language_name_(primary_language_name),
++      primary_language_name_(
++#if BUILDFLAG(IS_WIN)
++          options_->language.value_or(primary_language_name)),
++#else
++          primary_language_name),
++#endif
+       mask_offensive_words_(mask_offensive_words),
+       timestamp_estimator_(std::make_unique<SpeechTimestampEstimator>()),
+       speech_recognition_service_(speech_recognition_service) {
+@@ -578,6 +583,8 @@
+       soda_client_->DidAudioPropertyChange(sample_rate_, channel_count_)) {
+     ResetSoda();
+   }
++  if (!soda_client_->IsInitialized())
++    return;
+ 
+   soda_client_->AddAudio(reinterpret_cast<char*>(buffer->data.data()),
+                          buffer_size);
+@@ -585,6 +592,13 @@
+ 
+ void SpeechRecognitionRecognizerImpl::OnLanguageChanged(
+     const std::string& language) {
++#if BUILDFLAG(IS_WIN)
++  if (language != primary_language_name_ && config_paths_.contains(language)) {
++    primary_language_name_ = language;
++    if (soda_client_ && soda_client_->IsInitialized())
++      ResetSoda();
++  }
++#else
+   std::optional<speech::SodaLanguagePackComponentConfig>
+       language_component_config = GetLanguageComponentConfig(language);
+   if (!language_component_config.has_value())
+@@ -622,6 +636,7 @@
+           &SpeechRecognitionRecognizerImpl::ResetSodaWithNewLanguage,
+           weak_factory_.GetWeakPtr(),
+           std::string(language_component_config.value().language_name)));
++#endif
+ }
+ 
+ void SpeechRecognitionRecognizerImpl::OnMaskOffensiveWordsChanged(
+@@ -669,6 +684,15 @@
+   }
+ 
+   // Initialize the SODA instance.
++#if BUILDFLAG(IS_WIN)
++  const std::string api_key;
++  const auto pack = config_paths_.find(primary_language_name_);
++  if (pack == config_paths_.end() || pack->second.empty()) {
++    OnSpeechRecognitionError();
++    return;
++  }
++  const std::string language_pack_directory = pack->second.AsUTF8Unsafe();
++#else
+   auto api_key = google_apis::GetSodaAPIKey();
+ 
+   // TODO(crbug.com/40162502): Use language from SpeechRecognitionOptions
+@@ -683,6 +707,7 @@
+                         ? language_config.value().language_name
+                         : primary_language_name_]
+           .AsUTF8Unsafe();
++#endif
+ 
+   // Initialize the SODA instance with the serialized config.
+   config_msg_ = soda::chrome::ExtendedSodaConfigMsg();
+--- a/components/soda/constants.cc
++++ b/components/soda/constants.cc
+@@ -284,6 +284,10 @@
+ }
+ 
+ LanguageCode GetLanguageCode(std::string_view language_name) {
++  if (language_name == "ar-SA")
++    return LanguageCode::kArSa;
++  if (language_name == "tl-PH")
++    return LanguageCode::kTlPh;
+   std::optional<SodaLanguagePackComponentConfig> language_config =
+       GetLanguageComponentConfig(language_name);
+   if (language_config.has_value()) {
+--- a/components/soda/constants.h
++++ b/components/soda/constants.h
+@@ -77,7 +77,9 @@
+   kSvSe = 33,
+   kRuRu = 34,
+   kViVn = 35,
+-  kMaxValue = kViVn,
++  kArSa = 36,
++  kTlPh = 37,
++  kMaxValue = kTlPh,
+ };
+ // LINT.ThenChange(/tools/metrics/histograms/metadata/accessibility/enums.xml:SodaLanguageCode)
+ 
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -861,7 +861,7 @@
+ 
+ // Enables the On-Device Web Speech feature on supported devices.
+ BASE_FEATURE(kOnDeviceWebSpeech,
+-#if BUILDFLAG(IS_CHROMEOS)
++#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
+              base::FEATURE_DISABLED_BY_DEFAULT
+ #else
+              base::FEATURE_ENABLED_BY_DEFAULT
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -4039,7 +4039,7 @@
+     },
+     {
+       name: "InstallOnDeviceSpeechRecognition",
+-      status: "stable",
++      status: { "Win": "", "default": "stable" },
+     },
+     {
+       name: "IntegrityPolicyScript",
+--- a/tools/metrics/histograms/metadata/accessibility/enums.xml
++++ b/tools/metrics/histograms/metadata/accessibility/enums.xml
+@@ -2584,6 +2584,8 @@
+   <int value="33" label="sv-SE"/>
+   <int value="34" label="ru-RU"/>
+   <int value="35" label="vi-VN"/>
++  <int value="36" label="ar-SA"/>
++  <int value="37" label="tl-PH"/>
+ </enum>
+ 
+ <!-- LINT.ThenChange(//components/soda/constants.h:LanguageCode) -->

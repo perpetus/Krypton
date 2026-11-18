@@ -36,6 +36,13 @@ class SiteDataMenuModel final : public ui::SimpleMenuModel,
     kScreenshot,
     kBoosts,
     kBoostsSection,
+    kCaptureArea,
+    kCaptureElement,
+    kCaptureFullPage,
+    kAddToEasel,
+    kEaselArea,
+    kEaselElement,
+    kEaselFullPage,
     kBoostRowFirst = 0x6c100000,
     kBoostRowLast = kBoostRowFirst + 0xffff,
   };
@@ -85,7 +92,8 @@ class SiteDataMenuModel final : public ui::SimpleMenuModel,
   std::vector<MenuPanelRow> layout_;
   const base::RepeatingCallback<bool(int)> can_execute_;
   const Dispatch dispatch_;
-  ui::SimpleMenuModel page_actions_{this}, empty_{this}, footer_{this};
+  ui::SimpleMenuModel page_actions_{this}, empty_{this}, footer_{this},
+      capture_{this}, easel_{this};
   std::unique_ptr<ui::MenuModel> extensions_, more_;
 };
 }  // namespace krypton_ui

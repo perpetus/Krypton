@@ -1,6 +1,8 @@
 // Copyright 2026 The Krypton Authors
 // Use of this source code is governed by the GPL-3.0 license in LICENSE.
 #include "chrome/browser/ui/krypton_ui/native_extensions.h"
+#include "chrome/browser/ui/krypton_ui/command_bar_entry.h"
+#include "components/tabs/public/tab_interface.h"
 
 #include <algorithm>
 #include <utility>
@@ -233,6 +235,32 @@ void NativeExtensions::AppendActions(std::vector<KrAction>& output) {
   menu_action.flags = KR_ACTION_ENABLED;
   output.push_back(menu_action);
 }
+void NativeExtensions::AppendCommandEntries(
+    std::string_view query,
+    std::vector<CommandBarEntry>& entries) {
+  if (closed_ || !attached_)
+    return;
+  auto* active = browser_->GetActiveTabInterface();
+  if (!active)
+    return;
+  for (const auto& [id, action] : actions_) {
+    const std::string title =
+        base::UTF16ToUTF8(action->source->GetActionName());
+    if (!CanInvoke(action->key) ||
+        !MatchesCommand(query, title, "extension addon popup"))
+      continue;
+    entries.push_back(
+        {title, "Extension",
+         base::BindOnce(
+             [](base::WeakPtr<NativeExtensions> self,
+                base::WeakPtr<tabs::TabInterface> tab, KrActionId id) {
+               if (self && tab &&
+                   self->browser_->GetActiveTabInterface() == tab.get())
+                 self->Invoke(id);
+             },
+             weak_factory_.GetWeakPtr(), active->GetWeakPtr(), action->key)});
+  }
+}
 void NativeExtensions::RefreshImages() {
   for (auto& [id, action] : actions_)
     action->dirty = true;
@@ -307,7 +335,7 @@ std::unique_ptr<ui::MenuModel> NativeExtensions::CreateMenu(KrActionId key,
                 weak_factory_.GetWeakPtr(), action.key),
             base::BindRepeating(&NativeExtensions::InvokeFromMenu,
                                 weak_factory_.GetWeakPtr(), action.key)});
-    root->AddSubMenu(command, label, menu.get());
+    root->AddActionableSubMenu(command, label, menu.get());
     root->SetIcon(root->GetItemCount() - 1, image);
     root->actions.push_back(std::move(menu));
     ++command;

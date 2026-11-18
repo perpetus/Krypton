@@ -1,0 +1,189 @@
+# Isolate optional Windows code-layout experiments to chrome.dll.
+#
+# The shared thinlto_optimize_max config also serves chrome.exe and ANGLE.
+# Keep experimental flags in a private config used only by //chrome:chrome_dll
+# so toggling one changes only its link command, not compiler commands or
+# build-tool links that would regenerate sources. All options default off or
+# inherit the current ThinLTO levels; the PGO layout options require phase 2.
+#
+# Try hot/cold outlining, ExtTSP placement for size-optimized functions, string
+# tail merging, and per-DLL ThinLTO optimization/code-generation levels
+# independently. Add partial inlining, IPRA, speculative devirtualization, a
+# hot/cold threshold, and link-only context-sensitive PGO generation/use.
+# CS generation explicitly pulls in the matching Clang 24 x64 profile runtime;
+# training and profile merging are separate, explicitly authorized work.
+# Chromium already enables performance ExtTSP, REF, ICF and
+# PGO call-graph sorting. String tail merging is normally disabled to improve
+# installer compression; this switch does not authorize packaging or release.
+# Link-only LLVM changes can regenerate ThinLTO backend code and take hours;
+# they do not imply a cheap final native link or a measured performance gain.
+# Also allow opt-in hot import scaling, phi folding and spill-avoidance sinking.
+# These remain confined to chrome.dll's link; IPRA remains off after its failing
+# Chromium 157 Windows ThinLTO experiment. No compile flags are added here.
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -376,9 +376,163 @@
+ }  # !is_android && !is_mac
+ 
+ if (is_win) {
++  declare_args() {
++    # Krypton: opt-in experiments on chrome.dll's link only. These never change
++    # compiler flags, helper links, chrome.exe or ANGLE. Evaluate with
++    # controlled performance comparisons; no improvement is assumed.
++    krypton_chrome_dll_hot_cold_split = false
++
++    # -1 inherits LLVM's profitability threshold; nonnegative values override
++    # it.
++    krypton_chrome_dll_hot_cold_split_threshold = -1
++
++    krypton_chrome_dll_partial_inlining = false
++    krypton_chrome_dll_ipra = false
++    krypton_chrome_dll_speculative_devirt = false
++
++    # -1 inherits LLVM's current setting. These are DLL-only link experiments.
++    krypton_chrome_dll_import_hot_multiplier = -1
++    krypton_chrome_dll_phi_node_folding_threshold = -1
++    krypton_chrome_dll_sink_insts_to_avoid_spills = false
++
++    # Link-only context-sensitive PGO. Generation requires a separate training
++    # run and profile merge before a later link can use the resulting profile.
++    krypton_chrome_dll_cs_profile_generate = false
++    krypton_chrome_dll_cs_profile_file = ""
++
++    # ExtTSP performance placement is already enabled by Chromium. Also try its
++    # size-oriented placement on functions the backend optimizes for size.
++    krypton_chrome_dll_ext_tsp_for_size = false
++
++    # Chromium disables string tail merging for installer compression. This
++    # experiment trades that packaging behavior for a smaller in-memory DLL.
++    krypton_chrome_dll_string_tail_merge = false
++
++    # -1 preserves the existing shared ThinLTO setting. Overrides here allow
++    # DLL-only comparisons without changing compile-time -O3 or other links.
++    krypton_chrome_dll_lto_opt_level = -1
++    krypton_chrome_dll_lto_codegen_opt_level = -1
++  }
++
++  assert(krypton_chrome_dll_lto_opt_level >= -1 &&
++             krypton_chrome_dll_lto_opt_level <= 3,
++         "Chrome DLL ThinLTO level must be -1 (inherit) or zero through three.")
++  assert(
++      krypton_chrome_dll_lto_codegen_opt_level >= -1 &&
++          krypton_chrome_dll_lto_codegen_opt_level <= 3,
++      "Chrome DLL code generation level must be -1 (inherit) or zero through three.")
++
++  assert(krypton_chrome_dll_hot_cold_split_threshold >= -1,
++         "Chrome DLL hot/cold threshold must be -1 (inherit) or nonnegative.")
++  assert(krypton_chrome_dll_hot_cold_split_threshold == -1 ||
++             krypton_chrome_dll_hot_cold_split,
++         "Chrome DLL hot/cold threshold overrides require hot/cold splitting.")
++  assert(!krypton_chrome_dll_cs_profile_generate ||
++             krypton_chrome_dll_cs_profile_file == "",
++         "Chrome DLL CS-PGO generation and profile use are mutually exclusive.")
++
++  assert(
++      krypton_chrome_dll_import_hot_multiplier >= -1,
++      "Chrome DLL import hot multiplier must be -1 (inherit) or nonnegative.")
++  assert(
++      krypton_chrome_dll_phi_node_folding_threshold >= -1,
++      "Chrome DLL phi folding threshold must be -1 (inherit) or nonnegative.")
++
++  config("krypton_chrome_dll_link_experiments") {
++    visibility = [ ":chrome_dll" ]
++    ldflags = []
++    if (current_toolchain == default_toolchain) {
++      _has_cs_profile = krypton_chrome_dll_cs_profile_generate ||
++                        krypton_chrome_dll_cs_profile_file != ""
++      _has_experiment =
++          krypton_chrome_dll_hot_cold_split ||
++          krypton_chrome_dll_hot_cold_split_threshold >= 0 ||
++          krypton_chrome_dll_partial_inlining || krypton_chrome_dll_ipra ||
++          krypton_chrome_dll_speculative_devirt ||
++          krypton_chrome_dll_import_hot_multiplier >= 0 ||
++          krypton_chrome_dll_phi_node_folding_threshold >= 0 ||
++          krypton_chrome_dll_sink_insts_to_avoid_spills || _has_cs_profile ||
++          krypton_chrome_dll_ext_tsp_for_size ||
++          krypton_chrome_dll_string_tail_merge ||
++          krypton_chrome_dll_lto_opt_level >= 0 ||
++          krypton_chrome_dll_lto_codegen_opt_level >= 0
++      assert(
++          !_has_experiment || (is_clang && use_lld && !is_debug &&
++                                   !is_component_build && use_thin_lto),
++          "Chrome DLL link experiments require a non-debug non-component LLD ThinLTO build.")
++      assert(
++          !(krypton_chrome_dll_hot_cold_split ||
++                krypton_chrome_dll_ext_tsp_for_size) || chrome_pgo_phase == 2,
++          "Chrome DLL code layout experiments require PGO use profiles.")
++
++      assert(
++          !_has_cs_profile || chrome_pgo_phase == 2,
++          "Chrome DLL CS-PGO requires PGO use profiles (chrome_pgo_phase=2).")
++
++      if (krypton_chrome_dll_partial_inlining) {
++        ldflags += [ "-mllvm:-enable-partial-inlining" ]
++      }
++      if (krypton_chrome_dll_ipra) {
++        ldflags += [ "-mllvm:-enable-ipra" ]
++      }
++      if (krypton_chrome_dll_speculative_devirt) {
++        ldflags += [ "-mllvm:-enable-devirtualize-speculatively" ]
++      }
++      if (krypton_chrome_dll_import_hot_multiplier >= 0) {
++        ldflags += [ "-mllvm:-import-hot-multiplier=$krypton_chrome_dll_import_hot_multiplier" ]
++      }
++      if (krypton_chrome_dll_phi_node_folding_threshold >= 0) {
++        ldflags += [ "-mllvm:-phi-node-folding-threshold=$krypton_chrome_dll_phi_node_folding_threshold" ]
++      }
++      if (krypton_chrome_dll_sink_insts_to_avoid_spills) {
++        ldflags += [ "-mllvm:-sink-insts-to-avoid-spills" ]
++      }
++      if (krypton_chrome_dll_cs_profile_generate) {
++        ldflags += [
++          "/lto-cs-profile-generate",
++          "/include:__llvm_profile_runtime",
++          "-mllvm:-runtime-counter-relocation=true",
++          rebase_path(
++              "//third_party/llvm-build/Release+Asserts/lib/clang/24/lib/windows/clang_rt.profile-x86_64.lib",
++              root_build_dir),
++        ]
++      }
++      if (krypton_chrome_dll_cs_profile_file != "") {
++        _cs_profile =
++            rebase_path(krypton_chrome_dll_cs_profile_file, root_build_dir)
++        ldflags += [ "/lto-cs-profile-file:$_cs_profile" ]
++      }
++      if (krypton_chrome_dll_hot_cold_split_threshold >= 0) {
++        ldflags += [ "-mllvm:-hotcoldsplit-threshold=$krypton_chrome_dll_hot_cold_split_threshold" ]
++      }
++      if (krypton_chrome_dll_hot_cold_split) {
++        ldflags += [ "-mllvm:-hot-cold-split=true" ]
++      }
++      if (krypton_chrome_dll_ext_tsp_for_size) {
++        ldflags += [ "-mllvm:-apply-ext-tsp-for-size=true" ]
++      }
++      if (krypton_chrome_dll_string_tail_merge) {
++        ldflags += [ "/opt:lldtailmerge" ]
++      }
++
++      # LLD uses the last /opt:lldlto and /opt:lldltocgo values. This config is
++      # attached after thinlto_optimize_max, so overrides affect only this DLL.
++      if (krypton_chrome_dll_lto_opt_level >= 0) {
++        ldflags += [ "/opt:lldlto=$krypton_chrome_dll_lto_opt_level" ]
++      }
++      if (krypton_chrome_dll_lto_codegen_opt_level >= 0) {
++        ldflags +=
++            [ "/opt:lldltocgo=$krypton_chrome_dll_lto_codegen_opt_level" ]
++      }
++    }
++  }
++
+   shared_library("chrome_dll") {
+     configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
+-    configs += [ "//build/config/compiler:thinlto_optimize_max" ]
++    configs += [
++      "//build/config/compiler:thinlto_optimize_max",
++      ":krypton_chrome_dll_link_experiments",
++    ]
+ 
+     defines = []
+ 

@@ -1,0 +1,144 @@
+Krypton opaque single-page cards draw their corner ears in small sibling overlays. Keep logical/background radii for Glance and outlines, but persistently suppress page/native masks through the shared container radius hook while overlays are active. Propagate the opt-in state to existing and newly registered containers; retain the original native split-mask path. All changes are gated by ENABLE_KRYPTON_UI.
+
+--- a/chrome/browser/ui/views/frame/multi_contents_view.h
++++ b/chrome/browser/ui/views/frame/multi_contents_view.h
+@@ -223,6 +223,8 @@
+   }
+   ContentsContainerView* AddKryptonContentsContainer();
+   void HideKryptonNativeSplitChrome();
++  // Retain logical card radii while sibling overlays draw opaque ears.
++  void SetKryptonPageCornersOverlaid(bool overlaid);
+ #endif
+ 
+   MultiContentsViewDelegate* delegate_for_testing() { return delegate_.get(); }
+@@ -350,6 +352,10 @@
+   // Insets of the start and end contents view when in split view.
+   gfx::Insets split_view_insets_;
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  bool krypton_page_corners_overlaid_ = false;
++#endif
++
+   bool active_contents_view_highlighted_ = false;
+ 
+   std::optional<int> min_contents_size_for_testing_;
+--- a/chrome/browser/ui/views/frame/multi_contents_view.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_view.cc
+@@ -178,6 +178,9 @@
+ 
+ void MultiContentsView::RegisterContentsContainer(
+     ContentsContainerView* container) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  container->SetKryptonPageCornersOverlaid(krypton_page_corners_overlaid_);
++#endif
+   auto& view_map = container_focusable_map_[container];
+ 
+   auto* contents_view = container->contents_view();
+@@ -224,6 +227,16 @@
+   container->SetVisible(false);
+   return container;
+ }
++void MultiContentsView::SetKryptonPageCornersOverlaid(bool overlaid) {
++  if (krypton_page_corners_overlaid_ == overlaid) {
++    return;
++  }
++  krypton_page_corners_overlaid_ = overlaid;
++  for (auto& container : contents_container_views_) {
++    container->SetKryptonPageCornersOverlaid(overlaid);
++  }
++}
++
+ void MultiContentsView::HideKryptonNativeSplitChrome() {
+   resize_area_->SetVisible(false);
+   // A native pair can be transferred into a Krypton group. Remove its old
+@@ -902,6 +915,14 @@
+ 
+ void MultiContentsView::UpdateContentsBorderAndOverlay() {
+   const bool is_in_split = IsInSplitView();
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (is_in_split) {
++    SetKryptonPageCornersOverlaid(false);
++    if (auto* adapter = browser_view_->krypton_ui()) {
++      adapter->UpdatePageCornerOverlays();
++    }
++  }
++#endif
+   for (auto& contents_container_view : contents_container_views_) {
+     const bool is_active =
+         contents_container_view->contents_view() == GetActiveContentsView();
+--- a/chrome/browser/ui/views/frame/contents_container_view.h
++++ b/chrome/browser/ui/views/frame/contents_container_view.h
+@@ -11,6 +11,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/scoped_observation.h"
+ #include "chrome/browser/devtools/devtools_contents_resizing_strategy.h"
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #include "chrome/browser/ui/views/frame/tab_modal_dialog_host.h"
+ #include "ui/gfx/geometry/rounded_corners_f.h"
+ #include "ui/views/focus/external_focus_tracker.h"
+@@ -140,6 +141,9 @@
+       std::optional<gfx::Outsets> target_contents_bounds);
+ 
+   void SetRoundedCorners(const gfx::RoundedCornersF& corner_radii);
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  void SetKryptonPageCornersOverlaid(bool overlaid);
++#endif
+ 
+   views::View* GetToastAnchorView() { return toast_anchor_view_; }
+ 
+@@ -239,6 +243,9 @@
+ 
+   // This is rounded corner radii that will be used.
+   gfx::RoundedCornersF rounded_corner_radii_;
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  bool krypton_page_corners_overlaid_ = false;
++#endif
+ 
+   DevToolsContentsResizingStrategy strategy_;
+   base::ScopedObservation<View, ViewObserver> view_bounds_observer_{this};
+--- a/chrome/browser/ui/views/frame/contents_container_view.cc
++++ b/chrome/browser/ui/views/frame/contents_container_view.cc
+@@ -239,7 +239,15 @@
+ }
+ 
+ void ContentsContainerView::SetBorderRoundedCornersFrom(
+-    const gfx::RoundedCornersF& corner_radii) {
++    const gfx::RoundedCornersF& requested_radii) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Every activation, footer and actor-overlay path reaches this hook.
++  // Store the requested radii unchanged; only native/page masks differ.
++  const auto corner_radii =
++      krypton_page_corners_overlaid_ ? gfx::RoundedCornersF() : requested_radii;
++#else
++  const auto& corner_radii = requested_radii;
++#endif
+   // Update devtools rounded corners. Note, devtools exists behind the contents
+   // view so all devtools corners are rounded.
+   devtools_web_view_->holder()->SetNativeViewCornerRadii(corner_radii);
+@@ -438,6 +446,16 @@
+   target_content_bounds_ = target_content_bounds;
+   InvalidateLayout(/*avoid_propagate_during_layout=*/true);
+ }
++
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++void ContentsContainerView::SetKryptonPageCornersOverlaid(bool overlaid) {
++  if (krypton_page_corners_overlaid_ == overlaid) {
++    return;
++  }
++  krypton_page_corners_overlaid_ = overlaid;
++  UpdateBorderRoundedCorners();
++}
++#endif
+ 
+ void ContentsContainerView::SetRoundedCorners(
+     const gfx::RoundedCornersF& corner_radii) {
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -3293,6 +3293,7 @@
+     ":tab_modal_dialog_host",
+     "//base",
+     "//chrome/browser/devtools:devtools_contents_resizing_strategy",
++    "//chrome/browser/ui/krypton_ui:buildflags",
+     "//ui/base/metadata",
+     "//ui/gfx/geometry",
+     "//ui/views",

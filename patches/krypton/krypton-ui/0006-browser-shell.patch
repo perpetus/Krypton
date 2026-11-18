@@ -16,7 +16,7 @@
    }
 --- a/chrome/browser/ui/views/bubble_anchor_util_views.cc
 +++ b/chrome/browser/ui/views/bubble_anchor_util_views.cc
-@@ -86,7 +86,7 @@
+@@ -82,7 +82,7 @@
              kLocationIconElementId, views::BubbleBorder::TOP_LEFT};
    }
  
@@ -35,7 +35,7 @@
  import("//extensions/buildflags/buildflags.gni")
  
  assert(!is_android)
-@@ -2946,6 +2947,12 @@
+@@ -2861,6 +2862,12 @@
      if (is_win) {
        deps += [ ":browser_frame_view_win" ]
      }
@@ -73,11 +73,11 @@
 +#endif
 +
    if (browser_view->browser()->GetType() ==
-       BrowserWindowInterface::Type::TYPE_PICTURE_IN_PICTURE) {
+       BrowserWindowInterface::Type::TYPE_FLOATING) {
      return std::make_unique<PictureInPictureBrowserFrameView>(widget,
 --- a/chrome/browser/ui/views/frame/browser_root_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_root_view.cc
-@@ -212,8 +212,9 @@
+@@ -213,8 +213,9 @@
  bool BrowserRootView::GetDropFormats(
      int* formats,
      std::set<ui::ClipboardFormatType>* format_types) {
@@ -89,7 +89,7 @@
      *formats = ui::OSExchangeData::URL | ui::OSExchangeData::STRING;
      return true;
    }
-@@ -230,8 +231,9 @@
+@@ -231,8 +232,9 @@
      return false;
    }
  
@@ -101,7 +101,7 @@
      return false;
    }
  
-@@ -339,7 +341,7 @@
+@@ -340,7 +342,7 @@
  
    // Scroll-event-changes-tab is incompatible with vertical tabstrip, so
    // disable it if the latter feature is enabled.
@@ -110,7 +110,7 @@
        !browser_view_->ShouldDrawVerticalTabStrip()) {
      // Switch to the left/right tab if the wheel-scroll happens over the
      // tabstrip, or the empty space beside the tabstrip.
-@@ -525,11 +527,13 @@
+@@ -538,11 +540,13 @@
  
    // See if we should drop links onto tabstrip first.
    gfx::Point loc_in_tabstrip(event.location());
@@ -145,7 +145,7 @@
  
  #include <stdint.h>
  
-@@ -1034,8 +1043,17 @@
+@@ -1041,8 +1050,17 @@
    top_container_ = AddChildView(std::make_unique<TopContainerView>(this));
    top_container_insertion_index_ = GetIndexOf(top_container_.get());
  
@@ -165,7 +165,7 @@
  
    top_container_separator_ = top_container_->AddChildView(
        ContentsSeparator::CreateContentsSeparator());
-@@ -1066,46 +1084,51 @@
+@@ -1073,46 +1091,51 @@
  
    // Tabstrip comes basically last because it should be before toolbar in the
    // focus order but also needs to paint on top of everything.
@@ -255,7 +255,7 @@
    }
  
    if (auto* const organizer_panel_controller =
-@@ -1235,6 +1258,9 @@
+@@ -1247,6 +1270,9 @@
    // since it is responsible for showing autofill related bubbles from toolbar's
    // child views and it is an observer for avatar toolbar button if any.
    autofill_bubble_handler_.reset();
@@ -265,7 +265,7 @@
  
    // These are raw pointers to child views, so they need to be set to null
    // before `RemoveAllChildViews()` is called to avoid dangling.
-@@ -1528,6 +1554,11 @@
+@@ -1540,6 +1566,11 @@
  }
  
  bool BrowserView::ShouldDrawTabStrip() const {
@@ -277,7 +277,7 @@
    // Return false if this window does not normally display a tabstrip or if the
    // tabstrip is currently hidden, e.g. because we're in fullscreen.
    if (!WindowFeatureController::From(browser_)->SupportsWindowFeature(
-@@ -1560,6 +1591,11 @@
+@@ -1572,6 +1603,11 @@
  }
  
  bool BrowserView::ShouldDrawVerticalTabStrip() const {
@@ -289,7 +289,7 @@
    auto* controller = tabs::VerticalTabStripStateController::From(browser_);
    return ShouldDrawTabStrip() && controller &&
           controller->ShouldDisplayVerticalTabs() &&
-@@ -1691,6 +1727,11 @@
+@@ -1707,6 +1743,11 @@
  
  void BrowserView::OnVerticalTabStripModeChanged(
      tabs::VerticalTabStripStateController* controller) {
@@ -301,7 +301,7 @@
    // Clear selection model
    if (auto* active_tab = browser_->GetTabStripModel()->GetActiveTab()) {
      tabs::TabStripModelSelectionState selection_state(
-@@ -2432,6 +2473,11 @@
+@@ -2462,6 +2503,11 @@
  }
  
  LocationBar* BrowserView::GetLocationBar() const {
@@ -313,7 +313,7 @@
    return toolbar_ ? toolbar_->location_bar() : nullptr;
  }
  
-@@ -2480,6 +2526,13 @@
+@@ -2510,6 +2556,13 @@
  }
  
  void BrowserView::UpdateToolbar(content::WebContents* contents) {
@@ -327,7 +327,7 @@
    // We may end up here during destruction.
    if (toolbar_) {
      toolbar_->Update(contents);
-@@ -2491,6 +2544,13 @@
+@@ -2521,6 +2574,13 @@
  }
  
  bool BrowserView::UpdateToolbarSecurityState() {
@@ -341,7 +341,7 @@
    // We may end up here during destruction.
    if (toolbar_) {
      return toolbar_->UpdateSecurityState();
-@@ -2506,6 +2566,11 @@
+@@ -2536,6 +2596,11 @@
  }
  
  void BrowserView::ResetToolbarTabState(content::WebContents* contents) {
@@ -353,7 +353,7 @@
    // We may end up here during destruction.
    if (toolbar_) {
      toolbar_->ResetTabState(contents);
-@@ -2952,6 +3017,13 @@
+@@ -2982,6 +3047,13 @@
  }
  
  void BrowserView::FocusAppMenu() {
@@ -367,7 +367,7 @@
    // Chrome doesn't have a traditional menu bar, but it has a menu button in the
    // main toolbar that plays the same role.  If the user presses a key that
    // would typically focus the menu bar, tell the toolbar to focus the menu
-@@ -3164,6 +3236,11 @@
+@@ -3195,6 +3267,11 @@
  }
  
  bool BrowserView::IsToolbarVisible() const {
@@ -379,7 +379,7 @@
  #if BUILDFLAG(IS_MAC)
    // Immersive full screen makes it possible to display the toolbar when
    // kShowFullscreenToolbar is not set.
-@@ -3191,6 +3268,11 @@
+@@ -3222,6 +3299,11 @@
  }
  
  bool BrowserView::IsLocationBarVisible() const {
@@ -391,7 +391,7 @@
    return WindowFeatureController::From(browser_)->SupportsWindowFeature(
               WindowFeatureController::WindowFeature::kFeatureLocationBar) &&
           GetLocationBar()->IsVisible();
-@@ -3207,12 +3289,34 @@
+@@ -3238,12 +3320,34 @@
      apps::IntentPickerBubbleType bubble_type,
      const std::optional<url::Origin>& initiating_origin,
      IntentPickerResponse callback) {
@@ -426,7 +426,7 @@
    toolbar_->ShowBookmarkBubble(url, already_bookmarked);
  }
  
-@@ -3663,7 +3767,8 @@
+@@ -3695,7 +3799,8 @@
    // can change its preferred size. Re-lay-out the toolbar to reflect the
    // possible change.
    if (selection.active_tab_changed()) {
@@ -436,7 +436,7 @@
  
      // Update the accessible URL when the selected tab changes. This ensures
      // that the accessibility document URL is updated for both keyboard and
-@@ -3734,7 +3839,7 @@
+@@ -3767,7 +3872,7 @@
      int command_id,
      ui::Accelerator* accelerator) const {
    // Let's let the ToolbarView own the canonical implementation of this method.
@@ -445,19 +445,7 @@
  }
  
  ///////////////////////////////////////////////////////////////////////////////
-@@ -4255,6 +4360,11 @@
- #endif  // IS_MAC
- 
- void BrowserView::OnWidgetDestroying(views::Widget* widget) {
-+#if BUILDFLAG(ENABLE_KRYPTON_UI)
-+  if (krypton_ui_)
-+    krypton_ui_->Close();
-+#endif
-+
-   DCHECK(widget_observation_.IsObservingSource(widget));
-   widget_observation_.Reset();
- 
-@@ -4281,6 +4391,11 @@
+@@ -4316,6 +4421,11 @@
  
  void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
                                              bool active) {
@@ -469,7 +457,7 @@
    if (browser_->GetWindow()) {
      if (active) {
        if (restore_focus_on_activation_.has_value() &&
-@@ -4306,6 +4421,11 @@
+@@ -4341,6 +4451,11 @@
  
  void BrowserView::OnWidgetBoundsChanged(views::Widget* widget,
                                          const gfx::Rect& new_bounds) {
@@ -481,7 +469,7 @@
    TryNotifyWindowBoundsChanged(new_bounds);
  }
  
-@@ -4326,6 +4446,11 @@
+@@ -4361,6 +4476,11 @@
  }
  
  void BrowserView::OnWidgetMove() {
@@ -493,7 +481,7 @@
    if (!initialized_) {
      // Creating the widget can trigger a move. Ignore it until we've initialized
      // things.
-@@ -4398,6 +4523,13 @@
+@@ -4433,6 +4553,13 @@
  }
  
  void BrowserView::UpdateTabSearchBubbleHost() {
@@ -507,7 +495,7 @@
    if (!GetIsNormalType() || organizer_panel::IsOrganizerPanelFeatureEnabled()) {
      return;
    }
-@@ -4577,6 +4709,11 @@
+@@ -4612,6 +4739,11 @@
  }
  
  void BrowserView::GetAccessiblePanes(std::vector<views::View*>* panes) {
@@ -519,7 +507,7 @@
    // This should be in the order of pane traversal of the panes using F6
    // (Windows) or Ctrl+Back/Forward (Chrome OS).  If one of these is
    // invisible or has no focusable children, it will be automatically
-@@ -4724,6 +4861,11 @@
+@@ -4753,6 +4885,11 @@
  }
  
  int BrowserView::NonClientHitTest(const gfx::Point& point) {
@@ -531,7 +519,7 @@
  #if BUILDFLAG(IS_MAC)
    // The top container while in immersive fullscreen on macOS lives in another
    // Widget (OverlayWidgetMac). This means that BrowserView does not need to
-@@ -4938,6 +5080,11 @@
+@@ -4977,6 +5114,11 @@
  // BrowserView, views::View overrides:
  
  void BrowserView::Layout(PassKey) {
@@ -543,7 +531,7 @@
    TRACE_EVENT0("ui", "BrowserView::Layout");
    // Do not perform layout if the view is not yet initialized, in fullscreen
    // transition, shutting down, or if the underlying widget has already closed.
-@@ -4992,10 +5139,11 @@
+@@ -5031,10 +5173,11 @@
    LayoutSuperclass<views::View>(this);
  
    // TODO(jamescook): Why was this in the middle of layout code?
@@ -557,7 +545,7 @@
      // When the WebUI Omnibox is embedded directly in the `BrowserView` (instead
      // of being a separate popup widget), its layout depends on the position of
      // the `LocationBarView`. We must update its layout after the
-@@ -5132,9 +5280,16 @@
+@@ -5178,9 +5321,16 @@
    SetThemeProfileForWindow(GetNativeWindow(), browser_->GetProfile());
  #endif
  
@@ -577,7 +565,7 @@
      // When the WebUI Omnibox is embedded directly in the `BrowserView` (instead
      // of being a separate popup widget), the popup view needs a reference to
      // `BrowserView` to add the popup frame as a child view. We inject it here
-@@ -5223,9 +5378,22 @@
+@@ -5269,9 +5419,22 @@
    layout_views.top_container_separator = top_container_separator_;
    // LINT.ThenChange(//chrome/browser/ui/views/frame/layout/browser_view_layout.h:BrowserViewLayoutViews)
  
@@ -603,7 +591,7 @@
  
    EnsureFocusOrder();
  
-@@ -5265,7 +5433,9 @@
+@@ -5311,7 +5474,9 @@
    }
  
    if (auto* const vertical_tab_strip_state_controller =
@@ -614,7 +602,7 @@
      if (vertical_tab_strip_state_controller->ShouldDisplayVerticalTabs()) {
        vertical_tab_strip_region_view_->InitializeTabStrip();
      } else {
-@@ -5307,8 +5477,65 @@
+@@ -5353,8 +5518,65 @@
    }
  }
  
@@ -680,7 +668,7 @@
    if (!initialized_) {
      return;
    }
-@@ -5363,6 +5590,11 @@
+@@ -5413,6 +5635,11 @@
      return false;
    }
  
@@ -725,7 +713,7 @@
  
    const TopControlsSlideController* top_controls_slide_controller() const {
      return top_controls_slide_controller_.get();
-@@ -835,6 +845,13 @@
+@@ -842,6 +852,13 @@
    void DeleteBrowserWindow() final;
  
   private:
@@ -741,7 +729,7 @@
    friend class BrowserViewLayoutDelegateImpl;
 --- a/chrome/browser/ui/views/frame/browser_widget.cc
 +++ b/chrome/browser/ui/views/frame/browser_widget.cc
-@@ -218,6 +218,9 @@
+@@ -217,6 +217,9 @@
    }
  
    Init(std::move(params));

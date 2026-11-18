@@ -5,6 +5,13 @@
 # Windows assembler rejects them). Also raises clang-cl from -O2 to -O3 for
 # official builds, and declares two opt-in LLVM passes that stay off.
 
+# Target-only Windows x64 switches add full x86-64-v3, optional gather/scatter
+# avoidance, and matching Rust ISA/features/FP contraction. Rust host build tools
+# are explicitly excluded. New switches default off; existing ISA and security
+# settings are preserved, with no CPU tuning option.
+# Complete v3 with MOVBE/CX16/SAHF/XSAVE rather than resetting -march: Skia
+# and other runtime-dispatched kernels retain their explicitly selected higher
+# ISA. The original SIMD/AVX2/FMA switches are required when v3 is requested.
 --- a/build/config/compiler/BUILD.gn
 +++ b/build/config/compiler/BUILD.gn
 @@ -12,6 +12,7 @@
@@ -15,7 +22,37 @@
  import("//build/config/coverage/coverage.gni")
  import("//build/config/cronet/config.gni")
  import("//build/config/dcheck_always_on.gni")
-@@ -1374,6 +1375,63 @@
+@@ -1007,6 +1008,29 @@
+   if (rust_abi_target != "") {
+     rustflags += [ "--target=$rust_abi_target" ]
+   }
++
++  # Krypton: match target Rust ISA and FP contraction to the Windows x64 C++
++  # build. Proc macros and Rust host build tools must keep their own baseline.
++  if (is_win && current_cpu == "x64" && is_a_target_toolchain &&
++      !toolchain_for_rust_host_build_tools) {
++    if (krypton_rust_x64_v3) {
++      rustflags += [ "-Ctarget-cpu=x86-64-v3" ]
++    }
++    _krypton_rust_features = []
++    if (krypton_rust_prefer_no_gather) {
++      _krypton_rust_features += [ "+prefer-no-gather" ]
++    }
++    if (krypton_rust_prefer_no_scatter) {
++      _krypton_rust_features += [ "+prefer-no-scatter" ]
++    }
++    if (_krypton_rust_features != []) {
++      rustflags +=
++          [ "-Ctarget-feature=" + string_join(",", _krypton_rust_features) ]
++    }
++    if (krypton_rust_fp_contract_fast) {
++      rustflags += [ "-Cllvm-args=-fp-contract=fast" ]
++    }
++  }
+   if (!use_thin_lto || !toolchain_supports_rust_thin_lto) {
+     # Don't include bitcode if it won't be used.
+     rustflags += [ "-Cembed-bitcode=no" ]
+@@ -1374,6 +1398,82 @@
    }
  
    asmflags = cflags
@@ -25,6 +62,25 @@
 +  # only -- the Windows assembler does not accept them.
 +  if (is_clang && current_cpu == "x64") {
 +    _simd_flags = []
++
++    # Krypton: complete the target Windows x64 v3 baseline additively. A
++    # baseline -march would reset higher ISA choices in dispatched kernels.
++    if (is_win && is_a_target_toolchain) {
++      if (krypton_x64_v3) {
++        _simd_flags += [
++          "-mmovbe",
++          "-mcx16",
++          "-msahf",
++          "-mxsave",
++        ]
++      }
++      if (krypton_x64_no_gather) {
++        _simd_flags += [ "-mno-gather" ]
++      }
++      if (krypton_x64_no_scatter) {
++        _simd_flags += [ "-mno-scatter" ]
++      }
++    }
 +    if (use_sse3) {
 +      _simd_flags += [ "-msse3" ]
 +    }
@@ -79,7 +135,7 @@
  }
  
  # This provides options that make the build deterministic, so that the same
-@@ -2541,6 +2599,32 @@
+@@ -2541,6 +2641,32 @@
    if (is_official_build) {
      common_optimize_on_ldflags += [ "/OPT:REF" ]  # Remove unreferenced data.
    }
@@ -114,7 +170,7 @@
    common_optimize_on_ldflags = []
 --- /dev/null
 +++ b/build/config/compiler_opt.gni
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,119 @@
 +# Copyright 2026 The Krypton Authors
 +# Based on Thorium's //build/config/compiler_opt.gni by Alex313031.
 +# You can use, redistribute, and/or modify Krypton's changes under the
@@ -212,3 +268,25 @@
 +if (use_fma && !use_avx) {
 +  print("WARNING: use_fma is true but use_avx is false. FMA requires AVX.")
 +}
++
++# Target-only Windows x64 experiments. Gather/scatter avoidance is useful on
++# CPUs with GDS mitigation; keep independent switches for later comparisons.
++declare_args() {
++  krypton_x64_v3 = false
++  krypton_x64_no_gather = false
++  krypton_x64_no_scatter = false
++  krypton_rust_x64_v3 = false
++  krypton_rust_prefer_no_gather = false
++  krypton_rust_prefer_no_scatter = false
++  krypton_rust_fp_contract_fast = false
++}
++
++assert(!(krypton_x64_v3 || krypton_x64_no_gather || krypton_x64_no_scatter ||
++             krypton_rust_x64_v3 || krypton_rust_prefer_no_gather ||
++             krypton_rust_prefer_no_scatter || krypton_rust_fp_contract_fast) ||
++           (target_os == "win" && target_cpu == "x64"),
++       "Krypton x64 performance experiments require a Windows x64 target.")
++
++assert(!krypton_x64_v3 || (use_sse3 && use_sse41 && use_sse42 && use_avx &&
++                               use_avx2 && use_fma),
++       "The complete v3 baseline requires the existing SSE/AVX2/FMA switches.")

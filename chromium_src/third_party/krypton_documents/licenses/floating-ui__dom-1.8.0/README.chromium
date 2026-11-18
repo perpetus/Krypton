@@ -1,0 +1,10 @@
+Name: @floating-ui/dom
+Short Name: @floating-ui/dom
+URL: https://github.com/floating-ui/floating-ui.git
+Version: 1.8.0
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

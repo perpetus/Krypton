@@ -318,7 +318,7 @@ void SidebarDownloads::Command(uint64_t id, uint32_t command) {
       } else if (item->GetOriginalUrl().is_valid()) {
         NavigateParams params(browser_->GetProfile(), item->GetOriginalUrl(),
                               ui::PAGE_TRANSITION_LINK);
-        params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+        params.disposition = WindowOpenDisposition::kNewForegroundTab;
         Navigate(&params);
       }
       break;

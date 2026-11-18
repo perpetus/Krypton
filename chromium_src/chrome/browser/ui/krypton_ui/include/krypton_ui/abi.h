@@ -71,6 +71,8 @@ extern "C" {
 typedef uint64_t KrTabId;
 typedef uint64_t KrFolderId;
 typedef uint64_t KrSpaceId;
+/* A persistent browser profile, as identified by the host for this session. */
+typedef uint64_t KrProfileId;
 typedef uint64_t KrActionId;
 typedef uint64_t KrImageId; /* 0 means "no image" */
 
@@ -126,7 +128,13 @@ enum KrTabFlags {
   KR_TAB_CRASHED = 1u << 5,
   KR_TAB_RECORDING = 1u << 6, /* camera or microphone in use */
   KR_TAB_CAPTURING = 1u << 7, /* screen or tab being shared */
-  KR_TAB_ATTENTION = 1u << 8  /* wants attention, e.g. a pending dialog */
+  KR_TAB_ATTENTION = 1u << 8,
+  KR_TAB_SLEEPING = 1u
+      << 9 /* discarded or not loaded; do not wake for preview */ /* wants
+                                                                     attention,
+                                                                     e.g. a
+                                                                     pending
+                                                                     dialog */
 };
 
 typedef struct KrTab {
@@ -141,6 +149,13 @@ typedef struct KrTab {
   KrFolderId folder;
 } KrTab;
 
+enum KrLiveFolderKind {
+  KR_LIVE_FOLDER_NONE,
+  KR_LIVE_FOLDER_RSS,
+  KR_LIVE_FOLDER_GITHUB_PULLS,
+  KR_LIVE_FOLDER_GITHUB_ISSUES
+};
+
 /* Persistent workspace folders. Parent zero denotes a root. Order is among
  * siblings; folders are published parent-first and updated incrementally. */
 typedef struct KrFolder {
@@ -152,6 +167,12 @@ typedef struct KrFolder {
   KrStr glyph;
   size_t order;
   bool collapsed;
+  /* Optional Live Folder configuration, appended for ABI v2 compatibility. */
+  uint32_t live_kind;
+  KrStr live_source;
+  uint32_t live_interval_minutes;
+  uint32_t live_max_items;
+  KrStr live_status;
 } KrFolder;
 enum KrFolderCommandKind {
   KR_FOLDER_CREATE,
@@ -161,7 +182,10 @@ enum KrFolderCommandKind {
   KR_FOLDER_MOVE_TAB,
   KR_FOLDER_UNPACK,
   KR_FOLDER_DELETE,
-  KR_FOLDER_NEW_TAB
+  KR_FOLDER_NEW_TAB,
+  KR_FOLDER_SET_LIVE,
+  KR_FOLDER_REFRESH_LIVE,
+  KR_FOLDER_RESTORE_LIVE_ITEMS
 };
 typedef struct KrFolderCommand {
   size_t struct_size;
@@ -174,6 +198,11 @@ typedef struct KrFolderCommand {
   KrStr name;
   KrStr glyph;
   bool collapsed;
+  /* Used only by KR_FOLDER_SET_LIVE. NONE converts to an ordinary folder. */
+  uint32_t live_kind;
+  KrStr live_source;
+  uint32_t live_interval_minutes;
+  uint32_t live_max_items;
 } KrFolderCommand;
 
 enum KrTabPreviewFlags {
@@ -210,6 +239,35 @@ typedef struct KrSpace {
   KrStr glyph;   /* short label or emoji shown in the space switcher */
   KrColor color; /* drives the window gradient while the space is active */
 } KrSpace;
+
+/* Profiles a Space may use. Several Spaces may share one profile; cookies,
+ * logins and history belong to the profile. Separately sized payload: the
+ * KrSpace array layout is unchanged. */
+enum {
+  KR_PROFILE_CURRENT = 1u << 0 /* the profile that owns this window's Spaces */
+};
+typedef struct KrProfileChoice {
+  size_t struct_size;
+  KrProfileId id;
+  KrStr name;
+  uint32_t flags;
+} KrProfileChoice;
+typedef enum KrSpaceProfileState {
+  KR_SPACE_PROFILE_READY = 0,
+  KR_SPACE_PROFILE_MISSING = 1,    /* deleted or unknown; never substituted */
+  KR_SPACE_PROFILE_UNAVAILABLE = 2 /* locked, ephemeral or incognito window */
+} KrSpaceProfileState;
+enum {
+  /* Tabs or folders still belong to the Space; its profile cannot change. */
+  KR_SPACE_PROFILE_IN_USE = 1u << 0
+};
+typedef struct KrSpaceProfile {
+  size_t struct_size;
+  KrSpaceId space;
+  KrProfileId profile;
+  uint32_t state; /* KrSpaceProfileState */
+  uint32_t flags;
+} KrSpaceProfile;
 
 typedef enum KrSecurityLevel {
   KR_SECURITY_NONE = 0, /* internal pages, nothing to show */
@@ -255,7 +313,10 @@ typedef enum KrActionKind {
   KR_ACTION_PINNED = 3,     /* pinned browser actions: history, print, ... */
   KR_ACTION_TOOLBAR = 4,    /* downloads, profile, app menu, ... */
   KR_ACTION_SITE_TOOLS = 5, /* unified site panel; stays in the address field */
-  KR_ACTION_COPY_LINK = 6   /* current-page link; stays in the address field */
+  KR_ACTION_COPY_LINK = 6,  /* current-page link; stays in the address field */
+  KR_ACTION_TRANSLATE = 7,  /* local page translation; left of site tools */
+  KR_ACTION_DICTATION = 8,  /* local voice typing in the command editor */
+  KR_ACTION_ZOOM_RESET = 9  /* current page zoom; label is the percentage */
 } KrActionKind;
 
 enum KrActionFlags {
@@ -392,8 +453,11 @@ typedef enum KrSuggestionKind {
 enum KrSuggestionFlags {
   KR_SUGGESTION_DEFAULT = 1u << 0, /* what Enter picks */
   KR_SUGGESTION_DELETABLE = 1u << 1,
-  KR_SUGGESTION_SELECTED = 1u << 2,  /* authoritative omnibox selection */
-  KR_SUGGESTION_RICH_IMAGE = 1u << 3 /* larger Chromium suggestion image */
+  KR_SUGGESTION_SELECTED = 1u << 2,   /* authoritative omnibox selection */
+  KR_SUGGESTION_RICH_IMAGE = 1u << 3, /* larger Chromium suggestion image */
+  /* Choosing it activates an already open tab; description is the action
+     label shown at the row's end rather than after the contents. */
+  KR_SUGGESTION_TAB_SWITCH = 1u << 4
 };
 
 enum KrSuggestionTextStyle {
@@ -604,9 +668,9 @@ typedef enum KrMenuKind {
   KR_MENU_BACK_HISTORY = 2,
   KR_MENU_FORWARD_HISTORY = 3,
   KR_MENU_RELOAD = 4,
-  KR_MENU_ACTION = 5, /* target: action id */
-  KR_MENU_SIDEBAR = 6,
-  KR_MENU_SPACE = 7, /* target: space id */
+  KR_MENU_ACTION = 5,  /* target: action id */
+  KR_MENU_SIDEBAR = 6, /* target: KrSidebarZone; zero keeps the frame menu */
+  KR_MENU_SPACE = 7,   /* target: space id */
   KR_MENU_SETTINGS = 8,
   KR_MENU_THEME = 9,
   KR_MENU_CREATE = 10, /* the sidebar's "+" button: new tab, window, ... */
@@ -619,6 +683,14 @@ typedef enum KrMenuKind {
   KR_MENU_DOWNLOAD = 17,    /* target: KrDownloadId */
   KR_MENU_LIBRARY_ITEM = 18 /* target: KrLibraryItemId */
 } KrMenuKind;
+
+/* Context of an empty-space sidebar menu. Existing tab/folder menus take
+ * precedence over these zones. No new function slots or ABI version needed. */
+typedef enum KrSidebarZone {
+  KR_SIDEBAR_FRAME = 0,
+  KR_SIDEBAR_TABS = 1,
+  KR_SIDEBAR_ESSENTIALS = 2
+} KrSidebarZone;
 
 /* Anchors tell the host where native elements are, so its own popups
  * (permission prompts, extension popups, Page Info...) open from them. */
@@ -683,7 +755,8 @@ enum KrAppearanceFlags {
   KR_APPEARANCE_SEARCH_BAR_FLOATING_ON_TYPE = 1u << 3,
   KR_APPEARANCE_SEARCH_BAR_MENU_BACKDROP = 1u << 4,
   /* New tab buttons open a New Tab Page; zero opens the search bar. */
-  KR_APPEARANCE_NEW_TAB_PAGE = 1u << 5
+  KR_APPEARANCE_NEW_TAB_PAGE = 1u << 5,
+  KR_APPEARANCE_SWITCHER_AWAKE_ONLY = 1u << 6
 };
 /* Chrome icon set. Records without icon_pack mean FLUENT. */
 enum KrIconPack {
@@ -730,7 +803,8 @@ enum KrSettingsAction {
   KR_SETTINGS_ACTION_ABOUT_BROWSER,
   KR_SETTINGS_ACTION_CREDITS,
   KR_SETTINGS_ACTION_LICENSE,
-  KR_SETTINGS_ACTION_BROWSER_SETTINGS
+  KR_SETTINGS_ACTION_BROWSER_SETTINGS,
+  KR_SETTINGS_ACTION_LOCAL_MODELS
 };
 typedef struct KrSettingsSnapshot {
   uint32_t struct_size;
@@ -810,6 +884,25 @@ typedef struct KrAddressState {
   uint64_t edit_revision;
   bool composing;
 } KrAddressState;
+
+/* Optional dictation extension. Strings are borrowed for this call only.
+ * A request identifies one explicit listening session, never a document URL.
+ * Results replace the selected address text and cannot accept/navigate it. */
+enum KrDictationState {
+  KR_DICTATION_IDLE = 0,
+  KR_DICTATION_LISTENING = 1,
+  KR_DICTATION_NEEDS_MODEL = 2,
+  KR_DICTATION_ERROR = 3
+};
+enum KrDictationFlags { KR_DICTATION_FINAL = 1u << 0 };
+typedef struct KrDictationUpdate {
+  size_t struct_size;
+  uint32_t request_id;
+  uint32_t state;
+  uint32_t flags;
+  KrStr text;
+  KrStr error;
+} KrDictationUpdate;
 
 typedef struct KrAddressEdit {
   size_t struct_size;
@@ -1485,6 +1578,53 @@ typedef struct KrRoutingRule {
   bool enabled, new_tabs_only;
 } KrRoutingRule;
 
+/* Catalog ids are stable within each kind for the life of the host. */
+enum KrLocalModelKind { KR_LOCAL_MODEL_TRANSLATION, KR_LOCAL_MODEL_VOICE };
+enum KrLocalModelCommand {
+  KR_LOCAL_MODEL_DOWNLOAD,
+  KR_LOCAL_MODEL_REMOVE,
+  KR_LOCAL_MODEL_SELECT
+};
+enum KrLocalModelFlags {
+  KR_LOCAL_MODEL_INSTALLED = 1u << 0,
+  KR_LOCAL_MODEL_ACTIVE = 1u << 1,
+  KR_LOCAL_MODEL_CAN_DOWNLOAD = 1u << 2,
+  KR_LOCAL_MODEL_CAN_REMOVE = 1u << 3,
+  KR_LOCAL_MODEL_CAN_SELECT = 1u << 4,
+  KR_LOCAL_MODEL_SHOW_FIRST_USE = 1u << 5,
+  /* The host's detected default for this kind, such as the voice pack for the
+     system language. A picker preselects it when nothing is active/chosen. */
+  KR_LOCAL_MODEL_SUGGESTED = 1u << 6
+};
+typedef struct KrLocalModel {
+  uint32_t id, kind, flags;
+  int32_t progress; /* -1 when no download is running */
+  uint64_t download_bytes;
+  KrStr name, error;
+} KrLocalModel;
+typedef struct KrLocalModelsSnapshot {
+  size_t struct_size;
+  const KrLocalModel* rows;
+  size_t count, row_size;
+  bool checking;
+} KrLocalModelsSnapshot;
+enum KrVoiceModelSize {
+  KR_VOICE_MODEL_TINY = 1,
+  KR_VOICE_MODEL_SMALL = 2,
+  KR_VOICE_MODEL_MEDIUM = 3
+};
+typedef struct KrLocalModelWithVoiceVariant {
+  KrLocalModel model;
+  KrStr language_tag, language_name, model_family;
+  uint32_t voice_size; /* KrVoiceModelSize for voice rows, zero otherwise. */
+} KrLocalModelWithVoiceVariant;
+typedef struct KrLocalModelsSnapshotV2 {
+  size_t struct_size;
+  const KrLocalModelWithVoiceVariant* rows;
+  size_t count, row_size;
+  bool checking;
+} KrLocalModelsSnapshotV2;
+
 typedef struct KrBrowser {
   size_t struct_size;
   void* self;
@@ -1654,6 +1794,38 @@ typedef struct KrBrowser {
   /* Optional event-driven, asynchronous file-removal refresh. */
   void (*refresh_downloads)(void* self);
   KrResult (*save_routing_rule)(void* self, const KrRoutingRule* value);
+  /* Optional, one-shot switcher snapshots. At most six tabs per request.
+   * Reply via set_tab_preview with this request and each matching tab. Cached
+   * background snapshots must not wake tabs. Cancel releases all request data.
+   */
+  void (*request_tab_switcher_previews)(void* self,
+                                        uint32_t request_id,
+                                        const KrTabId* tabs,
+                                        size_t count);
+  void (*cancel_tab_switcher_previews)(void* self, uint32_t request_id);
+  /* Optional. Moves an empty Space to another persistent profile; refused
+   * while it holds tabs or folders. A non-empty `new_profile` creates a
+   * profile with that name first and ignores `profile`. Nothing is copied
+   * between profiles. */
+  KrResult (*set_space_profile)(void* self,
+                                KrSpaceId space,
+                                KrProfileId profile,
+                                KrStr new_profile);
+  /* Optional. Creates a Space that uses `profile` (or a new profile, as above)
+   * and switches to it. `space->id` must be zero. */
+  KrResult (*create_space)(void* self,
+                           const KrSpace* space,
+                           KrProfileId profile,
+                           KrStr new_profile);
+  /* Optional. Start requires an explicit mic press and an address edit.
+   * Stop is idempotent. Late updates for a different request are ignored. */
+  void (*start_dictation)(void* self, uint32_t request_id);
+  void (*stop_dictation)(void* self, uint32_t request_id);
+  /* Optional. Only call from an explicit Settings control activation. */
+  KrResult (*manage_local_model)(void* self,
+                                 uint32_t kind,
+                                 uint32_t id,
+                                 uint32_t command);
 } KrBrowser;
 
 /* Module side. Filled by kr_ui_create, read by the host. */
@@ -1888,15 +2060,38 @@ typedef struct KrShellUI {
   /* Optional shared searchable icon/emoji editor for a live tab. */
   KrResult (*show_tab_icon_editor)(void* self, KrTabId tab, KrStr glyph);
   KrResult (*show_boost_editor)(void* self, const KrBoost* value);
-  /* Close through the shared popup/focus lifecycle before a host editor opens. */
+  /* Close through the shared popup/focus lifecycle before a host editor opens.
+   */
   KrResult (*dismiss_library)(void* self);
   KrResult (*show_routing_editor)(void* self, const KrRoutingRule* value);
-  /* Cancel the permission surface when its document/window is no longer valid. */
+  /* Cancel the permission surface when its document/window is no longer valid.
+   */
   void (*dismiss_site_permissions)(void* self);
   /* URL drag position in client DIPs, including drags over page content.
    * Reveals hidden chrome without taking focus; returns whether chrome accepts
-   * a drop at this point. active=false ends the drag and releases its reveal. */
+   * a drop at this point. active=false ends the drag and releases its reveal.
+   */
   bool (*url_drag_changed)(void* self, float x, float y, bool active);
+  /* Required for KR_CREATE_HOSTED_SHELL. A window shows one profile's shell at
+   * a time; a hidden shell keeps its state, drops transient UI and takes no
+   * input. Ordinary shells start presented. */
+  void (*set_presented)(void* self, bool presented);
+  /* Optional profile choices for the Space editor, plus each Space's profile.
+   * Arrays are copied during the call. */
+  void (*set_space_profiles)(void* self,
+                             const KrProfileChoice* choices,
+                             size_t choice_count,
+                             size_t choice_size,
+                             const KrSpaceProfile* spaces,
+                             size_t space_count,
+                             size_t space_size);
+  /* Optional ABI-v2 tail. Ctrl+T opens the universal launcher without creating
+   * a tab; focus_address remains the current page URL editor. */
+  void (*open_launcher)(void* self);
+  KrResult (*set_dictation)(void* self, const KrDictationUpdate* update);
+  KrResult (*set_local_models)(void* self, const KrLocalModelsSnapshot* value);
+  KrResult (*set_local_models_v2)(void* self,
+                                  const KrLocalModelsSnapshotV2* value);
 } KrShellUI;
 
 typedef struct KrCreateParams {
@@ -1907,7 +2102,13 @@ typedef struct KrCreateParams {
   /* Optional. Applied while creating native chrome, before the host shows its
    * window. Copied during kr_ui_create; null preserves the default theme. */
   const KrTheme* initial_theme;
+  /* Optional KR_CREATE_* flags. */
+  uint32_t flags;
 } KrCreateParams;
+
+/* The shell shares a window whose frame, caption and backdrop belong to
+ * another shell. It starts hidden; the host presents it with set_presented. */
+#define KR_CREATE_HOSTED_SHELL 1u
 
 /* Reports whether this module can run here without creating anything. */
 KR_UI_API bool KR_UI_CALL kr_ui_is_supported(uint32_t abi_version);

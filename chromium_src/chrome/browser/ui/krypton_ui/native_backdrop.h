@@ -4,12 +4,16 @@
 #ifndef CHROME_BROWSER_UI_KRYPTON_UI_NATIVE_BACKDROP_H_
 #define CHROME_BROWSER_UI_KRYPTON_UI_NATIVE_BACKDROP_H_
 
+#include <memory>
 #include <vector>
 
 #include "cc/paint/paint_flags.h"
 #include "krypton_ui/abi.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/background.h"
+
+class BrowserView;
+class MultiContentsView;
 
 namespace krypton_ui {
 
@@ -55,6 +59,23 @@ class NativeBackdrop final : public views::Background {
   mutable gfx::Size cached_size_;
   mutable bool dirty_ = true;
   bool transparent_ = false;
+};
+
+// Four small sibling layers cover the page's corner ears without masking any
+// ancestor of its native surface. BrowserAdapter owns their window lifetime.
+class PageCornerOverlays final {
+ public:
+  PageCornerOverlays(BrowserView& browser, const NativeBackdrop& backdrop);
+  ~PageCornerOverlays();
+  PageCornerOverlays(const PageCornerOverlays&) = delete;
+  PageCornerOverlays& operator=(const PageCornerOverlays&) = delete;
+
+  void Update(MultiContentsView& contents, bool enabled, float radius);
+  void BackdropChanged();
+
+ private:
+  struct State;
+  std::unique_ptr<State> state_;
 };
 }  // namespace krypton_ui
 

@@ -17,6 +17,7 @@
 #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
 
 namespace krypton_ui {
+struct CommandBarEntry;
 class ControlAnchors;
 class WindowSession;
 class NativeExtensions final : public ExtensionsToolbarViewModel::Delegate,
@@ -37,6 +38,8 @@ class NativeExtensions final : public ExtensionsToolbarViewModel::Delegate,
   void Attach();
   void Close();
   void AppendActions(std::vector<KrAction>& actions);
+  void AppendCommandEntries(std::string_view query,
+                            std::vector<CommandBarEntry>& entries);
   void RefreshImages();
   void Invoke(KrActionId id);
   std::unique_ptr<ui::MenuModel> CreateMenu(KrActionId id, bool panel = false);

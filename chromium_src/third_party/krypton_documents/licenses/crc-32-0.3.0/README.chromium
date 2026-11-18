@@ -1,0 +1,10 @@
+Name: crc-32
+Short Name: crc-32
+URL: git://github.com/SheetJS/js-crc32.git
+Version: 0.3.0
+License: Apache-2.0
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

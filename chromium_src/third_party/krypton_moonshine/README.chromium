@@ -1,0 +1,17 @@
+Name: Moonshine streaming inference
+URL: https://github.com/moonshine-ai/moonshine
+Version: 0.1.6
+Revision: d8d8fa29d05ca67441a7719e70099f9f48917a93
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Only the streaming inference core and MIT streaming packs are used. Community-
+licensed and legacy non-streaming models are excluded. Native policy changes
+are in voice_engine/patches/native-sandbox.patch. Models are not bundled: each
+requires an explicit size-labelled download. See voice_engine/model_manifest.json.
+
+The model catalog includes English Medium Streaming from quantized_26_11_02,
+with eight SHA-256-pinned assets totalling 269306511 bytes. Existing Small
+and Tiny model pins are retained.

@@ -1,0 +1,10 @@
+Name: tslib
+Short Name: tslib
+URL: https://github.com/Microsoft/tslib.git
+Version: 2.9.1
+License: 0BSD
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

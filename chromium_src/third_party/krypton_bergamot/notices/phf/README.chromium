@@ -1,0 +1,7 @@
+Name: phf
+URL: https://github.com/mozilla/translations
+Version: bundled at eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes

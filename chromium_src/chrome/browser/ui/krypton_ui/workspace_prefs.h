@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "krypton_ui/abi.h"
@@ -19,12 +20,23 @@ namespace krypton_ui {
 inline constexpr char kWorkspacesPref[] = "krypton_ui.workspaces";
 inline constexpr char kLastWorkspacePref[] = "krypton_ui.last_workspace";
 inline constexpr KrSpaceId kDefaultWorkspace = 1;
+// Space id -> {"profile": profile directory base name}. A separate preference:
+// builds that predate it rewrite catalog rows without erasing the mapping.
+inline constexpr char kWorkspaceProfilesPref[] =
+    "krypton_ui.workspace_profiles";
+// Never a valid base name. A damaged mapping stays unusable instead of being
+// read as the catalog owner's profile.
+inline constexpr char kDamagedWorkspaceProfile[] = "/";
 
 struct Workspace {
   KrSpaceId id = 0;
   std::string name;
   std::string glyph;
   KrColor color = 0;
+  // Base name of the profile directory that hosts this Space's tabs, the key
+  // ProfileAttributesStorage uses. Empty means the profile that owns this
+  // catalog. Catalog edits never change it; see SetWorkspaceProfile().
+  std::string profile;
 };
 struct WorkspaceCatalog {
   std::vector<Workspace> spaces;
@@ -42,5 +54,14 @@ void RegisterWorkspacePrefs(user_prefs::PrefRegistrySyncable* registry);
 [[nodiscard]] KrSpaceId LastWorkspace(const PrefService& prefs,
                                       const WorkspaceCatalog& catalog);
 void RememberWorkspace(PrefService& prefs, KrSpaceId id);
+// A single, bounded profile directory component. Syntax only: existence and
+// eligibility are resolved against ProfileAttributesStorage by the host.
+[[nodiscard]] bool ValidProfileBaseName(std::string_view name);
+// Stores the profile mapping of an existing Space; empty restores the catalog
+// owner. The Default Space always stays with the owner. Callers validate the
+// profile and refuse Spaces that still hold tabs or folders.
+[[nodiscard]] bool SetWorkspaceProfile(PrefService& prefs,
+                                       KrSpaceId id,
+                                       std::string_view profile);
 }  // namespace krypton_ui
 #endif

@@ -47,9 +47,8 @@ class NativeMenus {
           workspace_menu,
       base::RepeatingCallback<std::unique_ptr<ui::MenuModel>(KrActionId)>
           extension_menu,
-      base::RepeatingCallback<
-          std::unique_ptr<ui::MenuModel>(uint32_t, tabs::TabInterface*)>
-          context_menu,
+      base::RepeatingCallback<std::unique_ptr<
+          ui::MenuModel>(uint32_t, uint64_t, tabs::TabInterface*)> context_menu,
       ToggleEssential toggle_essential);
   ~NativeMenus();
   NativeMenus(const NativeMenus&) = delete;
@@ -67,6 +66,7 @@ class NativeMenus {
                                                  int32_t command);
   void Closed(uint32_t request);
   void CloseAll();
+  void RefreshTranslationMenus();
   [[nodiscard]] bool HasOpenMenu() const {
     return !sources_.empty() || !page_menus_.empty();
   }
@@ -96,7 +96,7 @@ class NativeMenus {
   const base::RepeatingCallback<std::unique_ptr<ui::MenuModel>(KrActionId)>
       extension_menu_;
   const base::RepeatingCallback<
-      std::unique_ptr<ui::MenuModel>(uint32_t, tabs::TabInterface*)>
+      std::unique_ptr<ui::MenuModel>(uint32_t, uint64_t, tabs::TabInterface*)>
       context_menu_;
   const ToggleEssential toggle_essential_;
   ExternalMenuFactory external_menu_;

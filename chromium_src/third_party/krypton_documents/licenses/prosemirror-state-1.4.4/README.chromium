@@ -1,0 +1,10 @@
+Name: prosemirror-state
+Short Name: prosemirror-state
+URL: git://github.com/prosemirror/prosemirror-state.git
+Version: 1.4.4
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

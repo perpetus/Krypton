@@ -13,6 +13,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/exit_type_service.h"
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
@@ -25,6 +26,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/krypton_ui/browser_adapter.h"
+#include "chrome/browser/ui/krypton_ui/dictation_controller.h"
 #include "chrome/browser/ui/krypton_ui/essential_prefs.h"
 #include "chrome/browser/ui/krypton_ui/layout_menus.h"
 #include "chrome/browser/ui/krypton_ui/layout_prefs.h"
@@ -32,11 +34,15 @@
 #include "chrome/browser/ui/krypton_ui/multi_page_session.h"
 #include "chrome/browser/ui/krypton_ui/native_extensions.h"
 #include "chrome/browser/ui/krypton_ui/native_menus.h"
+#include "chrome/browser/ui/krypton_ui/page_capture.h"
 #include "chrome/browser/ui/krypton_ui/sidebar_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/site_customization.h"
 #include "chrome/browser/ui/krypton_ui/site_data_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/site_info_menu.h"
 #include "chrome/browser/ui/krypton_ui/site_permissions.h"
+#include "chrome/browser/ui/krypton_ui/space_hosts.h"
+#include "chrome/browser/ui/krypton_ui/space_profiles.h"
+#include "chrome/browser/ui/krypton_ui/translation_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/workspace_close.h"
 #include "chrome/browser/ui/krypton_ui/workspace_menu.h"
 #include "chrome/browser/ui/krypton_ui/workspace_session.h"
@@ -199,6 +205,16 @@ void BrowserAdapter::PublishWorkspaces() {
                   active_space_);
 }
 void BrowserAdapter::AssignWorkspace(tabs::TabInterface& tab, KrSpaceId space) {
+  // A Space mapped to another profile never receives this browser's tabs.
+  // Default always belongs to the catalog owner.
+  if (!HostsSpace(space)) {
+    space = FallbackSpace();
+  }
+  if (!space) {
+    // No Space of the window uses this profile any more. Keep the tab's
+    // record rather than inventing a Space; nothing changes profile.
+    return;
+  }
   if (const auto* folder = folders_.Find(FolderForTab(tab.GetContents()));
       folder && folder->space != space) {
     AssignFolder(tab, 0);
@@ -207,7 +223,13 @@ void BrowserAdapter::AssignWorkspace(tabs::TabInterface& tab, KrSpaceId space) {
       multi_page_->MoveGroup(Identity(tab), space)) {
     return;
   }
+  // Space ids are unique per catalog. A hosted tab records which window
+  // profile's catalog its Space belongs to.
+  const auto catalog = CatalogKey();
+  const bool catalog_changed =
+      WorkspaceCatalogForTab(tab.GetContents()) != catalog;
   SetWorkspaceForTab(tab.GetContents(), space);
+  SetWorkspaceCatalogForTab(tab.GetContents(), catalog);
   if (auto* service =
           SessionServiceFactory::GetForProfile(browser_->GetProfile())) {
     const auto id = sessions::SessionTabHelper::IdForTab(tab.GetContents());
@@ -215,11 +237,31 @@ void BrowserAdapter::AssignWorkspace(tabs::TabInterface& tab, KrSpaceId space) {
       service->AddTabExtraData(browser_->GetSessionID(), id,
                                kWorkspaceSessionKey,
                                base::NumberToString(space));
+      if (catalog_changed || !catalog.empty()) {
+        service->AddTabExtraData(browser_->GetSessionID(), id,
+                                 kWorkspaceCatalogSessionKey, catalog);
+      }
     }
   }
 }
 void BrowserAdapter::EnsureWorkspace(tabs::TabInterface& tab) {
-  auto space = WorkspaceForTab(tab.GetContents());
+  auto* contents = tab.GetContents();
+  auto space = WorkspaceForTab(contents);
+  if (space && WorkspaceCatalogForTab(contents) != CatalogKey()) {
+    // The id belongs to another window profile's catalog: a hosted tab
+    // restored before its frame, or dragged into a standalone window. Keep it
+    // for adoption by its frame; it never selects this catalog's Space.
+    if (!orphan_of_.empty() && !WorkspaceCatalogForTab(contents).empty()) {
+      orphan_spaces_.insert_or_assign(
+          Identity(tab), std::pair(space, WorkspaceCatalogForTab(contents)));
+      // Keep the durable tab record intact until its frame adopts it. Session
+      // rebuilding can run before adoption; an in-memory copy alone would
+      // permanently replace the foreign catalog and Space with local ids.
+      return;
+    }
+    space = 0;
+    SetFolderForTab(contents, 0);
+  }
   if (!space) {
     space = new_tab_space_ ? new_tab_space_ : active_space_;
     const auto index = browser_->GetTabStripModel()->GetIndexOfTab(&tab);
@@ -228,14 +270,14 @@ void BrowserAdapter::EnsureWorkspace(tabs::TabInterface& tab) {
               browser_->GetTabStripModel()->GetOpenerOfTabAt(index)) {
         const auto opener_space = WorkspaceForTab(opener->GetContents());
         if (!EssentialForTab(opener->GetContents()) &&
-            workspaces_.Contains(opener_space)) {
+            HostsSpace(opener_space)) {
           space = opener_space;
         }
       }
     }
   }
-  if (!workspaces_.Contains(space)) {
-    space = kDefaultWorkspace;
+  if (!HostsSpace(space)) {
+    space = FallbackSpace();
   }
   AssignWorkspace(tab, space);
 }
@@ -301,6 +343,14 @@ void BrowserAdapter::OnEssentialsChanged() {
       SessionRestore::IsRestoring(browser_->GetProfile())) {
     return;
   }
+  const auto* exit_type =
+      ExitTypeService::GetInstanceForProfile(browser_->GetProfile());
+  if (exit_type && exit_type->waiting_for_user_to_ack_crash()) {
+    // IsRestoring() is still false while the crash prompt is open. Creating
+    // catalog tabs now races the later recovery, which restores their saved
+    // Essential identities and pinned states and would leave duplicate pages.
+    return;
+  }
   const base::AutoReset<bool> restoring(&restoring_essentials_, true);
   menus_->CloseAll();
   const auto catalog = ReadEssentials(*browser_->GetProfile()->GetPrefs());
@@ -343,7 +393,7 @@ void BrowserAdapter::OnEssentialsChanged() {
     const base::AutoReset<uint64_t> essential(&new_essential_, entry.id);
     const base::AutoReset<KrSpaceId> workspace(&new_tab_space_, active_space_);
     NavigateParams params(&*browser_, url, ui::PAGE_TRANSITION_AUTO_BOOKMARK);
-    params.disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
+    params.disposition = WindowOpenDisposition::kNewBackgroundTab;
     params.user_gesture = false;
     Navigate(&params);
   }
@@ -378,71 +428,110 @@ void BrowserAdapter::UpdateEssential(tabs::TabInterface& tab) {
 }
 void BrowserAdapter::OnWorkspacesChanged() {
   menus_->CloseAll();
-  workspaces_ = ReadWorkspaces(*browser_->GetProfile()->GetPrefs());
+  workspaces_ = ReadWorkspaces(WindowPrefs());
   if (CanFolders()) {
-    auto folders = ReadFolders(*browser_->GetProfile()->GetPrefs());
+    auto folders = ReadFolders(WindowPrefs());
     bool changed = false;
     for (auto& folder : folders.items) {
-      if (!workspaces_.Contains(folder.space)) {
+      if (!HostsSpace(folder.space)) {
         folder.space = kDefaultWorkspace;
         changed = true;
       }
     }
     if (changed) {
-      std::ignore = WriteFolders(*browser_->GetProfile()->GetPrefs(), folders);
+      std::ignore = WriteFolders(WindowPrefs(), folders);
     }
   }
   workspace_themes_.Retain(workspaces_);
-  if (!workspaces_.Contains(active_space_)) {
-    active_space_ = kDefaultWorkspace;
-    RememberWorkspace(*browser_->GetProfile()->GetPrefs(), active_space_);
+  if (hosted_) {
+    // The frame owns the window's Space selection; it resyncs hosts after
+    // handling the same change.
+    if (frame_) {
+      active_space_ = frame_->active_space_;
+    }
+  } else {
+    auto* presenter = space_hosts_ ? space_hosts_->presented() : nullptr;
+    const bool shown =
+        HostsSpace(active_space_) ||
+        (presenter &&
+         SpaceUsesProfile(active_space_, presenter->HostProfile()->GetPath()));
+    if (!shown) {
+      // The presented Space was removed or now uses another profile. Its tabs
+      // stay in their own profile's Browser; show the owner's Default Space.
+      active_space_ = kDefaultWorkspace;
+      RememberWorkspace(WindowPrefs(), active_space_);
+      if (space_hosts_) {
+        space_hosts_->PresentFrame();
+      }
+    }
   }
   for (auto* tab : *browser_->GetTabStripModel()) {
-    if (!workspaces_.Contains(WorkspaceForTab(tab->GetContents()))) {
-      AssignWorkspace(*tab, kDefaultWorkspace);
+    if (!HostsSpace(WorkspaceForTab(tab->GetContents()))) {
+      AssignWorkspace(*tab, hosted_ ? FallbackSpace() : kDefaultWorkspace);
       PublishTab(*tab);
     }
   }
   PublishWorkspaces();
   PublishTheme();
+  SyncHostsActiveSpace();
+  SchedulePublishSpaceProfiles();
 }
 void BrowserAdapter::SwitchWorkspace(KrSpaceId space) {
-  if (!workspaces_.Contains(space)) {
+  if (hosted_) {
+    // The frame decides which profile presents the window.
+    if (frame_) {
+      frame_->SwitchWorkspace(space);
+    }
+    return;
+  }
+  const auto* value = FindSpace(space);
+  if (!value) {
     return;
   }
   menus_->CloseAll();
+  const auto resolved = ResolveSpaceProfile(*browser_->GetProfile(), *value);
+  if (resolved.status == SpaceProfileStatus::kMissing ||
+      resolved.status == SpaceProfileStatus::kUnavailable) {
+    // Never fall back to this window's profile.
+    NotifySpaceUnavailable();
+    return;
+  }
   if (multi_page_ && !multi_page_->BeforeWorkspaceChange(space)) {
     return;
   }
-  active_space_ = space;
-  RememberWorkspace(*browser_->GetProfile()->GetPrefs(), space);
-  PublishWorkspaces();
-  auto* model = browser_->GetTabStripModel();
-  auto* selected = browser_->GetActiveTabInterface();
-  if (selected && (EssentialForTab(selected->GetContents()) ||
-                   WorkspaceForTab(selected->GetContents()) == space)) {
+  if (resolved.status == SpaceProfileStatus::kAvailable) {
+    // That profile's host shows the Space once it exists; HostShowedSpace
+    // then records the selection. Loading is asynchronous and superseded by
+    // any later switch.
+    EnsureSpaceHosts().Present(space, resolved.path);
     return;
   }
-  tabs::TabInterface* target = nullptr;
-  for (auto* tab : *model) {
-    if (WorkspaceForTab(tab->GetContents()) == space &&
-        (!target || tab->GetContents()->GetLastActiveTime() >
-                        target->GetContents()->GetLastActiveTime())) {
-      target = tab;
-    }
+  active_space_ = space;
+  RememberWorkspace(WindowPrefs(), space);
+  PublishWorkspaces();
+  SyncHostsActiveSpace();
+  if (space_hosts_) {
+    space_hosts_->PresentFrame();
   }
-  if (target) {
-    model->ActivateTabAt(model->GetIndexOfTab(target));
-  } else {
-    // A workspace always has a real foreground tab. This also makes Chromium's
-    // selected-tab session record sufficient to restore the active workspace.
-    const base::AutoReset<KrSpaceId> creating(&new_tab_space_, space);
-    chrome::NewTab(&*browser_, NewTabTypes::kNewTabCommand);
-  }
+  SelectSpaceTab(space);
 }
 void BrowserAdapter::EditWorkspace(uint32_t kind, Workspace value) {
-  auto& prefs = *browser_->GetProfile()->GetPrefs();
+  if (hosted_) {
+    // The catalog belongs to the frame's profile.
+    if (frame_) {
+      frame_->EditWorkspace(kind, std::move(value));
+    }
+    return;
+  }
+  auto& prefs = WindowPrefs();
   if (kind == KR_WORKSPACE_REMOVE) {
+    // Tabs of another profile's Space cannot move to this profile's Default.
+    if (const auto* space = FindSpace(value.id);
+        space && !space->profile.empty() &&
+        SpacesInUse(*browser_->GetProfile()).contains(value.id)) {
+      NotifyPresented("Close this Space's tabs to remove it.");
+      return;
+    }
     // The synchronous pref notification migrates affected tabs in all windows.
     std::ignore = RemoveWorkspace(prefs, value.id);
   } else if (kind == KR_WORKSPACE_UPSERT) {
@@ -475,6 +564,12 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateWorkspaceMenu(
               case WorkspaceMenuModel::Operation::kCreate:
               case WorkspaceMenuModel::Operation::kEdit:
                 if (!space || owner->workspaces_.Contains(space)) {
+                  // Opening the editor is the first time profile choices
+                  // matter; observe them from now on.
+                  if (!owner->CatalogProfile().IsOffTheRecord()) {
+                    std::ignore = owner->ProfileDirectory();
+                  }
+                  owner->PublishSpaceProfiles();
                   if (const auto* api = owner->session_.api();
                       KR_HAS_SLOT(api, KrShellUI, show_workspace_editor) &&
                       api->show_workspace_editor) {
@@ -489,7 +584,7 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateWorkspaceMenu(
                              ? owner->multi_page_->PresentedTab(
                                    owner->browser_->GetActiveTabInterface())
                              : owner->browser_->GetActiveTabInterface()) &&
-                    owner->workspaces_.Contains(space)) {
+                    owner->HostsSpace(space)) {
                   owner->MoveTab(
                       Identity(*tab), space,
                       base::checked_cast<size_t>(
@@ -508,12 +603,20 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateWorkspaceMenu(
 }
 std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateContextMenu(
     uint32_t kind,
-    tabs::TabInterface* target) {
+    tabs::TabInterface* target,
+    uint64_t zone) {
   if (!target || target->GetBrowserWindowInterface() != &*browser_) {
     return nullptr;
   }
   auto tab = target->GetWeakPtr();
   auto owner = weak_factory_.GetWeakPtr();
+  if (kind == KR_MENU_ACTION && zone == kDictationAction)
+    return dictation_ ? dictation_->CreateMenu() : nullptr;
+  if (kind == KR_MENU_ACTION && zone == kTranslateAction) {
+    return CreateTranslationMenu(
+        *target->GetContents(),
+        base::BindRepeating(&BrowserAdapter::ScheduleActions, owner));
+  }
   if (kind == KR_MENU_SITE_DATA) {
     return CreateSiteDataMenu(*target);
   }
@@ -525,7 +628,7 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateContextMenu(
            base::WeakPtr<tabs::TabInterface> tab, KrSpaceId space) {
           return owner && tab &&
                  tab->GetBrowserWindowInterface() == &*owner->browser_ &&
-                 owner->workspaces_.Contains(space) &&
+                 owner->HostsSpace(space) &&
                  WorkspaceForTab(tab->GetContents()) != space;
         },
         owner, tab);
@@ -546,7 +649,7 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateContextMenu(
             },
             owner, tab, can_move));
   }
-  if (kind != KR_MENU_SIDEBAR) {
+  if (kind != KR_MENU_SIDEBAR || zone > KR_SIDEBAR_ESSENTIALS) {
     return nullptr;
   }
   std::vector<SidebarMenuModel::Action> actions;
@@ -572,13 +675,19 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateContextMenu(
         }
         const auto* api = owner->session_.api();
         return SidebarMenuModel::State{
-            ReadLayoutPrefs(*owner->browser_->GetProfile()->GetPrefs()).flags,
+            ReadLayoutPrefs(owner->WindowPrefs()).flags,
             KR_HAS_SLOT(api, KrShellUI, show_workspace_editor) &&
-                api->show_workspace_editor,
+                api->show_workspace_editor &&
+                !owner->browser_->GetProfile()->IsOffTheRecord(),
             api && api->show_settings,
             api && KR_HAS_SLOT(api, KrShellUI, show_theme_editor) &&
                 api->show_theme_editor &&
-                !owner->browser_->GetProfile()->IsOffTheRecord()};
+                !owner->browser_->GetProfile()->IsOffTheRecord(),
+            owner->CanFolders(),
+            !owner->browser_->GetProfile()->IsOffTheRecord() &&
+                !(owner->multi_page_ &&
+                  owner->multi_page_->Describe(Identity(*tab))),
+            EssentialForTab(tab->GetContents()) != 0};
       },
       owner, tab);
   return std::make_unique<SidebarMenuModel>(
@@ -596,9 +705,29 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateContextMenu(
             if (!read_state.Run()) {
               return;
             }
-            auto* prefs = owner->browser_->GetProfile()->GetPrefs();
+            auto* prefs = &owner->WindowPrefs();
             const auto* api = owner->session_.api();
+            if (IsLayoutCommand(command)) {
+              auto layout = ReadLayoutPrefs(*prefs);
+              if (IsLayoutCommandEnabled(layout.flags, command)) {
+                layout.flags = ApplyLayoutCommand(layout.flags, command);
+                WriteLayoutPrefs(*prefs, layout);
+              }
+              return;
+            }
             switch (command) {
+              case SidebarMenuModel::kNewFolder: {
+                KrFolderCommand value{};
+                value.struct_size = sizeof(value);
+                value.kind = KR_FOLDER_CREATE;
+                std::ignore = owner->FolderCommand(value);
+                break;
+              }
+              case SidebarMenuModel::kToggleEssential:
+                if (auto* active = owner->browser_->GetActiveTabInterface())
+                  owner->SetEssential(*active,
+                                      !EssentialForTab(active->GetContents()));
+                break;
               case SidebarMenuModel::kCompact:
               case SidebarMenuModel::kSidebarRight: {
                 auto layout = ReadLayoutPrefs(*prefs);
@@ -624,9 +753,13 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateContextMenu(
               case SidebarMenuModel::kEditTheme:
                 owner->ShowThemeEditor(owner->active_space_);
                 break;
+              case SidebarMenuModel::kAppearanceMenu:
+              case SidebarMenuModel::kPageMenu:
+                break;
             }
           },
-          owner, read_state));
+          owner, read_state),
+      zone);
 }
 std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateSiteDataMenu(
     tabs::TabInterface& target) {
@@ -782,9 +915,18 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateSiteDataMenu(
                      KR_HAS_SLOT(api, KrShellUI, show_boost_editor) &&
                      api->show_boost_editor;
             }
-            if (command == SiteDataMenuModel::kScreenshot) {
+            if (command == SiteDataMenuModel::kScreenshot ||
+                command == SiteDataMenuModel::kCaptureArea ||
+                command == SiteDataMenuModel::kCaptureElement ||
+                command == SiteDataMenuModel::kCaptureFullPage) {
               return owner && owner->CanTakeScreenshot();
             }
+            if (command == SiteDataMenuModel::kAddToEasel ||
+                command == SiteDataMenuModel::kEaselArea ||
+                command == SiteDataMenuModel::kEaselElement ||
+                command == SiteDataMenuModel::kEaselFullPage)
+              return owner && owner->CanCreateDocument() &&
+                     owner->CanTakeScreenshot();
             return owner &&
                    chrome::IsCommandEnabled(&*owner->browser_, command);
           },
@@ -808,9 +950,49 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateSiteDataMenu(
                     },
                     owner, state));
                 break;
-              case SiteDataMenuModel::kScreenshot:
-                owner->TakeScreenshot(tab.get());
+              case SiteDataMenuModel::kCaptureArea:
+              case SiteDataMenuModel::kCaptureElement:
+              case SiteDataMenuModel::kCaptureFullPage: {
+                // Ordinary screenshot path.
+                const auto mode =
+                    command == SiteDataMenuModel::kCaptureElement
+                        ? PageCaptureMode::kElement
+                    : command == SiteDataMenuModel::kCaptureFullPage
+                        ? PageCaptureMode::kFullPage
+                        : PageCaptureMode::kArea;
+                // Native menu dismissal and focus handoff finish before the
+                // capture overlay starts receiving page input.
+                std::ignore = owner->session_.Defer(base::BindOnce(
+                    [](base::WeakPtr<BrowserAdapter> owner,
+                       base::WeakPtr<tabs::TabInterface> tab,
+                       SiteDataMenuModel::ReadState state,
+                       PageCaptureMode mode) {
+                      if (owner && tab && state.Run())
+                        owner->TakeScreenshot(tab.get(), mode);
+                    },
+                    owner, tab, state, mode));
                 break;
+              }
+              case SiteDataMenuModel::kEaselArea:
+              case SiteDataMenuModel::kEaselElement:
+              case SiteDataMenuModel::kEaselFullPage: {
+                const auto mode = command == SiteDataMenuModel::kEaselElement
+                                      ? PageCaptureMode::kElement
+                                  : command == SiteDataMenuModel::kEaselFullPage
+                                      ? PageCaptureMode::kFullPage
+                                      : PageCaptureMode::kArea;
+                std::ignore = owner->session_.Defer(base::BindOnce(
+                    [](base::WeakPtr<BrowserAdapter> owner,
+                       base::WeakPtr<tabs::TabInterface> tab,
+                       SiteDataMenuModel::ReadState state,
+                       PageCaptureMode mode) {
+                      if (owner && tab && state.Run() &&
+                          owner->CanCreateDocument())
+                        owner->TakeScreenshot(tab.get(), mode, true);
+                    },
+                    owner, tab, state, mode));
+                break;
+              }
               case SiteDataMenuModel::kSecurity:
               case SiteDataMenuModel::kSecureConnection: {
                 auto result = owner->ShowPageInfo(tab.get());
@@ -847,8 +1029,9 @@ std::unique_ptr<ui::MenuModel> BrowserAdapter::CreateSiteDataMenu(
 }
 
 uint32_t BrowserAdapter::ThemeScheme() const {
+  // The window's color scheme follows the catalog owner's profile.
   return workspace_themes_.preview_scheme().value_or(static_cast<uint32_t>(
-      ThemeServiceFactory::GetForProfile(browser_->GetProfile())
+      ThemeServiceFactory::GetForProfile(&CatalogProfile())
           ->GetBrowserColorScheme()));
 }
 
@@ -859,7 +1042,7 @@ void BrowserAdapter::PublishWorkspaceThemes() {
     return;
   }
   const auto scheme = ThemeScheme();
-  const auto& prefs = *browser_->GetProfile()->GetPrefs();
+  const auto& prefs = WindowPrefs();
   for (const auto& space : workspaces_.spaces) {
     const auto theme = workspace_themes_.Resolve(prefs, space.id, scheme);
     std::ignore = api->set_workspace_theme(api->self, &theme);
@@ -881,13 +1064,12 @@ void BrowserAdapter::ApplyWorkspaceTheme(const KrWorkspaceTheme& theme,
     return;
   }
   const auto previous_scheme = ThemeScheme();
-  if (!workspace_themes_.Apply(*browser_->GetProfile()->GetPrefs(), theme,
-                               commit)) {
+  if (!workspace_themes_.Apply(WindowPrefs(), theme, commit)) {
     PublishWorkspaceThemes();
     return;
   }
   if (commit) {
-    auto* service = ThemeServiceFactory::GetForProfile(browser_->GetProfile());
+    auto* service = ThemeServiceFactory::GetForProfile(&CatalogProfile());
     const auto scheme =
         static_cast<ThemeService::BrowserColorScheme>(theme.scheme);
     if (service->GetBrowserColorScheme() != scheme) {

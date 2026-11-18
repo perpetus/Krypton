@@ -2,6 +2,7 @@
 // Use of this source code is governed by the GPL-3.0 license in LICENSE.
 #include "chrome/browser/ui/krypton_ui/workspace_prefs.h"
 #include "chrome/browser/ui/krypton_ui/folder_prefs.h"
+#include "chrome/browser/ui/krypton_ui/local_model_prefs.h"
 #include "chrome/browser/ui/krypton_ui/site_customization.h"
 #include "chrome/browser/ui/krypton_ui/workspace_theme_prefs.h"
 
@@ -40,6 +41,19 @@ void Write(PrefService& prefs, const WorkspaceCatalog& catalog) {
   data.Set("spaces", std::move(spaces));
   prefs.SetDict(kWorkspacesPref, std::move(data));
 }
+void ReadProfiles(const PrefService& prefs, WorkspaceCatalog& catalog) {
+  const auto& profiles = prefs.GetDict(kWorkspaceProfilesPref);
+  for (auto& space : catalog.spaces) {
+    const auto* value = profiles.Find(base::NumberToString(space.id));
+    if (!value || space.id == kDefaultWorkspace)
+      continue;
+    const auto* row = value->GetIfDict();
+    const auto* name = row ? row->FindString("profile") : nullptr;
+    space.profile = name && ValidProfileBaseName(*name)
+                        ? *name
+                        : std::string(kDamagedWorkspaceProfile);
+  }
+}
 }  // namespace
 
 bool WorkspaceCatalog::Contains(KrSpaceId id) const {
@@ -47,7 +61,11 @@ bool WorkspaceCatalog::Contains(KrSpaceId id) const {
       spaces, [id](const auto& space) { return space.id == id; });
 }
 void RegisterWorkspacePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterStringPref(kVoicePackPref, "");
+  registry->RegisterBooleanPref(kVoiceLocalNoticePref, false);
+  registry->RegisterBooleanPref(kTranslationLocalNoticePref, false);
   registry->RegisterDictionaryPref(kWorkspacesPref);
+  registry->RegisterDictionaryPref(kWorkspaceProfilesPref);
   RegisterSiteCustomizationPrefs(registry);
   registry->RegisterStringPref(kLastWorkspacePref, "1");
   RegisterWorkspaceThemePrefs(registry);
@@ -90,6 +108,7 @@ WorkspaceCatalog ReadWorkspaces(const PrefService& prefs) {
       }
     }
   }
+  ReadProfiles(prefs, catalog);
   return catalog;
 }
 std::optional<KrSpaceId> SaveWorkspace(PrefService& prefs, Workspace value) {
@@ -122,6 +141,13 @@ bool RemoveWorkspace(PrefService& prefs, KrSpaceId id) {
                 [id](const auto& space) { return space.id == id; });
   Write(prefs, catalog);
   RemoveWorkspaceTheme(prefs, id);
+  // Ids are never reused, but a removed Space keeps no profile mapping.
+  if (const auto key = base::NumberToString(id);
+      prefs.GetDict(kWorkspaceProfilesPref).contains(key)) {
+    auto profiles = prefs.GetDict(kWorkspaceProfilesPref).Clone();
+    profiles.Remove(key);
+    prefs.SetDict(kWorkspaceProfilesPref, std::move(profiles));
+  }
   return true;
 }
 KrSpaceId LastWorkspace(const PrefService& prefs,
@@ -131,5 +157,32 @@ KrSpaceId LastWorkspace(const PrefService& prefs,
 }
 void RememberWorkspace(PrefService& prefs, KrSpaceId id) {
   prefs.SetString(kLastWorkspacePref, base::NumberToString(id));
+}
+bool ValidProfileBaseName(std::string_view name) {
+  // Windows drops trailing dots and spaces, so those names would alias.
+  return !name.empty() && name.size() <= 255 && name != "." && name != ".." &&
+         base::IsStringUTF8(name) && !base::IsAsciiWhitespace(name.front()) &&
+         !base::IsAsciiWhitespace(name.back()) && name.back() != '.' &&
+         std::ranges::none_of(name, [](char c) {
+           return static_cast<unsigned char>(c) < 0x20 || c == '/' ||
+                  c == '\\' || c == ':';
+         });
+}
+bool SetWorkspaceProfile(PrefService& prefs,
+                         KrSpaceId id,
+                         std::string_view profile) {
+  if (id == kDefaultWorkspace || !ReadWorkspaces(prefs).Contains(id) ||
+      (!profile.empty() && !ValidProfileBaseName(profile))) {
+    return false;
+  }
+  auto profiles = prefs.GetDict(kWorkspaceProfilesPref).Clone();
+  if (profile.empty()) {
+    profiles.Remove(base::NumberToString(id));
+  } else {
+    profiles.Set(base::NumberToString(id),
+                 base::DictValue().Set("profile", profile));
+  }
+  prefs.SetDict(kWorkspaceProfilesPref, std::move(profiles));
+  return true;
 }
 }  // namespace krypton_ui

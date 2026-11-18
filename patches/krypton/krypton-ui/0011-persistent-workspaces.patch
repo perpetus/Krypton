@@ -73,10 +73,11 @@ workspace catalog, models and metadata helpers live in chromium_src.
  
  #include <algorithm>
  #include <memory>
-@@ -207,6 +212,14 @@
+@@ -208,6 +213,15 @@
+ std::map<std::string, std::string> BrowserLiveTabContext::GetExtraDataForTab(
      int index) const {
    std::map<std::string, std::string> extra_data;
- 
++
 +#if BUILDFLAG(ENABLE_KRYPTON_UI)
 +  if (const auto workspace = krypton_ui::WorkspaceForTab(
 +          tab_strip_model_->GetWebContentsAt(index))) {
@@ -85,9 +86,9 @@ workspace catalog, models and metadata helpers live in chromium_src.
 +  }
 +#endif
 +
-   glic::PopulateGlicExtraData(tab_strip_model_->GetTabAtIndex(index),
-                               &extra_data);
+   tabs::TabInterface* const tab = tab_strip_model_->GetTabAtIndex(index);
  
+   glic::PopulateGlicExtraData(tab, &extra_data);
 --- a/chrome/browser/ui/browser_tabrestore.cc
 +++ b/chrome/browser/ui/browser_tabrestore.cc
 @@ -3,6 +3,11 @@
@@ -102,7 +103,7 @@ workspace catalog, models and metadata helpers live in chromium_src.
  
  #include <map>
  #include <memory>
-@@ -83,6 +88,9 @@
+@@ -84,6 +89,9 @@
    apps::SetAppIdForWebContents(browser->GetProfile(), web_contents.get(),
                                 extension_app_id);
  
@@ -110,5 +111,5 @@ workspace catalog, models and metadata helpers live in chromium_src.
 +  krypton_ui::RestoreWorkspaceForTab(web_contents.get(), extra_data);
 +#endif
    glic::RestoreGlicStateFromExtraData(web_contents.get(), extra_data);
-   send_tab_to_self::SendTabToSelfActivationTracker::RestoreFromExtraData(
+   contextual_tasks::ContextualTasksTabRestoreData::RestoreFromExtraData(
        web_contents.get(), extra_data);

@@ -1,0 +1,22 @@
+Enable Krypton's measured compositor trio by default. Paired iGPU Speedometer runs showed consistent gains and lower GPU time/memory. Preserve all upstream feature parameters and allow normal feature-list overrides.
+
+--- a/cc/base/features.cc
++++ b/cc/base/features.cc
+@@ -161,7 +161,7 @@
+ BASE_FEATURE(kInitImageDecodeLastUseTime, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ BASE_FEATURE(kThrottleRepeatedNoDamageFrames,
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++             base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ BASE_FEATURE_PARAM(int,
+                    kThrottleRepeatedNoDamageFramesThreshold1,
+@@ -340,7 +340,7 @@
+              base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ BASE_FEATURE(kResourcePoolPreferExactSizeReuse,
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++             base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ // Killswitch for disabling SendEarlyBeginMainFrame function in cc/scheduler.
+ BASE_FEATURE(kSendEarlyFinalBeginMainFrame, base::FEATURE_ENABLED_BY_DEFAULT);

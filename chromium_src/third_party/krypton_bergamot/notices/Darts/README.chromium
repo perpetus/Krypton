@@ -1,0 +1,12 @@
+Name: Darts
+URL: https://github.com/browsermt/sentencepiece
+Version: ae41b7740d7006596bb9257e83340b2620db9d00
+License: BSD-2-Clause
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+Pinned support code for the sandboxed local translation engine.
+Source: https://codeload.github.com/browsermt/sentencepiece/zip/ae41b7740d7006596bb9257e83340b2620db9d00
+Archive SHA-256: a8ef81e2d80249cfce95ccaa860f15fb639a2f70732a31c260c9e3e1daece10b

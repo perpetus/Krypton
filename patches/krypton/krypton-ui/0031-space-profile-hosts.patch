@@ -1,0 +1,186 @@
+Subject: Host other profiles' Spaces in the same window
+
+KryptonUI Spaces may each use their own persistent profile, and several Spaces
+may share one. A Space of another profile is shown by a real Browser of that
+profile, so its tabs, popups, permissions, saved credentials, extensions,
+autocomplete, history and sessions keep Chromium's own per-profile ownership.
+Its BrowserWidget becomes a child widget of the window's frame (one HWND and
+compositor) instead of a top-level window; the frame presents exactly one
+profile at a time.
+
+- BrowserNativeWidgetFactory asks KryptonUI for a hosted native widget first.
+  It returns null for every ordinary browser window.
+- BrowserView::OnWindowCloseRequested lets a frame close each hosted profile
+  through that profile's own beforeunload handling before closing itself.
+- Session rebuilding re-emits the window identity and host relationship as
+  window extra data, and session restore exposes a restored window's extra
+  data while it creates that window, so a restored host finds its frame.
+
+Nothing copies, migrates or substitutes profile data. All changes are gated by
+ENABLE_KRYPTON_UI; the owned implementation lives in chromium_src.
+
+Inactive profile Views, browser UI anchors and local extension shortcuts follow the presented host.
+
+--- a/chrome/browser/ui/views/frame/browser_native_widget_factory_aura.cc
++++ b/chrome/browser/ui/views/frame/browser_native_widget_factory_aura.cc
+@@ -5,8 +5,20 @@
+ #include "chrome/browser/ui/views/frame/browser_native_widget_aura.h"
+ #include "chrome/browser/ui/views/frame/browser_native_widget_factory.h"
+ 
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/hosted_browser_widget.h"
++#endif
++
+ BrowserNativeWidget* BrowserNativeWidgetFactory::Create(
+     BrowserWidget* browser_widget,
+     BrowserView* browser_view) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // A Space of another profile shares its frame's window as a child widget.
++  if (auto* hosted = krypton_ui::CreateHostedBrowserNativeWidget(
++          browser_widget, browser_view)) {
++    return hosted;
++  }
++#endif
+   return new BrowserNativeWidgetAura(browser_widget, browser_view);
+ }
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -1919,6 +1919,8 @@
+     deps = [
+       ":browser_native_widget_aura",
+       ":browser_native_widget_factory",
++      "//chrome/browser/ui/krypton_ui:buildflags",
++      "//chrome/browser/ui/krypton_ui:native_headers",
+     ]
+   }
+ 
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1739,6 +1739,11 @@
+ }
+ 
+ views::Widget* BrowserView::GetWidgetForAnchoring() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    krypton_ui_->PresentForBrowserUI();
++  }
++#endif
+ #if BUILDFLAG(IS_MAC)
+   if (WindowFeatureController::From(browser())->UsesImmersiveFullscreenMode()) {
+     return IsFullscreen() ? overlay_widget_.get() : GetWidget();
+@@ -1788,6 +1793,11 @@
+ // BrowserView, BrowserWindow implementation:
+ 
+ void BrowserView::Show() {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    krypton_ui_->PresentForBrowserUI();
++  }
++#endif
+   // Attempts to show closed windows should no-op.
+   if (browser_widget_->IsClosed()) {
+     return;
+@@ -4906,6 +4916,14 @@
+   if (tab_strip_view() && !tab_strip_view()->IsTabStripCloseable()) {
+     return views::CloseRequestResult::kCannotClose;
+   }
++
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // A window showing Spaces of several profiles first closes each hosted
++  // profile through its own beforeunload handling, then closes again.
++  if (krypton_ui_ && !krypton_ui_->CanCloseFrame()) {
++    return views::CloseRequestResult::kCannotClose;
++  }
++#endif
+ 
+   // Give beforeunload handlers, the user, or policy the chance to cancel the
+   // close before we hide the window below.
+@@ -6516,7 +6534,11 @@
+     return;
+   }
+ 
+-  const bool is_active = browser_widget_->ShouldPaintAsActive();
++  bool is_active = browser_widget_->ShouldPaintAsActive();
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Child profile hosts inherit frame activation; hidden profiles must not.
++  is_active = is_active && (!krypton_ui_ || krypton_ui_->presented());
++#endif
+ 
+   // TODO: Unify semantics of "active" between the BrowserList and
+   // BrowserWindowInterface clients. The latter is more accurate definition
+--- a/chrome/browser/sessions/session_service_base.cc
++++ b/chrome/browser/sessions/session_service_base.cc
+@@ -757,6 +757,19 @@
+           browser->GetSessionID(),
+           BrowserWindow::FromBrowser(browser)->IsVisibleOnAllWorkspaces()));
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  // Window identity and, for a hosted profile, the window whose frame it
++  // shares. Rebuilding must not drop them.
++  std::map<std::string, std::string> krypton_window_data;
++  krypton_ui::AddWindowSessionData(browser->GetSessionID().id(),
++                                   krypton_window_data);
++  for (const auto& [key, value] : krypton_window_data) {
++    command_storage_manager()->AppendRebuildCommand(
++        sessions::CreateAddWindowExtraDataCommand(browser->GetSessionID(), key,
++                                                  value));
++  }
++#endif
++
+   command_storage_manager()->AppendRebuildCommand(
+       sessions::CreateSetSelectedTabInWindowCommand(
+           browser->GetSessionID(),
+--- a/chrome/browser/sessions/session_restore.cc
++++ b/chrome/browser/sessions/session_restore.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/sessions/session_restore.h"
++
++#include "chrome/browser/ui/krypton_ui/buildflags.h"
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/ui/krypton_ui/workspace_session.h"
++#endif
+ 
+ #include <stddef.h>
+ 
+@@ -1407,6 +1412,10 @@
+     }
+ 
+     base::TimeTicks now = base::TimeTicks::Now();
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++    // A restored Space host finds the window whose frame it shares.
++    const krypton_ui::ScopedRestoredWindow krypton_window(extra_data);
++#endif
+     BrowserWindowInterface* browser_window =
+         CreateBrowserWindow(std::move(params));
+     if (auto* manager =
+--- a/chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h
++++ b/chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h
+@@ -81,6 +81,10 @@
+   // accelerators with. Not owned by us.
+   raw_ptr<views::FocusManager> focus_manager_;
+ 
++  // Several profile hosts can share one FocusManager. Only the presented
++  // host may handle its profile's local extension accelerators.
++  bool host_active_ = true;
++
+   // Only set for the window-scoped instance created by
+   // BrowserWindowFeatures.
+   std::optional<ui::ScopedUnownedUserData<ExtensionKeybindingRegistryViews>>
+--- a/chrome/browser/ui/views/extensions/extension_keybinding_registry_views.cc
++++ b/chrome/browser/ui/views/extensions/extension_keybinding_registry_views.cc
+@@ -95,10 +95,11 @@
+ }
+ 
+ bool ExtensionKeybindingRegistryViews::CanHandleAccelerators() const {
+-  return true;
++  return host_active_;
+ }
+ 
+ void ExtensionKeybindingRegistryViews::OnHostActivationChanged(bool active) {
++  host_active_ = active;
+   if (extensions::ExtensionCommandsGlobalRegistry* const global_registry =
+           extensions::ExtensionCommandsGlobalRegistry::Get(profile_)) {
+     if (active) {

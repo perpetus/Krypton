@@ -1,0 +1,520 @@
+Krypton: Adapt pinned inference dependencies to clang-cl and static CRT.
+Retain CPU dispatch boundaries, explicit float comparison semantics, runtime
+validation and the speech sandbox. No ambient SDK dependencies are selected.
+
+--- a/abseil/absl/base/attributes.h
++++ b/abseil/absl/base/attributes.h
+@@ -900,6 +900,14 @@
+ #define ABSL_ATTRIBUTE_LIFETIME_BOUND
+ #endif
+ 
++// Krypton: use the current spelling for an implicit-object capture, while
++// retaining the generic upstream attribute for explicit parameters.
++#if ABSL_HAVE_CPP_ATTRIBUTE(clang::lifetime_capture_by_this)
++#define ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS [[clang::lifetime_capture_by_this]]
++#else
++#define ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this)
++#endif
++
+ // Internal attribute; name and documentation TBD.
+ //
+ // See the upstream documentation:
+--- a/abseil/absl/base/internal/spinlock.h
++++ b/abseil/absl/base/internal/spinlock.h
+@@ -239,7 +239,7 @@
+ class ABSL_SCOPED_LOCKABLE [[nodiscard]] SpinLockHolder {
+  public:
+   inline explicit SpinLockHolder(
+-      SpinLock& l ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++      SpinLock& l ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_EXCLUSIVE_LOCK_FUNCTION(l)
+       : lock_(l) {
+     l.lock();
+--- a/abseil/absl/container/internal/btree_container.h
++++ b/abseil/absl/container/internal/btree_container.h
+@@ -505,9 +505,9 @@
+                   0))>                                                       \
+   decltype(auto) Func(                                                       \
+       __VA_ARGS__ key_arg<K> KQual k ABSL_INTERNAL_IF_##KValue(              \
+-          ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this)),                        \
++          ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS),                        \
+       M MQual obj ABSL_INTERNAL_IF_##MValue(                                 \
+-          ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this)))                        \
++          ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS))                        \
+       ABSL_ATTRIBUTE_LIFETIME_BOUND {                                        \
+     return ABSL_INTERNAL_IF_##KValue##_OR_##MValue(                          \
+         (this->template Func<K, M, 0>), Callee)(                             \
+@@ -607,7 +607,7 @@
+           0>                                                                   \
+   decltype(auto) Func(                                                         \
+       __VA_ARGS__ key_arg<K> KQual k ABSL_INTERNAL_IF_##KValue(                \
+-          ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this)),                          \
++          ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS),                          \
+       Args &&...args) ABSL_ATTRIBUTE_LIFETIME_BOUND {                          \
+     return ABSL_INTERNAL_IF_##KValue((this->template Func<K, 0>), Callee)(     \
+         __VA_ARGS__ std::forward<decltype(k)>(k),                              \
+@@ -634,7 +634,7 @@
+   }
+   template <class K = key_type, int &..., EnableIf<LifetimeBoundK<K, true>> = 0>
+   mapped_type &operator[](
+-      const key_arg<K> &k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++      const key_arg<K> &k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template operator[]<K, 0>(k);
+   }
+@@ -643,8 +643,7 @@
+     return try_emplace(std::forward<K>(k)).first->second;
+   }
+   template <class K = key_type, int &..., EnableIf<LifetimeBoundK<K, true>> = 0>
+-  mapped_type &operator[](key_arg<K> &&k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(
+-      this)) ABSL_ATTRIBUTE_LIFETIME_BOUND {
++  mapped_type &operator[](key_arg<K> &&k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS) ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template operator[]<K, 0>(std::forward<K>(k));
+   }
+ 
+--- a/abseil/absl/container/internal/raw_hash_map.h
++++ b/abseil/absl/container/internal/raw_hash_map.h
+@@ -114,9 +114,8 @@
+                   0))>                                                         \
+   decltype(auto) Func(                                                         \
+       __VA_ARGS__ key_arg<K> KQual k ABSL_INTERNAL_IF_##KValue(                \
+-          ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this)),                          \
+-      V VQual v ABSL_INTERNAL_IF_##VValue(ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY( \
+-          this))) ABSL_ATTRIBUTE_LIFETIME_BOUND {                              \
++          ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS),                          \
++      V VQual v ABSL_INTERNAL_IF_##VValue(ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)) ABSL_ATTRIBUTE_LIFETIME_BOUND {                              \
+     return ABSL_INTERNAL_IF_##KValue##_OR_##VValue(                            \
+         (this->template Func<K, V, 0>), Callee)(                               \
+         std::forward<decltype(k)>(k), std::forward<decltype(v)>(v)) Tail;      \
+@@ -213,7 +212,7 @@
+             typename std::enable_if<
+                 !std::is_convertible<K, const_iterator>::value, int>::type = 0>
+   std::pair<iterator, bool> try_emplace(
+-      key_arg<K> &&k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this),
++      key_arg<K> &&k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS,
+       Args &&...args) ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template try_emplace<K, 0>(std::forward<K>(k),
+                                             std::forward<Args>(args)...);
+@@ -232,7 +231,7 @@
+             typename std::enable_if<
+                 !std::is_convertible<K, const_iterator>::value, int>::type = 0>
+   std::pair<iterator, bool> try_emplace(
+-      const key_arg<K> &k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this),
++      const key_arg<K> &k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS,
+       Args &&...args) ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template try_emplace<K, 0>(k, std::forward<Args>(args)...);
+   }
+@@ -246,7 +245,7 @@
+   template <class K = key_type, class... Args,
+             EnableIf<LifetimeBoundK<K, true, K *>> = 0>
+   iterator try_emplace(const_iterator hint,
+-                       key_arg<K> &&k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this),
++                       key_arg<K> &&k ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS,
+                        Args &&...args) ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template try_emplace<K, 0>(hint, std::forward<K>(k),
+                                             std::forward<Args>(args)...);
+@@ -262,7 +261,7 @@
+             EnableIf<LifetimeBoundK<K, true>> = 0>
+   iterator try_emplace(const_iterator hint,
+                        const key_arg<K> &k
+-                           ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this),
++                           ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS,
+                        Args &&...args) ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template try_emplace<K, 0>(hint, std::forward<K>(k),
+                                             std::forward<Args>(args)...);
+@@ -302,7 +301,7 @@
+   template <class K = key_type, class P = Policy, int &...,
+             EnableIf<LifetimeBoundK<K, true, K *>> = 0>
+   MappedReference<P> operator[](
+-      key_arg<K> &&key ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++      key_arg<K> &&key ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template operator[]<K, P, 0>(std::forward<K>(key));
+   }
+@@ -319,7 +318,7 @@
+   template <class K = key_type, class P = Policy, int &...,
+             EnableIf<LifetimeBoundK<K, true>> = 0>
+   MappedReference<P> operator[](
+-      const key_arg<K> &key ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++      const key_arg<K> &key ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template operator[]<K, P, 0>(key);
+   }
+--- a/abseil/absl/container/internal/raw_hash_set.h
++++ b/abseil/absl/container/internal/raw_hash_set.h
+@@ -2426,7 +2426,7 @@
+                                  IsLifetimeBoundAssignmentFrom<T>::value,
+                              int> = 0>
+   std::pair<iterator, bool> insert(
+-      T&& value ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++      T&& value ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template insert<T, 0>(std::forward<T>(value));
+   }
+@@ -2455,7 +2455,7 @@
+                                  IsLifetimeBoundAssignmentFrom<const T&>::value,
+                              int> = 0>
+   std::pair<iterator, bool> insert(
+-      const T& value ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++      const T& value ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template insert<T, 0>(value);
+   }
+@@ -2475,7 +2475,7 @@
+   }
+ #if __cplusplus >= 202002L
+   std::pair<iterator, bool> insert(
+-      init_type&& value ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++      init_type&& value ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_ATTRIBUTE_LIFETIME_BOUND
+     requires(IsLifetimeBoundAssignmentFrom<init_type>::value)
+   {
+@@ -2497,7 +2497,7 @@
+                                  IsLifetimeBoundAssignmentFrom<T>::value,
+                              int> = 0>
+   iterator insert(const_iterator hint,
+-                  T&& value ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++                  T&& value ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_ATTRIBUTE_LIFETIME_BOUND {
+     return this->template insert<T, 0>(hint, std::forward<T>(value));
+   }
+--- a/abseil/absl/status/statusor.h
++++ b/abseil/absl/status/statusor.h
+@@ -405,7 +405,7 @@
+             typename std::enable_if<
+                 internal_statusor::IsAssignmentValid<T, U, true>::value,
+                 int>::type = 0>
+-  StatusOr& operator=(U&& v ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this)) {
++  StatusOr& operator=(U&& v ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS) {
+     this->Assign(std::forward<U>(v));
+     return *this;
+   }
+--- a/abseil/absl/synchronization/mutex.h
++++ b/abseil/absl/synchronization/mutex.h
+@@ -601,7 +601,7 @@
+ 
+   // Calls `mu.lock()` and returns when that call returns. That is, `mu` is
+   // guaranteed to be locked when this object is constructed.
+-  explicit MutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++  explicit MutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_EXCLUSIVE_LOCK_FUNCTION(mu)
+       : mu_(mu) {
+     this->mu_.lock();
+@@ -616,7 +616,7 @@
+   // Like above, but calls `mu.LockWhen(cond)` instead. That is, in addition to
+   // the above, the condition given by `cond` is also guaranteed to hold when
+   // this object is constructed.
+-  explicit MutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this),
++  explicit MutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS,
+                      const Condition& cond) ABSL_EXCLUSIVE_LOCK_FUNCTION(mu)
+       : mu_(mu) {
+     this->mu_.LockWhen(cond);
+@@ -643,7 +643,7 @@
+ // releases a shared lock on a `Mutex` via RAII.
+ class ABSL_SCOPED_LOCKABLE ReaderMutexLock {
+  public:
+-  explicit ReaderMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++  explicit ReaderMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_SHARED_LOCK_FUNCTION(mu)
+       : mu_(mu) {
+     mu.lock_shared();
+@@ -652,7 +652,7 @@
+   explicit ReaderMutexLock(Mutex* absl_nonnull mu) ABSL_SHARED_LOCK_FUNCTION(mu)
+       : ReaderMutexLock(*mu) {}
+ 
+-  explicit ReaderMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this),
++  explicit ReaderMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS,
+                            const Condition& cond) ABSL_SHARED_LOCK_FUNCTION(mu)
+       : mu_(mu) {
+     mu.ReaderLockWhen(cond);
+@@ -679,7 +679,7 @@
+ // releases a write (exclusive) lock on a `Mutex` via RAII.
+ class ABSL_SCOPED_LOCKABLE WriterMutexLock {
+  public:
+-  explicit WriterMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this))
++  explicit WriterMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
+       ABSL_EXCLUSIVE_LOCK_FUNCTION(mu)
+       : mu_(mu) {
+     mu.lock();
+@@ -689,7 +689,7 @@
+       ABSL_EXCLUSIVE_LOCK_FUNCTION(mu)
+       : WriterMutexLock(*mu) {}
+ 
+-  explicit WriterMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this),
++  explicit WriterMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS,
+                            const Condition& cond)
+       ABSL_EXCLUSIVE_LOCK_FUNCTION(mu)
+       : mu_(mu) {
+@@ -1093,8 +1093,7 @@
+ // mutex before destruction. `Release()` may be called at most once.
+ class ABSL_SCOPED_LOCKABLE ReleasableMutexLock {
+  public:
+-  explicit ReleasableMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(
+-      this)) ABSL_EXCLUSIVE_LOCK_FUNCTION(mu)
++  explicit ReleasableMutexLock(Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS) ABSL_EXCLUSIVE_LOCK_FUNCTION(mu)
+       : mu_(&mu) {
+     this->mu_->lock();
+   }
+@@ -1104,7 +1103,7 @@
+       : ReleasableMutexLock(*mu) {}
+ 
+   explicit ReleasableMutexLock(
+-      Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY(this),
++      Mutex& mu ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS,
+       const Condition& cond) ABSL_EXCLUSIVE_LOCK_FUNCTION(mu)
+       : mu_(&mu) {
+     this->mu_->LockWhen(cond);
+--- a/onnx/CMakeLists.txt
++++ b/onnx/CMakeLists.txt
+@@ -120,7 +120,7 @@
+     string(APPEND CMAKE_CXX_FLAGS " /EHsc /wd26812")
+     string(APPEND CMAKE_C_FLAGS " /EHsc /wd26812")
+   endif()
+-  add_compile_options(/MP /utf-8 /nologo)
++  add_compile_options(/utf-8 /nologo)
+   add_compile_options(
+     /wd5287  # https://developercommunity.visualstudio.com/t/warning-C5287:-operands-are-different-e/10877942?sort=newest
+   )
+--- a/onnxruntime/cmake/CMakeLists.txt
++++ b/onnxruntime/cmake/CMakeLists.txt
+@@ -1300,7 +1300,6 @@
+       set_target_properties(${target_name}
+                       PROPERTIES VS_GLOBAL_CAExcludePath "${ORT_BINARY_DIR};${ORT_SOURCE_DIR}")
+       # We do not treat warnings from 3rd-party libraries as errors. In order to do that, we need to add their header files locations to /external:I.
+-      target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:CXX,C>:/experimental:external>" "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:--compiler-options /experimental:external>")
+       target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:CXX,C>:/external:W0>" "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:--compiler-options /external:W0>")
+       #if(NOT onnxruntime_USE_VCPKG)
+       #  target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:CXX,C>:/external:templates->" "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:--compiler-options /external:templates->")
+--- a/onnxruntime/include/onnxruntime/core/common/common.h
++++ b/onnxruntime/include/onnxruntime/core/common/common.h
+@@ -42,7 +42,7 @@
+ using TimePoint = std::chrono::high_resolution_clock::time_point;
+ 
+ #ifdef _WIN32
+-#define ORT_UNUSED_PARAMETER(x) (x)
++#define ORT_UNUSED_PARAMETER(x) static_cast<void>(x)
+ #else
+ #define ORT_UNUSED_PARAMETER(x) (void)(x)
+ #endif
+--- a/onnxruntime/include/onnxruntime/core/common/float16.h
++++ b/onnxruntime/include/onnxruntime/core/common/float16.h
+@@ -79,8 +79,8 @@
+ 
+   operator float() const noexcept { return ToFloat(); }
+ 
+-  using Base::operator==;
+-  using Base::operator!=;
++  bool operator==(const MLFloat16& rhs) const noexcept { return Base::operator==(rhs); }
++  bool operator!=(const MLFloat16& rhs) const noexcept { return !(*this == rhs); }
+   using Base::operator<;
+ };
+ 
+--- a/onnxruntime/include/onnxruntime/core/framework/data_types_internal.h
++++ b/onnxruntime/include/onnxruntime/core/framework/data_types_internal.h
+@@ -786,7 +786,7 @@
+             std::forward<Args>(args)...)...});
+ 
+     // avoid "unused parameter" warning for the case where Types is empty
+-    static_cast<void>(std::array<int, sizeof...(Args)>{(ORT_UNUSED_PARAMETER(args), 0)...});
++    (static_cast<void>(args), ...);
+ 
+     helper.CheckCalledOnce();
+   }
+@@ -868,7 +868,7 @@
+             std::forward<Args>(args)...)...});
+ 
+     // avoid "unused parameter" warning for the case where Types is empty
+-    static_cast<void>(std::array<int, sizeof...(Args)>{(ORT_UNUSED_PARAMETER(args), 0)...});
++    (static_cast<void>(args), ...);
+ 
+     return helper.Get();
+   }
+--- a/onnxruntime/onnxruntime/contrib_ops/cpu/quantization/matmul_nbits.cc
++++ b/onnxruntime/onnxruntime/contrib_ops/cpu/quantization/matmul_nbits.cc
+@@ -460,16 +460,16 @@
+                                      std::optional<Tensor>& storage, const Tensor*& result) const;
+ 
+   // dequantize B first and then compute float gemm
+-  Status ComputeBUnpacked(const Tensor* a,
+-                          const Tensor* b,
+-                          const Tensor* scales,
+-                          const Tensor* zero_points,
+-                          const Tensor* reorder_idx,
+-                          const Tensor* bias,
+-                          Tensor* y,
+-                          AllocatorPtr& allocator,
+-                          concurrency::ThreadPool* thread_pool,
+-                          const MatMulComputeHelper& helper) const {
++  Status ComputeBUnpacked([[maybe_unused]] const Tensor* a,
++                          [[maybe_unused]] const Tensor* b,
++                          [[maybe_unused]] const Tensor* scales,
++                          [[maybe_unused]] const Tensor* zero_points,
++                          [[maybe_unused]] const Tensor* reorder_idx,
++                          [[maybe_unused]] const Tensor* bias,
++                          [[maybe_unused]] Tensor* y,
++                          [[maybe_unused]] AllocatorPtr& allocator,
++                          [[maybe_unused]] concurrency::ThreadPool* thread_pool,
++                          [[maybe_unused]] const MatMulComputeHelper& helper) const {
+     ORT_THROW("ComputeBUnpacked is not supported for T1 type.");
+   }
+ 
+--- a/onnxruntime/onnxruntime/core/common/helper.cc
++++ b/onnxruntime/onnxruntime/core/common/helper.cc
+@@ -27,7 +27,7 @@
+   assert(len > 0);
+   std::string ret(static_cast<size_t>(len) - 1, '\0');
+ #pragma warning(disable : 4189)
+-  const int r = WideCharToMultiByte(CP_UTF8, 0, s.data(), src_len, (char*)ret.data(), len, nullptr, nullptr);
++  [[maybe_unused]] const int r = WideCharToMultiByte(CP_UTF8, 0, s.data(), src_len, (char*)ret.data(), len, nullptr, nullptr);
+   assert(len == r);
+ #pragma warning(default : 4189)
+   return ret;
+@@ -42,7 +42,7 @@
+   assert(len > 0);
+   std::wstring ret(static_cast<size_t>(len) - 1, '\0');
+ #pragma warning(disable : 4189)
+-  const int r = MultiByteToWideChar(CP_UTF8, 0, s.data(), src_len, (wchar_t*)ret.data(), len);
++  [[maybe_unused]] const int r = MultiByteToWideChar(CP_UTF8, 0, s.data(), src_len, (wchar_t*)ret.data(), len);
+   assert(len == r);
+ #pragma warning(default : 4189)
+   return ret;
+--- a/onnxruntime/onnxruntime/core/common/profiler_common.cc
++++ b/onnxruntime/onnxruntime/core/common/profiler_common.cc
+@@ -12,7 +12,7 @@
+ namespace onnxruntime {
+ namespace profiling {
+ 
+-static constexpr int kMaxSymbolSize = 1024;
++[[maybe_unused]] static constexpr int kMaxSymbolSize = 1024;
+ 
+ std::string demangle(const char* name) {
+ #ifndef _MSC_VER
+--- a/onnxruntime/onnxruntime/core/mlas/lib/q4gemm_avx512.cpp
++++ b/onnxruntime/onnxruntime/core/mlas/lib/q4gemm_avx512.cpp
+@@ -1218,6 +1218,11 @@
+ }
+ 
+ 
++#if defined(__clang__)
++// These kernels are selected only by the existing AVX-512 VNNI dispatch.
++#pragma clang attribute push(__attribute__((target("avx512vl,avx512vnni"))), apply_to = function)
++#endif
++
+ template<typename Q4Type>
+ MLAS_FORCEINLINE
+ size_t
+@@ -1414,7 +1419,7 @@
+ 
+ 
+ template<>
+-MLAS_FORCEINLINE
++__declspec(noinline)
+ size_t
+ MlasQ8Q4GemmKernel<MLAS_Q4TYPE_BLK1,MLAS_FP_Q4_GEMM_KERNEL_AVX512VNNI>(
+     const int8_t* QuantA,
+@@ -1434,7 +1439,7 @@
+ }
+ 
+ template<>
+-MLAS_FORCEINLINE
++__declspec(noinline)
+ size_t
+ MlasQ8Q4GemmKernel<MLAS_Q4TYPE_BLK0, MLAS_FP_Q4_GEMM_KERNEL_AVX512VNNI>(
+     const int8_t* QuantA,
+@@ -1454,7 +1459,7 @@
+ }
+ 
+ template<>
+-MLAS_FORCEINLINE
++__declspec(noinline)
+ size_t
+ MlasQ8Q4GemmKernel<MLAS_Q4TYPE_BLK2, MLAS_FP_Q4_GEMM_KERNEL_AVX512VNNI>(
+     const int8_t* QuantA,
+@@ -1474,7 +1479,7 @@
+ }
+ 
+ template<>
+-MLAS_FORCEINLINE
++__declspec(noinline)
+ size_t
+ MlasQ8Q4GemmKernel<MLAS_Q4TYPE_BLK4, MLAS_FP_Q4_GEMM_KERNEL_AVX512VNNI>(
+     const int8_t* QuantA,
+@@ -1507,3 +1512,7 @@
+     Q80Quant_avx512vnni,
+     Q8Q4Operations_avx512vnni
+ };
++
++#if defined(__clang__)
++#pragma clang attribute pop
++#endif
+--- a/onnxruntime/onnxruntime/core/platform/windows/env.cc
++++ b/onnxruntime/onnxruntime/core/platform/windows/env.cc
+@@ -162,7 +162,7 @@
+         for (auto global_processor_id : *p->affinity) {
+           auto processor_info = env.GetProcessorAffinityMask(global_processor_id);
+           if (processor_info.local_processor_id > -1 &&
+-              processor_info.local_processor_id < sizeof(KAFFINITY) * CHAR_BIT) {
++              static_cast<size_t>(processor_info.local_processor_id) < sizeof(KAFFINITY) * CHAR_BIT) {
+             mask |= bit << processor_info.local_processor_id;
+           } else {
+             // Logical processor id starts from 0 internally, but in ort API, it starts from 1,
+@@ -864,8 +864,8 @@
+   // update prefixes
+   if (canonical_path.find(ORT_TSTR(R"(\\?\)")) == 0) {
+     if (canonical_path.size() > 6 &&
+-        (ORT_TSTR('A') <= canonical_path[4] && canonical_path[4] <= ORT_TSTR('Z') ||
+-         ORT_TSTR('a') <= canonical_path[4] && canonical_path[4] <= ORT_TSTR('z')) &&
++        ((ORT_TSTR('A') <= canonical_path[4] && canonical_path[4] <= ORT_TSTR('Z')) ||
++         (ORT_TSTR('a') <= canonical_path[4] && canonical_path[4] <= ORT_TSTR('z'))) &&
+         canonical_path[5] == ORT_TSTR(':')) {
+       // "\\?\<drive>:" -> "<drive>:"
+       canonical_path.erase(0, 4);
+@@ -1108,7 +1108,7 @@
+     DWORD cb_needed = 0;
+     if (MyEnumProcessModules(current_proc, modules_ptr, size, &cb_needed) != 0 && size == cb_needed) {
+       for (size_t i = 0; i < num_handles; i++) {
+-        symbol = GetProcAddress(modules[i], name);
++        symbol = reinterpret_cast<void*>(GetProcAddress(modules[i], name));
+         if (symbol != nullptr) {
+           break;
+         }
+@@ -1127,7 +1127,7 @@
+   if (handle == nullptr) {
+     *symbol = dlfcn_win32::SearchModulesForSymbol(symbol_name.c_str());
+   } else {
+-    *symbol = ::GetProcAddress(reinterpret_cast<HMODULE>(handle), symbol_name.c_str());
++    *symbol = reinterpret_cast<void*>(::GetProcAddress(reinterpret_cast<HMODULE>(handle), symbol_name.c_str()));
+   }
+ 
+   if (!*symbol) {
+--- a/onnxruntime/onnxruntime/core/platform/windows/hardware_core_enumerator.cc
++++ b/onnxruntime/onnxruntime/core/platform/windows/hardware_core_enumerator.cc
+@@ -22,7 +22,7 @@
+ 
+ static LogicalProcessorInformation GetLogicalProcessorInfos(LOGICAL_PROCESSOR_RELATIONSHIP relationship) {
+   DWORD length = 0;
+-  DWORD rc = GetLogicalProcessorInformationEx(relationship, nullptr, &length);
++  [[maybe_unused]] DWORD rc = GetLogicalProcessorInformationEx(relationship, nullptr, &length);
+ 
+   assert(rc == FALSE);
+ 
+@@ -71,6 +71,8 @@
+           dwLevel3GroupMask |= currentProcessorInfo->Cache.GroupMask.Mask;
+         }
+         break;
++      default:
++        break;
+     }
+ 
+     read += currentProcessorInfo->Size;
+--- a/protobuf/cmake/protobuf-configure-target.cmake
++++ b/protobuf/cmake/protobuf-configure-target.cmake
+@@ -14,7 +14,7 @@
+     target_compile_features("${target}" PUBLIC cxx_std_17)
+     if (MSVC)
+         # Build with multiple processes
+-        target_compile_options("${target}" PRIVATE /MP)
++        # Native Ninja owns compile parallelism; clang-cl does not support /MP.
+         # Set source file and execution character sets to UTF-8
+         target_compile_options("${target}" PRIVATE /utf-8)
+         # MSVC warning suppressions

@@ -1,0 +1,109 @@
+Enable Krypton crash reporting through its existing Crashpad transport.
+
+Krypton uses its own configured HTTPS minidump endpoint, initially Sentry Cloud,
+while preserving Helium's Ask/Automatic/Disabled consent, policy and upload
+rate limits. Keep the endpoint empty by default; release flags select the
+public ingestion URL and environment. Sentry release metadata contains only
+build versions. This adds no second crash handler, analytics, traces or logs.
+The existing disabled-endpoint and visible-branding patches remain earlier
+layers; this final patch enables only the separately configured crash service.
+
+--- a/components/crash/core/app/BUILD.gn
++++ b/components/crash/core/app/BUILD.gn
+@@ -6,10 +6,32 @@
+ assert(!is_fuchsia)
+ 
+ import("//base/debug/debug.gni")
++import("//build/buildflag_header.gni")
+ import("//components/gwp_asan/buildflags/buildflags.gni")
+ 
+ if (is_android) {
+   import("//build/config/android/config.gni")
++}
++
++declare_args() {
++  # Empty keeps upload transport disabled. The public ingestion key is not an
++  # authentication token; account credentials must never enter the build.
++  krypton_crash_upload_url = ""
++  krypton_crash_environment = "development"
++}
++
++if (krypton_crash_upload_url != "") {
++  _krypton_crash_url_parts = string_split(krypton_crash_upload_url, "://")
++  assert(_krypton_crash_url_parts[0] == "https",
++         "Krypton crash uploads require HTTPS.")
++}
++
++buildflag_header("krypton_crash_reporting_buildflags") {
++  header = "krypton_crash_reporting_buildflags.h"
++  flags = [
++    "KRYPTON_CRASH_UPLOAD_URL=\"$krypton_crash_upload_url\"",
++    "KRYPTON_CRASH_ENVIRONMENT=\"$krypton_crash_environment\"",
++  ]
+ }
+ 
+ source_set("lib") {
+@@ -21,7 +43,9 @@
+   ]
+ 
+   deps = [
++    ":krypton_crash_reporting_buildflags",
+     "//base",
++    "//base/version_info",
+     "//build:branding_buildflags",
+   ]
+ }
+--- a/components/crash/core/app/crash_reporter_client.cc
++++ b/components/crash/core/app/crash_reporter_client.cc
+@@ -4,11 +4,12 @@
+ 
+ #include "components/crash/core/app/crash_reporter_client.h"
+ 
++#include "base/check.h"
+ #include "base/command_line.h"
++#include "base/version_info/version_info.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+-
+-#include "base/check.h"
++#include "components/crash/core/app/krypton_crash_reporting_buildflags.h"
+ 
+ // On Windows don't use FilePath.
+ // http://crbug.com/604923
+@@ -154,7 +155,7 @@
+ #endif
+ 
+ #if defined(OFFICIAL_BUILD)
+-  return std::string();  // No Krypton crash endpoint yet.
++  return BUILDFLAG(KRYPTON_CRASH_UPLOAD_URL);
+ #else
+   return std::string();
+ #endif
+@@ -170,7 +171,15 @@
+ 
+ std::map<std::string, std::string>
+ CrashReporterClient::GetExtraProcessAnnotations() {
+-  return {};
++  // Crashpad forwards these fields in the existing minidump multipart upload.
++  // Keep metadata technical: no browsing history, page URLs or user identity.
++  return {
++      {"sentry[release]",
++       "krypton@" + std::string(version_info::GetHeliumVersionNumber())},
++      {"sentry[environment]", BUILDFLAG(KRYPTON_CRASH_ENVIRONMENT)},
++      {"sentry[tags][chromium_version]",
++       std::string(version_info::GetVersionNumber())},
++  };
+ }
+ 
+ bool CrashReporterClient::ShouldMonitorCrashHandlerExpensively() {
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -1610,7 +1610,7 @@
+       Crash reporting
+     </message>
+     <message name="IDS_SETTINGS_HELIUM_CRASH_REPORTING_DESCRIPTION" desc="Description of the setting that controls crash reporting">
+-      Crash-report uploads are disabled in this build.
++      Choose whether Krypton asks before sending crash reports to Sentry or sends them automatically. Disabling reporting deletes pending reports.
+     </message>
+     <message name="IDS_SETTINGS_HELIUM_CRASH_REPORTING_DISABLED" desc="Crash reporting option that disables prompts and submissions">
+       Disabled

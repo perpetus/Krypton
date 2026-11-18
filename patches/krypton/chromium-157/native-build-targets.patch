@@ -7,7 +7,7 @@
 
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -2227,6 +2227,16 @@
+@@ -2230,6 +2230,16 @@
    if (enable_webui_tabstrip_ntb) {
      deps += [ "//chrome/browser/ui/webui/tabstrip_ntb" ]
    }
@@ -26,7 +26,7 @@
  # This target no longer has any sources of its own; it only aggregates
 --- a/chrome/browser/prefs/BUILD.gn
 +++ b/chrome/browser/prefs/BUILD.gn
-@@ -505,6 +505,15 @@
+@@ -507,6 +507,15 @@
    if (!is_android) {
      deps += [ "//chrome/browser/ui:browser_view_prefs" ]
    }
@@ -44,7 +44,7 @@
  # There are users of this util such as //c/b/ash/app_restore. If it's part of
 --- a/chrome/browser/renderer_context_menu/BUILD.gn
 +++ b/chrome/browser/renderer_context_menu/BUILD.gn
-@@ -254,6 +254,16 @@
+@@ -255,6 +255,16 @@
        "//extensions/common",
      ]
    }
@@ -81,7 +81,7 @@
  if (!is_android) {
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -519,7 +519,16 @@
+@@ -521,7 +521,16 @@
        "//ui/gfx/geometry",
        "//ui/gfx/range",
      ]
@@ -99,7 +99,7 @@
  
    source_set("scoped_tabbed_browser_displayer") {
      public = [ "scoped_tabbed_browser_displayer.h" ]
-@@ -583,7 +592,16 @@
+@@ -586,7 +595,16 @@
        "//ui/base",
        "//ui/base/mojom:ui_base_types",
      ]
@@ -117,9 +117,9 @@
  
    source_set("browser_tab_restorer") {
      sources = [ "browser_tab_restorer.cc" ]
-@@ -979,7 +997,16 @@
-       "//ui/gfx",
-       "//ui/gfx/geometry",
+@@ -1011,7 +1029,16 @@
+       "//components/prefs",
+       "//components/remote_cocoa/app_shim",
      ]
 -  }
 +  
@@ -133,11 +133,11 @@
 +  ]
 +}
  }
- if (is_mac) {
-   source_set("browser_commands_mac") {
-@@ -1878,7 +1905,16 @@
-         "//chrome/common:chrome_features",
-       ]
+ 
+ # Leaf targets carved out of the //chrome/browser/ui:ui monolith. Each is a
+@@ -1931,7 +1958,16 @@
+     if (toolkit_views && !is_chromeos) {
+       sources += [ "screen_capture_notification_ui_browsertest.cc" ]
      }
 -  }
 +  
@@ -151,11 +151,11 @@
 +  ]
 +}
  
-   source_set("incognito_clear_browsing_data_dialog_interface") {
-     public = [ "incognito_clear_browsing_data_dialog_interface.h" ]
-@@ -1967,7 +2003,16 @@
-     } else {
-       deps += [ "//chrome/browser/download/bubble" ]
+   source_set("uma_browsing_activity_observer") {
+     public = [ "uma_browsing_activity_observer.h" ]
+@@ -2042,7 +2078,16 @@
+     if (use_ozone) {
+       deps += [ "//ui/ozone" ]
      }
 -  }
 +  
@@ -169,11 +169,11 @@
 +  ]
 +}
  
-   source_set("browser_tests") {
-     testonly = true
+   if (is_android) {
+     deps += [ "//chrome/browser/ui/android/autofill:test_support" ]
 --- a/chrome/browser/ui/bookmarks/BUILD.gn
 +++ b/chrome/browser/ui/bookmarks/BUILD.gn
-@@ -116,6 +116,15 @@
+@@ -117,6 +117,15 @@
    if (is_mac) {
      deps += [ "//chrome/browser/web_applications" ]
    }
@@ -208,7 +208,7 @@
 +}
 --- a/chrome/browser/ui/navigator/BUILD.gn
 +++ b/chrome/browser/ui/navigator/BUILD.gn
-@@ -102,6 +102,16 @@
+@@ -103,6 +103,16 @@
        "//chrome/browser/ui/window_feature_controller",
      ]
    }
@@ -260,7 +260,7 @@
  if (is_win) {
 --- a/chrome/browser/ui/tabs/BUILD.gn
 +++ b/chrome/browser/ui/tabs/BUILD.gn
-@@ -425,7 +425,17 @@
+@@ -434,7 +434,17 @@
        "//components/web_modal",
        "//components/webapps/common",
      ]
@@ -281,7 +281,7 @@
      sources = [
 --- a/chrome/browser/ui/views/frame/BUILD.gn
 +++ b/chrome/browser/ui/views/frame/BUILD.gn
-@@ -759,6 +759,14 @@
+@@ -748,6 +748,14 @@
      "//ui/gfx",
      "//ui/views",
      "//ui/views/controls/webview",
@@ -296,7 +296,7 @@
    ]
  }
  
-@@ -1036,6 +1044,15 @@
+@@ -1023,6 +1031,15 @@
        "//ui/native_theme",
      ]
    }
@@ -312,7 +312,7 @@
  }
  
  source_set("browser_view_layout_params") {
-@@ -1357,7 +1374,15 @@
+@@ -1321,7 +1338,15 @@
        "//ui/gfx/geometry",
        "//ui/views",
      ]
@@ -329,7 +329,7 @@
  
    source_set("minimize_button_metrics_win") {
      public = [ "minimize_button_metrics_win.h" ]
-@@ -1527,6 +1552,15 @@
+@@ -1489,6 +1514,15 @@
      "//content/public/common",
      "//ui/base",
      "//url",
@@ -345,7 +345,7 @@
    ]
  }
  
-@@ -2462,6 +2496,22 @@
+@@ -2387,6 +2421,22 @@
    if (is_chromeos) {
      deps += [ "//chrome/browser/ui/ash/login" ]
    }
@@ -368,7 +368,7 @@
  }
  
  source_set("interactive_ui_tests") {
-@@ -2953,7 +3003,15 @@
+@@ -2868,7 +2918,15 @@
          "//chrome/browser/ui/krypton_ui:workspace_models",
        ]
      }
@@ -385,7 +385,7 @@
  }
  
  source_set("browser_view_layout") {
-@@ -3303,6 +3361,14 @@
+@@ -3201,6 +3259,14 @@
      "//ui/gfx/geometry",
      "//ui/views",
    ]
@@ -400,7 +400,7 @@
  }
  
  source_set("multi_contents_view_impl") {
-@@ -3351,6 +3417,14 @@
+@@ -3246,6 +3312,14 @@
      "//ui/gfx/geometry",
      "//ui/views",
    ]

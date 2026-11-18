@@ -1,0 +1,42 @@
+# Copyright 2026 The Krypton Authors. GPL-3.0.
+source_set("local_speech") {
+  sources = [
+    "engine_manifest.h",
+    "installer.cc",
+    "installer.h",
+    "model_manifest.h",
+  ]
+  public_deps = [
+    "//base",
+    "//components/soda",
+  ]
+  deps = [
+    "//chrome/browser:browser_process",
+    "//chrome/browser/krypton_models:files",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common:constants",
+    "//content/public/browser",
+    "//crypto",
+    "//net",
+    "//services/network/public/cpp",
+  ]
+}
+
+source_set("microphone") {
+  sources = [
+    "recognizer_client.cc",
+    "recognizer_client.h",
+  ]
+  public_deps = [
+    "//base",
+    "//media",
+    "//media/mojo/mojom",
+    "//mojo/public/cpp/bindings",
+  ]
+  deps = [
+    "//chrome/browser/media/webrtc",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/speech",
+    "//content/public/browser",
+  ]
+}

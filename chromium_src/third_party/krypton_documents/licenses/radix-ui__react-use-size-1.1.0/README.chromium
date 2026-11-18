@@ -1,0 +1,10 @@
+Name: @radix-ui/react-use-size
+Short Name: @radix-ui/react-use-size
+URL: git+https://github.com/radix-ui/primitives.git
+Version: 1.1.0
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

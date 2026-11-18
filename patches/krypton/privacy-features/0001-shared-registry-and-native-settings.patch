@@ -28,7 +28,7 @@ plumbing makes no network requests and leaves Helium's feature gates intact.
  chrome/app/nearby_share_strings.grdp
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1066,7 +1066,6 @@
+@@ -1068,7 +1068,6 @@
    }
  
    deps = [
@@ -36,7 +36,7 @@ plumbing makes no network requests and leaves Helium's feature gates intact.
      ":active_use_util",
      ":after_startup_task_utils",
      ":bad_message",
-@@ -1157,6 +1156,7 @@
+@@ -1160,6 +1159,7 @@
      "//chrome/browser/history",
      "//chrome/browser/infobars",
      "//chrome/browser/interstitials",
@@ -44,7 +44,7 @@ plumbing makes no network requests and leaves Helium's feature gates intact.
      "//chrome/browser/language",
      "//chrome/browser/language_detection",
      "//chrome/browser/lifetime",
-@@ -1249,6 +1249,7 @@
+@@ -1256,6 +1256,7 @@
      "//chrome/browser/ui/color:mixers",
      "//chrome/browser/ui/dialogs:browser_dialogs",
      "//chrome/browser/ui/javascript_dialogs",
@@ -52,46 +52,6 @@ plumbing makes no network requests and leaves Helium's feature gates intact.
      "//chrome/browser/ui/login",
      "//chrome/browser/ui/navigator",
      "//chrome/browser/ui/omnibox",
-@@ -5456,7 +5457,6 @@
- # units are compiled.
- group("browser_generated_files") {
-   public_deps = [
--    "//chrome/browser/ui/krypton_ui:buildflags",
-     ":buildflags",
-     "//chrome/browser/media:media_engagement_preload_proto",
-     "//chrome/browser/media:mojo_bindings",
-@@ -5469,6 +5469,7 @@
-     "//chrome/browser/predictors/lcp_critical_path_predictor:lcp_critical_path_predictor_proto",
-     "//chrome/browser/regional_capabilities",
-     "//chrome/browser/resource_coordinator:mojo_bindings",
-+    "//chrome/browser/ui/krypton_ui:buildflags",
-     "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
-     "//chrome/browser/ui/webui/content_settings:mojo_bindings",
-     "//chrome/browser/ui/webui/context_hub:mojo_bindings",
-@@ -5481,9 +5482,9 @@
-     "//chrome/browser/ui/webui/user_education_internals:mojo_bindings",
-     "//chrome/browser/web_applications/mojom:mojom_web_apps_enum",
-     "//chrome/common/request_header_integrity:buildflags",
--    "//components/helium_onboarding:generated_resources",
-     "//components/autofill/core/browser/ml_model/logging:mojo_bindings",
-     "//components/enterprise/connectors:mojom",
-+    "//components/helium_onboarding:generated_resources",
-     "//components/webui/chrome_urls/mojom:mojo_bindings",
-   ]
-   if (is_android) {
-@@ -5975,10 +5976,10 @@
-       "spellchecker/test/spellcheck_panel_browsertest_helper.h",
-     ]
-     deps += [
-+      "//chrome/browser/profiles:profile",
-       "//chrome/browser/spellchecker",
-+      "//components/helium_services",
-       "//components/spellcheck/common",
--      "//components/helium_services",
--      "//chrome/browser/profiles:profile",
-     ]
-   }
-   if (enable_bound_session_credentials) {
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -3,6 +3,7 @@
@@ -102,7 +62,7 @@ plumbing makes no network requests and leaves Helium's feature gates intact.
  
  #include "chrome/browser/ui/krypton_ui/buildflags.h"
  #if BUILDFLAG(ENABLE_KRYPTON_UI)
-@@ -1025,6 +1026,11 @@
+@@ -1026,6 +1027,11 @@
    bool failed_to_load_resource_bundle = false;
    const int load_local_state_result =
        OnLocalStateLoaded(&failed_to_load_resource_bundle);
@@ -114,7 +74,7 @@ plumbing makes no network requests and leaves Helium's feature gates intact.
  
    if (load_local_state_result == CHROME_RESULT_CODE_MISSING_DATA &&
        failed_to_load_resource_bundle) {
-@@ -2207,6 +2213,7 @@
+@@ -2212,6 +2218,7 @@
  }
  
  void ChromeBrowserMainParts::PostMainMessageLoopRun() {
@@ -124,7 +84,7 @@ plumbing makes no network requests and leaves Helium's feature gates intact.
  #if BUILDFLAG(IS_ANDROID)
 --- a/chrome/browser/prefs/BUILD.gn
 +++ b/chrome/browser/prefs/BUILD.gn
-@@ -154,6 +154,7 @@
+@@ -156,6 +156,7 @@
      "//components/feature_engagement/public:prefs",
      "//components/history_clusters/core",
      "//components/image_fetcher/core/cache",
@@ -142,7 +102,7 @@ plumbing makes no network requests and leaves Helium's feature gates intact.
  
  #include "chrome/browser/ui/krypton_ui/buildflags.h"
  #if BUILDFLAG(ENABLE_KRYPTON_UI)
-@@ -1663,6 +1664,7 @@
+@@ -1722,6 +1723,7 @@
  }
  
  void RegisterLocalState(PrefRegistrySimple* registry) {

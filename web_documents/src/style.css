@@ -1,0 +1,33 @@
+* { box-sizing: border-box; }
+:root { font-family: var(--document-font); color-scheme: light dark; }
+body { margin: 0; }
+main { --page: var(--light-page); --surface: var(--light-surface); --text: var(--light-text); --muted: var(--light-muted); --line: var(--light-line); --hover: var(--light-hover); height: 100dvh; display: flex; flex-direction: column; color: var(--text); background: var(--page); font-size: var(--document-font-size); }
+main[data-theme=dark] { --page: var(--dark-page); --surface: var(--dark-surface); --text: var(--dark-text); --muted: var(--dark-muted); --line: var(--dark-line); --hover: var(--dark-hover); }
+header, nav { display: flex; align-items: center; gap: var(--document-gap); flex-wrap: wrap; padding: var(--document-padding); border-bottom: 1px solid var(--line); background: var(--surface); }
+header input { flex: 1; min-width: 10ch; font: inherit; background: transparent; color: inherit; border: 1px solid transparent; border-radius: var(--document-radius); padding: var(--document-gap); }
+header span { color: var(--muted); font-size: .85em; }
+button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: var(--document-radius); padding: var(--document-gap) var(--document-padding); cursor: pointer; }
+button:hover { background: var(--hover); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--document-accent); outline-offset: 2px; }
+.note { flex: 1; overflow: auto; padding: var(--document-padding) max(var(--document-padding), calc((100% - 78ch)/2)); }
+.tiptap { min-height: 100%; outline: none; line-height: 1.65; overflow-wrap: anywhere; }
+.tiptap p.is-editor-empty:first-child::before { color: var(--muted); content: attr(data-placeholder); float: left; height: 0; pointer-events: none; }
+.tiptap img { max-width: 100%; height: auto; border-radius: var(--document-radius); }
+.tiptap table { border-collapse: collapse; width: 100%; }
+.tiptap td, .tiptap th { border: 1px solid var(--line); padding: var(--document-gap); min-width: 3ch; }
+.tiptap [data-type=taskItem] { display: flex; gap: var(--document-gap); }
+.tiptap [data-type=taskItem]>div { flex: 1; }
+.tiptap [data-type=details] { display: flex; gap: var(--document-gap); border: 1px solid var(--line); border-radius: var(--document-radius); padding: var(--document-padding); }
+.tiptap pre, .tiptap code { background: var(--hover); border-radius: var(--document-radius); padding: .15em .3em; }
+.tiptap a { color: var(--document-accent); }
+.drag-handle { background: var(--surface); color: var(--muted); cursor: grab; }
+.easel { flex: 1; min-height: 0; }
+.easel .excalidraw { --ui-font: var(--document-font); --border-radius-lg: var(--document-card-radius); --border-radius-md: var(--document-radius); }
+/* Local scenes only: no library browser, cloud/collaboration or AI affordances. */
+.easel .library-button, .easel .default-sidebar, .easel .layer-ui__library, .easel [data-testid=library-button] { display: none !important; }
+dialog { position: fixed; inset: 10% auto auto 50%; transform: translateX(-50%); width: min(36rem,90vw); max-height: 75vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--document-card-radius); background: var(--surface); color: var(--text); padding: var(--document-padding); z-index: 20; }
+dialog button { display: block; width: 100%; text-align: left; margin-block: var(--document-gap); }
+.notice { padding: var(--document-padding); background: var(--surface); border-bottom: 1px solid var(--line); }
+.notice button { margin-left: var(--document-padding); }
+.loading { padding: var(--document-padding); }
+@media (forced-colors: active) { main, header, nav, dialog, button { background: Canvas; color: CanvasText; border-color: CanvasText; } }

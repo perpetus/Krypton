@@ -1,0 +1,10 @@
+Name: use-sync-external-store
+Short Name: use-sync-external-store
+URL: https://github.com/react/react.git
+Version: 1.7.0
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

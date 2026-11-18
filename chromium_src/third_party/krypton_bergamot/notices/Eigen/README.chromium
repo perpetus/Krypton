@@ -1,0 +1,13 @@
+Name: Eigen
+URL: https://github.com/abhi-agg/eigen-git-mirror
+Version: fff37f4ca0397af9ed7e04f3bd6b893a1ea2b08e
+License: MPL 2.0
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+Pinned support code for the sandboxed local translation engine.
+Source: https://codeload.github.com/abhi-agg/eigen-git-mirror/zip/fff37f4ca0397af9ed7e04f3bd6b893a1ea2b08e
+Archive SHA-256: c09bd2d48599ee96941321b7399d4eb7637f57e5d7b6a8eb25594c28a500376f
+Built with EIGEN_MPL2_ONLY; optional copyleft modules are excluded.

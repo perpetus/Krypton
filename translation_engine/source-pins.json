@@ -1,0 +1,65 @@
+[
+  {
+    "name": "translations",
+    "repository": "mozilla/translations",
+    "revision": "eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d",
+    "url": "https://codeload.github.com/mozilla/translations/zip/eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d",
+    "sha256": "6f935c4992475fd0fd268d4c094e62e3b94d35d458eb7b3f17479749ec83de10",
+    "path": ""
+  },
+  {
+    "name": "ssplit",
+    "repository": "browsermt/ssplit-cpp",
+    "revision": "a311f9865ade34db1e8e080e6cc146f55dafb067",
+    "url": "https://codeload.github.com/browsermt/ssplit-cpp/zip/a311f9865ade34db1e8e080e6cc146f55dafb067",
+    "sha256": "c9124e6c02128764d3f85cf789fec50221bd8724a41d9796714b0a1b7033d093",
+    "size": 120053,
+    "path": "inference/3rd_party/ssplit-cpp"
+  },
+  {
+    "name": "sentencepiece",
+    "repository": "browsermt/sentencepiece",
+    "revision": "ae41b7740d7006596bb9257e83340b2620db9d00",
+    "url": "https://codeload.github.com/browsermt/sentencepiece/zip/ae41b7740d7006596bb9257e83340b2620db9d00",
+    "sha256": "a8ef81e2d80249cfce95ccaa860f15fb639a2f70732a31c260c9e3e1daece10b",
+    "size": 11856421,
+    "path": "inference/marian-fork/src/3rd_party/sentencepiece"
+  },
+  {
+    "name": "intgemm",
+    "repository": "kpu/intgemm",
+    "revision": "f7401513da71758dacce52fed1c7855549abee59",
+    "url": "https://codeload.github.com/kpu/intgemm/zip/f7401513da71758dacce52fed1c7855549abee59",
+    "sha256": "d3d754e227b12ca9286a7f14ef500c11f11c061a4391d58669b5bd2a35047ae5",
+    "size": 227866,
+    "path": "inference/marian-fork/src/3rd_party/intgemm"
+  },
+  {
+    "name": "onnxjs",
+    "repository": "browsermt/onnxjs",
+    "revision": "924924b08e9596b41aeebada4a172f026be95f5a",
+    "url": "https://codeload.github.com/browsermt/onnxjs/zip/924924b08e9596b41aeebada4a172f026be95f5a",
+    "sha256": "180493af976f7571c40620f12da754b2dd9853faabac49b9c4550e70dda98410",
+    "size": 607106,
+    "path": "inference/marian-fork/src/3rd_party/onnxjs"
+  },
+  {
+    "name": "eigen",
+    "repository": "abhi-agg/eigen-git-mirror",
+    "revision": "fff37f4ca0397af9ed7e04f3bd6b893a1ea2b08e",
+    "url": "https://codeload.github.com/abhi-agg/eigen-git-mirror/zip/fff37f4ca0397af9ed7e04f3bd6b893a1ea2b08e",
+    "sha256": "c09bd2d48599ee96941321b7399d4eb7637f57e5d7b6a8eb25594c28a500376f",
+    "size": 3199828,
+    "path": "inference/marian-fork/src/3rd_party/onnxjs/deps/eigen"
+  },
+  {
+    "name": "pcre2",
+    "repository": "PCRE2Project/pcre2",
+    "revision": "6f9d7c1373262c541324a16a358785b33ef116cf",
+    "url": "https://codeload.github.com/PCRE2Project/pcre2/zip/6f9d7c1373262c541324a16a358785b33ef116cf",
+    "sha256": "e865194164169c4d14a16fbc7c34ec4d91b8422b35ca5216b68d85be970c1603",
+    "size": 3812962,
+    "path": "pcre2",
+    "version": "pcre2-10.49"
+  }
+]

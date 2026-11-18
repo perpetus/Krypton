@@ -1,0 +1,3 @@
+LIBRARY krypton_speech
+EXPORTS
+  UpdateRecognitionContext

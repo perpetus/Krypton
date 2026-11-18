@@ -1,0 +1,175 @@
+Krypton: Keep the streaming core CPU-only with two shared inference workers,
+no spinning, environment overrides, file-backed tokenizers, telemetry or
+transcript/audio logging. Keep model maps alive through session teardown and
+retain the existing speech sandbox.
+
+--- a/core/bin-tokenizer/bin-tokenizer.cpp
++++ b/core/bin-tokenizer/bin-tokenizer.cpp
+@@ -55,25 +55,8 @@
+   return value;
+ }
+ 
+-std::vector<uint8_t> read_whole_file(const char *path) {
+-  FILE *file = std::fopen(path, "rb");
+-  if (!file) {
+-    std::string message =
+-        "Failed to open tokenizer file at " + std::string(path);
+-    std::perror(message.c_str());
+-    throw std::runtime_error(message);
+-  }
+-  std::vector<uint8_t> data;
+-  uint8_t buffer[65536];
+-  while (true) {
+-    const size_t got = std::fread(buffer, 1, sizeof(buffer), file);
+-    data.insert(data.end(), buffer, buffer + got);
+-    if (got < sizeof(buffer)) {
+-      break;
+-    }
+-  }
+-  std::fclose(file);
+-  return data;
++std::vector<uint8_t> read_whole_file(const char *) {
++  throw std::runtime_error("Only memory-backed tokenizers are supported.");
+ }
+ 
+ }  // namespace
+--- a/core/moonshine-streaming-model.cpp
++++ b/core/moonshine-streaming-model.cpp
+@@ -23,7 +23,7 @@
+ #include "moonshine-ort-allocator.h"
+ #include "string-utils.h"
+ 
+-#define DEBUG_ALLOC_ENABLED 1
++#define DEBUG_ALLOC_ENABLED 0
+ #include "debug-utils.h"
+ #include "ort-utils.h"
+ 
+@@ -217,7 +217,6 @@
+ }
+ 
+ MoonshineStreamingModel::~MoonshineStreamingModel() {
+-  ort_api->ReleaseEnv(ort_env);
+   ort_api->ReleaseMemoryInfo(ort_memory_info);
+   ort_api->ReleaseSessionOptions(ort_session_options);
+   if (frontend_session) ort_api->ReleaseSession(frontend_session);
+@@ -227,6 +226,7 @@
+   if (decoder_kv_session) ort_api->ReleaseSession(decoder_kv_session);
+   delete ort_allocator;
+   delete tokenizer;
++  ort_api->ReleaseEnv(ort_env);
+ #ifndef _WIN32
+   unmap_model(&frontend_mmapped_data, &frontend_mmapped_data_size);
+   unmap_model(&encoder_mmapped_data, &encoder_mmapped_data_size);
+--- a/core/moonshine-utils/debug-utils.h
++++ b/core/moonshine-utils/debug-utils.h
+@@ -22,24 +22,8 @@
+ 
+ #define FILENAME_ONLY (_moonshine_filename_without_path(__FILE__))
+ 
+-#if defined(ANDROID)
+-#include <android/log.h>
+-#define LOGF(format, ...)                                                  \
+-  do {                                                                     \
+-    __android_log_print(ANDROID_LOG_WARN, "Native", "%s:%d:%s(): " format, \
+-                        FILENAME_ONLY, __LINE__, __func__, __VA_ARGS__);   \
+-  } while (0)
+-#else
+-#define LOGF(format, ...)                                                   \
+-  do {                                                                      \
+-    std::ostringstream oss;                                                 \
+-    oss << std::this_thread::get_id();                                      \
+-    std::string thread_id_str = oss.str();                                  \
+-    fprintf(stderr, "Thread %s:%s:%d:%s(): " format, thread_id_str.c_str(), \
+-            FILENAME_ONLY, __LINE__, __func__, __VA_ARGS__);                \
+-    fprintf(stderr, "\n");                                                  \
+-  } while (0)
+-#endif
++#define LOGF(format, ...) do { if constexpr (false) { \
++  fprintf(stderr, format __VA_OPT__(,) __VA_ARGS__); } } while (0)
+ #define LOG(x) LOGF("%s", (x))
+ 
+ #define LOG_IF(condition, x) \
+--- a/core/ort-utils/ort-utils.cpp
++++ b/core/ort-utils/ort-utils.cpp
+@@ -88,21 +88,20 @@
+ 
+ OrtStatus *ort_create_env(const OrtApi *ort_api, OrtLoggingLevel logging_level,
+                           const char *logid, OrtEnv **out) {
+-#if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
+-  // Multithreaded wasm: sessions default to global thread pools, so the env
+-  // must own them (see ort_create_env's declaration for details).
+-  OrtThreadingOptions *threading_options = nullptr;
+-  OrtStatus *status = ort_api->CreateThreadingOptions(&threading_options);
+-  if (status != nullptr) {
+-    return status;
+-  }
+-  status = ort_api->CreateEnvWithGlobalThreadPools(logging_level, logid,
+-                                                   threading_options, out);
+-  ort_api->ReleaseThreadingOptions(threading_options);
++  (void)logging_level;
++  OrtThreadingOptions* options = nullptr;
++  OrtStatus* status = ort_api->CreateThreadingOptions(&options);
++  if (status) return status;
++  status = ort_api->SetGlobalIntraOpNumThreads(options, 3);
++  if (!status) status = ort_api->SetGlobalInterOpNumThreads(options, 1);
++  if (!status) status = ort_api->SetGlobalSpinControl(options, 0);
++  if (!status) status = ort_api->CreateEnvWithCustomLoggerAndGlobalThreadPools(
++      [](void*, OrtLoggingLevel, const char*, const char*, const char*, const char*) {},
++      nullptr, ORT_LOGGING_LEVEL_FATAL, logid, options, out);
++  ort_api->ReleaseThreadingOptions(options);
++  if (!status) status = ort_api->DisableTelemetryEvents(*out);
++  if (status && *out) { ort_api->ReleaseEnv(*out); *out = nullptr; }
+   return status;
+-#else
+-  return ort_api->CreateEnv(logging_level, logid, out);
+-#endif
+ }
+ 
+ int ort_session_from_memory(const OrtApi *ort_api, OrtEnv *env,
+@@ -119,14 +118,9 @@
+ 
+ void ort_maybe_force_single_thread(const OrtApi *ort_api,
+                                    OrtSessionOptions *session_options) {
+-  const char *flag = std::getenv("MOONSHINE_ORT_SINGLE_THREAD");
+-  if (flag == nullptr || flag[0] == '\0' || std::strcmp(flag, "0") == 0) {
+-    return;
+-  }
+-  LOG_ORT_ERROR(ort_api, ort_api->SetIntraOpNumThreads(session_options, 1));
+-  LOG_ORT_ERROR(ort_api, ort_api->SetInterOpNumThreads(session_options, 1));
+-  LOG_ORT_ERROR(ort_api, ort_api->SetSessionExecutionMode(session_options,
+-                                                          ORT_SEQUENTIAL));
++  // All five sessions share the environment's two inference workers.
++  LOG_ORT_ERROR(ort_api, ort_api->DisablePerSessionThreads(session_options));
++  LOG_ORT_ERROR(ort_api, ort_api->SetSessionExecutionMode(session_options, ORT_SEQUENTIAL));
+ }
+ 
+ #ifdef _WIN32
+@@ -181,23 +175,11 @@
+ 
+ void ort_configure_cpu_threading(const OrtApi *ort_api,
+                                  OrtSessionOptions *session_options) {
+-#ifdef _WIN32
+-  const char *forced = std::getenv("MOONSHINE_ORT_SINGLE_THREAD");
+-  if (forced != nullptr && forced[0] != '\0' && std::strcmp(forced, "0") != 0) {
+-    return;
+-  }
+-  LOG_ORT_ERROR(ort_api,
+-                ort_api->AddSessionConfigEntry(
+-                    session_options, "session.intra_op.allow_spinning", "0"));
+-  const int performance_cores = ort_performance_core_count();
+-  if (performance_cores > 0) {
+-    LOG_ORT_ERROR(ort_api, ort_api->SetIntraOpNumThreads(session_options,
+-                                                         performance_cores));
+-  }
+-#else
+-  (void)ort_api;
+-  (void)session_options;
+-#endif
++  LOG_ORT_ERROR(ort_api, ort_api->DisablePerSessionThreads(session_options));
++  LOG_ORT_ERROR(ort_api, ort_api->AddSessionConfigEntry(
++      session_options, "session.intra_op.allow_spinning", "0"));
++  LOG_ORT_ERROR(ort_api, ort_api->AddSessionConfigEntry(
++      session_options, "session.inter_op.allow_spinning", "0"));
+ }
+ 
+ void ort_configure_ort_file_session(const OrtApi *ort_api,

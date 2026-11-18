@@ -69,7 +69,7 @@
        std::move(root), views::MenuRunner::HAS_MNEMONICS);
 --- a/chrome/browser/ui/views/frame/browser_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_view.cc
-@@ -674,6 +674,18 @@
+@@ -677,6 +677,18 @@
    return dst->HitTestPoint(*point);
  }
  
@@ -88,7 +88,7 @@
  }  // namespace
  
  // Implements the exclusive access context and bubble context.
-@@ -3228,7 +3240,8 @@
+@@ -3259,7 +3271,8 @@
  }
  
  bool BrowserView::IsTabStripEditable() const {
@@ -98,7 +98,7 @@
  }
  
  void BrowserView::DisableTabStripEditingForTesting() {
-@@ -4015,7 +4028,8 @@
+@@ -4048,7 +4061,8 @@
  }
  
  void BrowserView::ReparentTopContainerForEndOfImmersive() {
@@ -108,7 +108,19 @@
      return;
    }
  
-@@ -5638,7 +5652,7 @@
+@@ -4401,6 +4415,11 @@
+   // Permanently suppress layout during teardown to avoid running layout on
+   // destroying child views or widgets.
+   suppress_layout_for_teardown_ = true;
++
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_)
++    krypton_ui_->Close();
++#endif
+ 
+   // Destroy any remaining WebContents early on. Doing so may result in
+   // calling back to one of the Views/LayoutManagers or supporting classes of
+@@ -5683,7 +5702,7 @@
      return;
    }
  
@@ -117,13 +129,13 @@
      // Loading animations are shown in the tab for tabbed windows. Update them
      // even if the tabstrip isn't currently visible so they're in the right
      // state when it returns.
-@@ -6241,21 +6255,15 @@
+@@ -6302,21 +6321,15 @@
  }
  
  void BrowserView::ShowIncognitoClearBrowsingDataDialog() {
 -  CHECK(ToolbarButtonProvider::From(browser_));
    IncognitoClearBrowsingDataDialogCoordinator::From(browser())->Show(
-       IncognitoClearBrowsingDataDialogInterface::Type::kDefaultBubble,
+       IncognitoClearBrowsingDataDialog::Type::kDefaultBubble,
 -      ToolbarButtonProvider::From(browser_)
 -          ->GetAvatarToolbarButtonInterface()
 -          ->GetBubbleAnchor(*browser()));
@@ -133,7 +145,7 @@
  void BrowserView::ShowIncognitoHistoryDisclaimerDialog() {
 -  CHECK(ToolbarButtonProvider::From(browser_));
    IncognitoClearBrowsingDataDialogCoordinator::From(browser())->Show(
-       IncognitoClearBrowsingDataDialogInterface::Type::kHistoryDisclaimerBubble,
+       IncognitoClearBrowsingDataDialog::Type::kHistoryDisclaimerBubble,
 -      ToolbarButtonProvider::From(browser_)
 -          ->GetAvatarToolbarButtonInterface()
 -          ->GetBubbleAnchor(*browser()));
@@ -141,7 +153,7 @@
  }
  
  void BrowserView::UpdateWebAppStatusIconsVisiblity() {
-@@ -6465,6 +6473,10 @@
+@@ -6526,6 +6539,10 @@
  // TODO(crbug.com/529834985): See if we can consolidate the logic here and in
  // TabView::UpdateAccessibleName/TabView::UpdateAccessibleName.
  void BrowserView::UpdateAccessibleNameForTabAt(int index) {
@@ -206,7 +218,7 @@
        chip_controller->InitializePermissionPrompt(delegate()->GetWeakPtr());
 --- a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
 +++ b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
-@@ -141,7 +141,8 @@
+@@ -161,7 +161,8 @@
  
  bool IsLocationBarDisplayed(content::WebContents* web_contents) {
    LocationBar* lb = ::location_bar::GetLocationBarForWebContents(web_contents);
@@ -218,23 +230,32 @@
  bool ShouldCurrentRequestUseQuietChip(
 --- a/chrome/browser/ui/views/tabs/tab/tab_accessibility.cc
 +++ b/chrome/browser/ui/views/tabs/tab/tab_accessibility.cc
-@@ -91,8 +91,15 @@
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/tabs/tab/tab_accessibility.h"
++
++#include <optional>
+ 
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/location_bar/location_bar.h"
+@@ -93,8 +95,15 @@
    BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(bwi);
    const TabStripModel* tab_strip_model = bwi->GetTabStripModel();
  
-+  // Without a Views tab strip, derive the same data from the tab model.
++  // Preserve caller-provided data; derive it only when no Views strip exists.
 +  std::optional<TabData> model_tab_data;
-+  if (!browser_view->tab_strip_view()) {
-+    model_tab_data = TabData::FromTabInterface(tab->GetHandle().Get());
-+  }
-   const TabData& tab_data =
--      browser_view->tab_strip_view()->GetTabData(tab->GetHandle());
-+      model_tab_data
-+          ? *model_tab_data
-+          : browser_view->tab_strip_view()->GetTabData(tab->GetHandle());
+   if (!tab_data) {
+-    tab_data = &browser_view->tab_strip_view()->GetTabData(tab->GetHandle());
++    if (auto* tab_strip = browser_view->tab_strip_view()) {
++      tab_data = &tab_strip->GetTabData(tab->GetHandle());
++    } else {
++      model_tab_data = TabData::FromTabInterface(tab->GetHandle().Get());
++      tab_data = &*model_tab_data;
++    }
+   }
  
    auto* controller = WindowMetadataController::From(bwi);
- 
 --- a/chrome/browser/ui/views/user_education/impl/browser_feature_promo_preconditions.cc
 +++ b/chrome/browser/ui/views/user_education/impl/browser_feature_promo_preconditions.cc
 @@ -135,8 +135,10 @@

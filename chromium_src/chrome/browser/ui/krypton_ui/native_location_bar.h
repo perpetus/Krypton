@@ -13,6 +13,7 @@
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/types/expected.h"
+#include "chrome/browser/ui/krypton_ui/command_bar_entry.h"
 #include "chrome/browser/ui/location_bar/location_bar.h"
 #include "components/security_state/core/security_state.h"
 #include "krypton_ui/abi.h"
@@ -52,6 +53,12 @@ class NativeLocationBar final : public LocationBar {
 
   void Initialize();
   void Close();
+  using CommandProvider =
+      base::RepeatingCallback<std::vector<CommandBarEntry>(std::string_view)>;
+  void SetCommandProvider(CommandProvider provider) {
+    command_provider_ = std::move(provider);
+  }
+  [[nodiscard]] bool launcher_mode() const { return launcher_; }
   void OnNativeState(const KrAddressState& state);
   void Query(uint32_t request, std::string_view text);
   void CancelQuery(uint32_t request);
@@ -115,6 +122,10 @@ class NativeLocationBar final : public LocationBar {
   void PublishSuggestions();
   void ScheduleSuggestions();
   void PublishSelection();
+  bool CommandQuery() const;
+  std::optional<size_t> selected_command_;
+  CommandProvider command_provider_;
+  bool launcher_ = false;
 
   const raw_ref<BrowserWindowInterface> browser_;
   const raw_ref<LocationBarModel> location_model_;

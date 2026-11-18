@@ -32,9 +32,17 @@ SiteDataMenuModel::SiteDataMenuModel(
     page_actions_.AddCheckItem(action.command, action.fallback_label);
   }
   if (!labels_.screenshot.empty()) {
-    page_actions_.InsertItemAt(
+    // One overlay selects both: drag for a region, click for an element.
+    // kCaptureElement and kEaselElement remain valid commands.
+    capture_.AddItem(kCaptureArea, u"Select region");
+    capture_.AddItem(kCaptureFullPage, u"Full page");
+    easel_.AddItem(kEaselArea, u"Select region");
+    easel_.AddItem(kEaselFullPage, u"Full page");
+    capture_.AddSeparator(ui::NORMAL_SEPARATOR);
+    capture_.AddSubMenu(kAddToEasel, u"Add to Easel", &easel_);
+    page_actions_.InsertSubMenuAt(
         std::min<size_t>(1, page_actions_.GetItemCount()), kScreenshot,
-        labels_.screenshot);
+        labels_.screenshot, &capture_);
   }
   if (!labels_.boosts.empty()) {
     page_actions_.InsertItemAt(
@@ -91,7 +99,10 @@ bool SiteDataMenuModel::IsCommandIdEnabled(int command) const {
       (command >= kBoostRowFirst && command <= kBoostRowLast)) {
     return state->boost_available;
   }
-  if (command == kScreenshot || command == kBoosts) {
+  if (command == kScreenshot || command == kBoosts || command == kCaptureArea ||
+      command == kCaptureElement || command == kCaptureFullPage ||
+      command == kAddToEasel || command == kEaselArea ||
+      command == kEaselElement || command == kEaselFullPage) {
     return state->site_available && can_execute_.Run(command);
   }
   if (const auto* action = Find(command)) {
@@ -151,7 +162,10 @@ void SiteDataMenuModel::ExecuteCommand(int command, int event_flags) {
     action->source->InvokeAction();
   } else if (command == kSecurity || command == kSecureConnection ||
              command == kSiteSettings || command == kProtection ||
-             command == kScreenshot || command == kBoosts) {
+             command == kScreenshot || command == kBoosts ||
+             command == kCaptureArea || command == kCaptureElement ||
+             command == kCaptureFullPage || command == kEaselArea ||
+             command == kEaselElement || command == kEaselFullPage) {
     dispatch_.Run(static_cast<Command>(command));
   }
 }
@@ -187,6 +201,10 @@ std::string_view SiteDataMenuModel::Glyph(int command) {
     case kBoosts:
       return "\uE771";
     case kScreenshot:
+      return "\uE722";  // Camera
+    case kCaptureArea:
+    case kCaptureElement:
+    case kCaptureFullPage:
       return "\uE7C5";
     case kSecureConnection:
       return "\uE72E";

@@ -15,6 +15,18 @@ import("//chrome/browser/ui/krypton_ui/features.gni")
 # A private, statically linked Google Zucchini tool for the native updater.
 # Reuse the browser's configured libraries without rebuilding the browser.
 if (is_win) {
+  # Publisher-only parallel generation. Clients retain the standard patcher.
+  executable("krypton_delta_generator") {
+    output_name = "KryptonDeltaGenerator"
+    sources = [ "publisher_delta_main.cc" ]
+    deps = [
+      "//base",
+      "//build/win:default_exe_manifest",
+      "//components/zucchini:zucchini_io",
+      "//components/zucchini:zucchini_lib",
+    ]
+  }
+
   executable("krypton_patch") {
     output_name = "KryptonPatch"
     sources = [
@@ -238,6 +250,9 @@ source_set("workspace_models") {
     "folder_prefs.h",
     "layout_prefs.cc",
     "layout_prefs.h",
+    "live_folder_model.cc",
+    "live_folder_model.h",
+    "local_model_prefs.h",
     "site_customization.h",
     "site_customization_prefs.cc",
     "workspace_menu.cc",
@@ -256,6 +271,9 @@ source_set("workspace_models") {
     "//components/pref_registry",
     "//components/prefs",
     "//components/user_data_importer/common",
+    "//crypto",
+    "//net",
+    "//services/data_decoder/public/cpp",
     "//url",
   ]
 }
@@ -267,6 +285,8 @@ source_set("workspace_session") {
   public_deps = [ ":buildflags" ]
   if (krypton_ui_enabled) {
     sources = [
+      "live_folder_session.cc",
+      "live_folder_session.h",
       "multi_page_session.cc",
       "multi_page_session.h",
       "workspace_session.cc",
@@ -307,10 +327,16 @@ source_set("action_menu_model") {
     "action_menu_model.cc",
     "action_menu_model.h",
     "extension_actions.h",
+    "layout_menus.cc",
+    "layout_menus.h",
     "sidebar_menu_model.cc",
     "sidebar_menu_model.h",
     "site_data_menu_model.cc",
     "site_data_menu_model.h",
+  ]
+  deps = [
+    "//chrome/app:command_ids",
+    "//chrome/app:generated_resources",
   ]
   public_deps = [
     ":abi",
@@ -342,6 +368,15 @@ if (krypton_ui_enabled) {
     sources = [
       "$krypton_ui_runtime_dir/Microsoft.WindowsAppRuntime.Bootstrap.dll",
       "$krypton_ui_runtime_dir/krypton_ui.dll",
+      "//krypton_speech_runtime/krypton_speech.dll",
+      "//krypton_speech_runtime/krypton_speech_manifest.json",
+      "//krypton_speech_runtime/msvcp140.dll",
+      "//krypton_speech_runtime/msvcp140_1.dll",
+      "//krypton_speech_runtime/onnxruntime.dll",
+      "//krypton_speech_runtime/vcruntime140.dll",
+      "//krypton_speech_runtime/vcruntime140_1.dll",
+      "//krypton_translate_runtime/krypton_translate.dll",
+      "//krypton_translate_runtime/krypton_translation_manifest.json",
     ]
     outputs = [ "$root_out_dir/{{source_file_part}}" ]
   }
@@ -384,10 +419,12 @@ source_set("native_headers") {
     public = [
       "browser_adapter.h",
       "browser_services.h",
+      "command_bar_entry.h",
       "contents_layout.h",
       "control_anchors.h",
       "frame_material.h",
       "frame_view.h",
+      "hosted_browser_widget.h",
       "layout_menus.h",
       "menu_glyphs.h",
       "menu_model_snapshot.h",
@@ -408,6 +445,7 @@ source_set("native_headers") {
       "site_customization.h",
       "site_info_menu.h",
       "site_permissions.h",
+      "translation_bridge.h",
       "workspace_close.h",
     ]
     public_deps += [
@@ -465,11 +503,21 @@ source_set("native_windows") {
       "browser_folders.cc",
       "browser_service_callbacks.cc",
       "browser_services.cc",
+      "browser_space_hosts.cc",
       "browser_workspaces.cc",
+      "command_bar_commands.cc",
+      "command_bar_entry.h",
+      "command_bar_extras.cc",
       "contents_layout.cc",
       "control_anchors.cc",
+      "dictation_controller.cc",
+      "dictation_controller.h",
       "frame_view.cc",
-      "layout_menus.cc",
+      "hosted_browser_widget.cc",
+      "live_folders.cc",
+      "live_folders.h",
+      "local_model_settings.cc",
+      "local_model_settings.h",
       "menu_glyphs.cc",
       "menu_model_snapshot.cc",
       "multi_page_controller.cc",
@@ -483,6 +531,12 @@ source_set("native_windows") {
       "native_settings.cc",
       "native_toolbar.cc",
       "onboarding_services.cc",
+      "page_capture.cc",
+      "page_capture.h",
+      "page_capture_icons.cc",
+      "page_capture_icons.h",
+      "page_capture_ui.cc",
+      "page_capture_ui.h",
       "page_tools.cc",
       "sidebar_downloads.cc",
       "sidebar_library.cc",
@@ -491,19 +545,27 @@ source_set("native_windows") {
       "site_customization.cc",
       "site_info_menu.cc",
       "site_permissions.cc",
+      "space_hosts.cc",
+      "space_hosts.h",
+      "space_profiles.cc",
+      "space_profiles.h",
+      "translation_menu_model.cc",
+      "translation_menu_model.h",
       "url_drop.cc",
     ]
     deps = [
+      ":document_store",
+      ":document_webui",
       ":native_headers",
       "//base",
       "//base:i18n",
+      "//base/i18n:language_tag",
       "//chrome/app:branded_strings",
       "//chrome/app:command_ids",
       "//chrome/app:generated_resources",
       "//chrome/app/theme:chrome_unscaled_resources",
       "//chrome/app/theme:theme_resources",
       "//chrome/browser:browser_process",
-      "//chrome/browser:browser_public_dependencies",
       "//chrome/browser:helium_noise_settings_headers",
       "//chrome/browser:primitives",
       "//chrome/browser/actor/ui:actor_overlay_web_view",
@@ -524,6 +586,11 @@ source_set("native_windows") {
       "//chrome/browser/image_editor",
       "//chrome/browser/importer",
       "//chrome/browser/krypton_privacy_features",
+      "//chrome/browser/krypton_speech:local_speech",
+      "//chrome/browser/krypton_speech:microphone",
+      "//chrome/browser/krypton_translate:local_translation",
+      "//chrome/browser/lifetime",
+      "//chrome/browser/permissions/system",
       "//chrome/browser/prefs:util",
       "//chrome/browser/profiles",
       "//chrome/browser/profiles:profile",
@@ -544,6 +611,7 @@ source_set("native_windows") {
       "//chrome/browser/ui:browser_commands",
       "//chrome/browser/ui:browser_element_identifiers",
       "//chrome/browser/ui:browser_init_state",
+      "//chrome/browser/ui:browser_tabrestore",
       "//chrome/browser/ui:browser_tabstrip",
       "//chrome/browser/ui:browser_window_state",
       "//chrome/browser/ui:browser_window_theme_observer",
@@ -551,6 +619,7 @@ source_set("native_windows") {
       "//chrome/browser/ui:recently_audible_helper",
       "//chrome/browser/ui:sad_tab",
       "//chrome/browser/ui:singleton_tabs",
+      "//chrome/browser/ui:tab_ui_helper",
       "//chrome/browser/ui:ui_controller_factory",
       "//chrome/browser/ui:ui_features",
       "//chrome/browser/ui:unload_controller",
@@ -707,6 +776,7 @@ source_set("native_windows") {
       "//components/helium_services",
       "//components/infobars/content",
       "//components/javascript_dialogs",
+      "//components/language/core/browser",
       "//components/metrics:metrics_pref_names",
       "//components/performance_manager",
       "//components/permissions",
@@ -738,13 +808,16 @@ source_set("native_windows") {
       "//ipc",
       "//media/capture:capture_switches",
       "//mojo/public/cpp/bindings",
+      "//services/data_decoder/public/cpp",
       "//services/media_session/public/cpp",
       "//services/media_session/public/mojom",
+      "//services/network/public/cpp",
       "//third_party/blink/public/common:headers",
       "//third_party/re2",
       "//ui/accessibility",
       "//ui/accessibility:ax_base",
       "//ui/accessibility:ax_enums_mojo",
+      "//ui/aura",
       "//ui/base",
       "//ui/base:features",
       "//ui/base:hit_test",
@@ -761,6 +834,7 @@ source_set("native_windows") {
       "//ui/gfx:color_utils",
       "//ui/gfx/animation",
       "//ui/gfx/geometry",
+      "//ui/snapshot",
       "//ui/views",
       "//ui/views/controls/webview",
     ]
@@ -768,6 +842,51 @@ source_set("native_windows") {
       "d3d11.lib",
       "dxgi.lib",
       "dwmapi.lib",
+    ]
+  }
+}
+
+# Document pages are lazy WebUIs. Keep their config dependency independent of
+# native_windows to avoid a BrowserView/configs dependency cycle.
+source_set("document_store") {
+  sources = []
+  if (krypton_ui_enabled) {
+    sources = [
+      "document_store.cc",
+      "document_store.h",
+    ]
+    deps = [
+      "//base",
+      "//chrome/browser/profiles:profile",
+      "//crypto",
+      "//skia",
+      "//ui/gfx/codec",
+    ]
+  }
+}
+
+source_set("document_webui") {
+  sources = []
+  if (krypton_ui_enabled) {
+    sources = [
+      "document_webui.cc",
+      "document_webui.h",
+      "local_models_webui.cc",
+      "local_models_webui.h",
+    ]
+    deps = [
+      ":document_store",
+      "//base",
+      "//chrome/browser/krypton_speech:local_speech",
+      "//chrome/browser/krypton_translate:local_translation",
+      "//chrome/browser/profiles:profile",
+      "//chrome/browser/ui/select_file_policy",
+      "//content/public/browser",
+      "//services/network/public/mojom",
+      "//third_party/krypton_documents:resources",
+      "//ui/shell_dialogs",
+      "//ui/webui",
+      "//url",
     ]
   }
 }

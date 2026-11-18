@@ -1627,14 +1627,17 @@ void MultiPageController::BindVisible(tabs::TabInterface* selected) {
   }
   owner_->SchedulePageBackgrounds();
   active_ = true;
+  owner_->UpdatePageCornerOverlays();
   EnsureChrome();
 }
 void MultiPageController::OpenPaneMenu(size_t slot) {
-  if (slot >= pane_controls_.size() || !bound_tabs_[slot])
+  if (slot >= pane_controls_.size() || !bound_tabs_[slot]) {
     return;
+  }
   auto* tab = Tab(bound_tabs_[slot]);
-  if (!tab)
+  if (!tab) {
     return;
+  }
   Focus(tab->GetContents());
   if (!tab->IsActivated())
     return;
@@ -1901,6 +1904,8 @@ void MultiPageController::ScheduleFocus(content::WebContents* contents) {
 }
 void MultiPageController::AppendLayout(gfx::Rect available,
                                        views::ProposedLayout& layout) {
+  // Restore native masks before applying any split/Glance pane geometry.
+  owner_->UpdatePageCornerOverlays();
   const auto* api = owner_->session_.api();
   const bool fullscreen = ExclusiveAccessManager::From(&*owner_->browser_)
                               ->fullscreen_controller()
@@ -2485,7 +2490,7 @@ content::WebContents* MultiPageController::OpenGlance(
       RequestCloseGlance(parent_id);
       return child->GetContents();
     }
-    params.disposition = WindowOpenDisposition::CURRENT_TAB;
+    params.disposition = WindowOpenDisposition::kCurrentTab;
     params.source_contents = Tab(glance_.child)->GetContents();
     const auto weak = weak_factory_.GetWeakPtr();
     const auto handle = Navigate(&params);
@@ -2502,7 +2507,7 @@ content::WebContents* MultiPageController::OpenGlance(
   glance_origin_ = display::Screen::Get()->GetCursorScreenPoint();
   views::View::ConvertPointFromScreen(view_, &glance_origin_);
   params.krypton_glance = true;
-  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  params.disposition = WindowOpenDisposition::kNewForegroundTab;
   const auto weak = weak_factory_.GetWeakPtr();
   const auto handle = Navigate(&params);
   if (!weak)

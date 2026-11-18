@@ -1,0 +1,10 @@
+Name: browser-fs-access
+Short Name: browser-fs-access
+URL: git+https://github.com/GoogleChromeLabs/browser-fs-access.git
+Version: 0.29.1
+License: Apache-2.0
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

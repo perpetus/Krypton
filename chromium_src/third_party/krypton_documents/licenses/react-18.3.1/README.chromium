@@ -1,0 +1,10 @@
+Name: react
+Short Name: react
+URL: https://github.com/facebook/react.git
+Version: 18.3.1
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

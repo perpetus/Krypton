@@ -140,7 +140,7 @@ class SidebarLibrary::Impl final : public history::HistoryServiceObserver {
       }
       NavigateParams params(browser_->GetProfile(), entry->url,
                             ui::PAGE_TRANSITION_LINK);
-      params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+      params.disposition = WindowOpenDisposition::kNewForegroundTab;
       Navigate(&params);
     } else if (command == KR_LIBRARY_REMOVE && section == KR_LIBRARY_HISTORY) {
       if (auto* history = History()) {

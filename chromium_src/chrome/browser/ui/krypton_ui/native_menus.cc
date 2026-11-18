@@ -2,6 +2,10 @@
 // Use of this source code is governed by the GPL-3.0 license in LICENSE.
 
 #include "chrome/browser/ui/krypton_ui/native_menus.h"
+#include "chrome/browser/ui/krypton_ui/dictation_controller.h"
+#include "chrome/browser/ui/krypton_ui/translation_menu_model.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/weak_document_ptr.h"
 
 #include <algorithm>
 #include <array>
@@ -25,6 +29,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/krypton_ui/action_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/browser_adapter.h"
+#include "chrome/browser/ui/krypton_ui/document_store.h"
 #include "chrome/browser/ui/krypton_ui/layout_prefs.h"
 #include "chrome/browser/ui/krypton_ui/menu_glyphs.h"
 #include "chrome/browser/ui/krypton_ui/multi_page_menu.h"
@@ -60,10 +65,14 @@ constexpr int kChangeTabIcon = 0x6d620000;
 constexpr int kRoutingMenu = 0x6d620001;
 constexpr int kBoostMenu = 0x6d620002;
 constexpr int kWorkspacesMenu = 0x6d620003;
+constexpr int kOrganizeTabMenu = 0x6d620004;
+constexpr int kDocumentsMenu = 0x6d620005;
 
 constexpr int kNewFolder = 0x6c100001;
 constexpr int kNewFolderForTab = 0x6c100002;
 constexpr int kNewWorkspace = 0x6c100003;
+constexpr int kNewNote = 0x6c100004;
+constexpr int kNewEasel = 0x6c100005;
 constexpr int kMoveToFolder = 0x6c200000;
 std::string_view ContextGlyph(int command) {
   switch (command) {
@@ -71,9 +80,16 @@ std::string_view ContextGlyph(int command) {
     case kNewFolderForTab:
       return "\uE8F4";
     case kMoveToFolder:
+    case kOrganizeTabMenu:
       return "\uE8DE";
     case kNewWorkspace:
       return "\uE710";
+    case kNewNote:
+      return "\uE70B";
+    case kNewEasel:
+      return "\uEC87";
+    case kDocumentsMenu:
+      return "\uE8A5";
     default:
       break;
   }
@@ -151,6 +167,10 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
     if (!browser || (page_target && !page_model) || (submenu && !*submenu)) {
       return false;
     }
+    if (translation_menu && (!tab || !document.AsRenderFrameHostIfValid() ||
+                             document.AsRenderFrameHostIfValid() !=
+                                 tab->GetContents()->GetPrimaryMainFrame()))
+      return false;
     if (tab_menu || active_scoped) {
       return tab && tab->GetBrowserWindowInterface() == browser.get() &&
              (!active_scoped ||
@@ -227,6 +247,8 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
     if (command == kChangeTabIcon) {
       return tab && adapter && adapter->site_customization();
     }
+    if (command == kOrganizeTabMenu)
+      return tab_menu && tab;
 
     if (command == kNewFolder || command == kNewFolderForTab ||
         command == kMoveToFolder || folder_targets.contains(command)) {
@@ -236,6 +258,8 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
     if (command == kNewWorkspace) {
       return adapter && !browser->GetProfile()->IsOffTheRecord();
     }
+    if (command == kNewNote || command == kNewEasel)
+      return adapter && adapter->CanCreateDocument();
     if (command == MultiPageMenuModel::kSubmenu) {
       return multi_page_menu && adapter && adapter->MultiPageEnabled();
     }
@@ -331,6 +355,15 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
            provider->GetAcceleratorForCommandId(browser_command, accelerator);
   }
   void ExecuteCommand(int command, int event_flags) override {
+    if (command == kNewNote || command == kNewEasel) {
+      if (!IsCommandIdEnabled(command))
+        return;
+      auto* view = BrowserView::GetBrowserViewForBrowser(browser.get());
+      if (auto* adapter = view ? view->krypton_ui() : nullptr)
+        adapter->NewDocument(command == kNewNote ? DocumentKind::kNote
+                                                 : DocumentKind::kEasel);
+      return;
+    }
     if (command == kNewFolder || command == kNewFolderForTab ||
         folder_targets.contains(command)) {
       if (!IsCommandIdEnabled(command)) {
@@ -437,11 +470,15 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
   const ToggleEssential toggle_essential;
   // How the menu was presented, so a structural edit can present it again.
   uint32_t kind = 0;
+  bool translation_menu = false;
+  bool translation_panel = false;
+  content::WeakDocumentPtr document;
   GURL page_url;
   MenuModelSnapshot::GlyphTable glyphs = &BrowserCommandGlyph;
   base::span<const int> root_commands;
   std::unique_ptr<ui::MenuModel> tab_workspaces;
   std::unique_ptr<ui::SimpleMenuModel> tab_folders;
+  std::unique_ptr<ui::SimpleMenuModel> tab_organize;
   std::map<int, KrFolderId> folder_targets;
   std::unique_ptr<MultiPageMenuModel> multi_page_menu;
   std::unique_ptr<ui::MenuModel> model;
@@ -462,8 +499,8 @@ NativeMenus::NativeMenus(
         workspace_menu,
     base::RepeatingCallback<std::unique_ptr<ui::MenuModel>(KrActionId)>
         extension_menu,
-    base::RepeatingCallback<std::unique_ptr<ui::MenuModel>(uint32_t,
-                                                           tabs::TabInterface*)>
+    base::RepeatingCallback<
+        std::unique_ptr<ui::MenuModel>(uint32_t, uint64_t, tabs::TabInterface*)>
         context_menu,
     ToggleEssential toggle_essential)
     : browser_(browser.GetWeakPtr()),
@@ -540,7 +577,8 @@ base::expected<void, std::string> NativeMenus::Present(
       kind == KR_MENU_SIDEBAR || kind == KR_MENU_SITE_DATA ||
       kind == KR_MENU_SECURITY ||
       (kind == KR_MENU_ACTION &&
-       ((target >> 56) == 2 || NativeExtensions::Handles(target))) ||
+       ((target >> 56) == 2 || target == kTranslateAction ||
+        target == kDictationAction || NativeExtensions::Handles(target))) ||
       kind == KR_MENU_BACK_HISTORY || kind == KR_MENU_FORWARD_HISTORY;
   auto source = std::make_unique<Source>(
       browser_, tab, tab_menu, active_scoped, images_, release_image_,
@@ -557,7 +595,8 @@ base::expected<void, std::string> NativeMenus::Present(
   // Static: the source keeps these spans for later republishing.
   static constexpr std::array create_commands{
       IDC_NEW_TAB,       IDC_NEW_WINDOW, IDC_NEW_INCOGNITO_WINDOW,
-      IDC_NEW_SPLIT_TAB, kNewFolder,     kNewWorkspace};
+      IDC_NEW_SPLIT_TAB, kNewFolder,     kNewWorkspace,
+      kNewNote,          kNewEasel};
   static constexpr std::array library_commands{
       IDC_RECENT_TABS_MENU, IDC_SHOW_HISTORY, IDC_BOOKMARKS_MENU,
       IDC_SHOW_BOOKMARK_MANAGER, IDC_SHOW_DOWNLOADS};
@@ -574,10 +613,20 @@ base::expected<void, std::string> NativeMenus::Present(
     glyphs = &WorkspaceMenuModel::Glyph;
   } else if (kind == KR_MENU_SIDEBAR || kind == KR_MENU_SITE_DATA ||
              kind == KR_MENU_SECURITY) {
-    source->model = context_menu_.Run(kind, tab);
+    source->model = context_menu_.Run(kind, target, tab);
     glyphs = kind == KR_MENU_SECURITY    ? &SiteInfoGlyph
              : kind == KR_MENU_SITE_DATA ? &SiteDataGlyph
                                          : &ContextGlyph;
+  } else if (kind == KR_MENU_ACTION &&
+             (target == kTranslateAction || target == kDictationAction)) {
+    source->model = context_menu_.Run(kind, target, tab);
+    if (!source->model)
+      return base::unexpected("The requested page tool is unavailable.");
+    source->translation_panel = target == kTranslateAction;
+    source->translation_menu = true;
+    if (auto* frame = tab->GetContents()->GetPrimaryMainFrame())
+      source->document = frame->GetWeakDocumentPtr();
+    glyphs = source->translation_panel ? &TranslationMenuGlyph : nullptr;
   } else if (kind == KR_MENU_ACTION && NativeExtensions::Handles(target)) {
     source->model = extension_menu_.Run(target);
     if (!source->model) {
@@ -615,7 +664,8 @@ base::expected<void, std::string> NativeMenus::Present(
         }
       }
     }
-    source->tab_workspaces = context_menu_.Run(kind, tab);
+    source->tab_workspaces = context_menu_.Run(kind, 0, tab);
+    source->tab_organize = std::make_unique<ui::SimpleMenuModel>(source.get());
     if (!browser_->GetProfile()->IsOffTheRecord()) {
       source->tab_folders = std::make_unique<ui::SimpleMenuModel>(source.get());
       const auto catalog = ReadFolders(*browser_->GetProfile()->GetPrefs());
@@ -636,16 +686,13 @@ base::expected<void, std::string> NativeMenus::Present(
       }
       source->tab_folders->AddSeparator(ui::NORMAL_SEPARATOR);
       source->tab_folders->AddItem(kNewFolderForTab, u"New folder from tab");
-      model->AddSubMenu(kMoveToFolder, u"Move to folder",
-                        source->tab_folders.get());
+      source->tab_organize->AddSubMenu(kMoveToFolder, u"Move to folder",
+                                       source->tab_folders.get());
     }
     if (source->tab_workspaces && source->tab_workspaces->GetItemCount()) {
-      const auto before = model->GetIndexOfCommandId(
-          TabStripModel::CommandMoveToExistingWindow);
-      model->InsertSubMenuAt(before.value_or(model->GetItemCount()),
-                             WorkspaceTabMenuModel::kSubmenu,
-                             u"Move to workspace",
-                             source->tab_workspaces.get());
+      source->tab_organize->AddSubMenu(WorkspaceTabMenuModel::kSubmenu,
+                                       u"Move to workspace",
+                                       source->tab_workspaces.get());
     }
     model->AddSeparator(ui::NORMAL_SEPARATOR);
     model->AddItemWithStringId(IDC_BOOKMARK_THIS_TAB, IDS_BOOKMARK_THIS_TAB);
@@ -656,8 +703,11 @@ base::expected<void, std::string> NativeMenus::Present(
       model->AddSubMenu(MultiPageMenuModel::kSubmenu, u"Split view",
                         source->multi_page_menu.get());
     }
-    model->AddCheckItem(WorkspaceTabMenuModel::kEssential, u"Essential tab");
-    model->AddItem(kChangeTabIcon, u"Change icon\u2026");
+    source->tab_organize->AddCheckItem(WorkspaceTabMenuModel::kEssential,
+                                       u"Essential tab");
+    source->tab_organize->AddItem(kChangeTabIcon, u"Change icon\u2026");
+    model->AddSubMenu(kOrganizeTabMenu, u"Organize tab",
+                      source->tab_organize.get());
     model->AddItemWithStringId(IDC_RESTORE_TAB, IDS_RESTORE_TAB);
     source->model = std::move(model);
     glyphs = tab->GetContents()->IsAudioMuted() ? &MutedTabContextGlyph
@@ -682,6 +732,10 @@ base::expected<void, std::string> NativeMenus::Present(
     model->AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
     model->AddItem(kNewFolder, u"New folder");
     model->AddItem(kNewWorkspace, u"New workspace\u2026");
+    if (!browser_->GetProfile()->IsOffTheRecord()) {
+      model->AddItem(kNewNote, u"New Note");
+      model->AddItem(kNewEasel, u"New Easel");
+    }
     model->AddItem(IDC_NEW_SPLIT_TAB, u"New split\u2026");
     source->model = std::move(model);
     glyphs = &ContextGlyph;
@@ -699,6 +753,12 @@ base::expected<void, std::string> NativeMenus::Present(
                           IDC_NEW_SPLIT_TAB, u"New split\u2026");
     }
     std::vector<ActionMenuModel::Submenu> extras;
+    if (kind == KR_MENU_APP && !browser_->GetProfile()->IsOffTheRecord()) {
+      auto documents = std::make_unique<ui::SimpleMenuModel>(source.get());
+      documents->AddItem(kNewNote, u"New Note");
+      documents->AddItem(kNewEasel, u"New Easel");
+      extras.push_back({kDocumentsMenu, u"New document", std::move(documents)});
+    }
     if (kind == KR_MENU_APP) {
       auto* view = BrowserView::GetBrowserViewForBrowser(browser_.get());
       auto* adapter = view ? view->krypton_ui() : nullptr;
@@ -742,6 +802,8 @@ base::expected<void, std::string> NativeMenus::Present(
       root_commands = create_commands;
     } else if (kind == KR_MENU_LIBRARY) {
       root_commands = library_commands;
+    } else if (kind == KR_MENU_APP) {
+      glyphs = &ContextGlyph;
     }
   }
   if (!source->page_target && !source->model) {
@@ -769,15 +831,19 @@ base::expected<void, std::string> NativeMenus::Publish(
   source.Open(root);
   auto captured = source.snapshot.Capture(
       root, colors, source.glyphs, source.root_commands,
-      source.kind == KR_MENU_SECURITY ? &SiteInfoKeepsOpen : nullptr);
+      source.kind == KR_MENU_SECURITY ? &SiteInfoKeepsOpen
+      : source.translation_panel      ? &TranslationMenuKeepsOpen
+                                      : nullptr);
   if (!captured.has_value()) {
     return captured;
   }
   const bool site_data = source.kind == KR_MENU_SITE_DATA;
   return source.snapshot.Publish(
-      *api, request, site_data || source.kind == KR_MENU_SECURITY,
+      *api, request,
+      site_data || source.kind == KR_MENU_SECURITY || source.translation_panel,
       site_data ? static_cast<SiteDataMenuModel&>(root).PanelLayout()
-                : base::span<const MenuPanelRow>());
+      : source.translation_panel ? TranslationPanelLayout()
+                                 : base::span<const MenuPanelRow>());
 }
 void NativeMenus::Republish(uint32_t request) {
   const auto found = sources_.find(request);
@@ -849,6 +915,15 @@ void NativeMenus::Invalidated(uint32_t request) {
   std::ignore = session_->Defer(base::BindOnce(
       &NativeMenus::Republish, weak_factory_.GetWeakPtr(), request));
 }
+void NativeMenus::RefreshTranslationMenus() {
+  std::vector<uint32_t> requests;
+  for (const auto& [request, source] : sources_)
+    if (source->translation_menu)
+      requests.push_back(request);
+  for (const auto request : requests)
+    Republish(request);
+}
+
 void NativeMenus::CloseAll() {
   weak_factory_.InvalidateWeakPtrs();
   page_menus_.clear();

@@ -2,6 +2,9 @@
 // Use of this source code is governed by the GPL-3.0 license in LICENSE.
 
 #include "chrome/browser/ui/krypton_ui/browser_adapter.h"
+#include "chrome/browser/ui/krypton_ui/dictation_controller.h"
+#include "chrome/browser/ui/krypton_ui/live_folders.h"
+#include "chrome/browser/ui/krypton_ui/translation_menu_model.h"
 
 #include <windows.h>
 
@@ -11,6 +14,8 @@
 #include "chrome/browser/ui/krypton_ui/multi_page_controller.h"
 #include "chrome/browser/ui/krypton_ui/multi_page_session.h"
 #include "chrome/browser/ui/krypton_ui/site_customization.h"
+#include "chrome/browser/ui/krypton_ui/space_hosts.h"
+#include "chrome/browser/ui/krypton_ui/space_profiles.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
@@ -28,14 +33,17 @@
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/image_editor/screenshot_flow.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/sessions/exit_type_service.h"
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -50,6 +58,7 @@
 #include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"
 #include "chrome/browser/ui/krypton_ui/browser_service_model.h"
 #include "chrome/browser/ui/krypton_ui/browser_services.h"
+#include "chrome/browser/ui/krypton_ui/command_bar_entry.h"
 #include "chrome/browser/ui/krypton_ui/essential_prefs.h"
 #include "chrome/browser/ui/krypton_ui/layout_prefs.h"
 #include "chrome/browser/ui/krypton_ui/module.h"
@@ -59,6 +68,7 @@
 #include "chrome/browser/ui/krypton_ui/native_location_bar.h"
 #include "chrome/browser/ui/krypton_ui/native_menus.h"
 #include "chrome/browser/ui/krypton_ui/native_toolbar.h"
+#include "chrome/browser/ui/krypton_ui/page_capture.h"
 #include "chrome/browser/ui/krypton_ui/privacy_features_bridge.h"
 #include "chrome/browser/ui/krypton_ui/sidebar_services.h"
 #include "chrome/browser/ui/krypton_ui/site_data_menu_model.h"
@@ -67,10 +77,12 @@
 #include "chrome/browser/ui/page_info/page_info_dialog.h"
 #include "chrome/browser/ui/performance_controls/tab_resource_usage_collector.h"
 #include "chrome/browser/ui/performance_controls/tab_resource_usage_tab_helper.h"
+#include "chrome/browser/ui/tab_ui_helper.h"
 #include "chrome/browser/ui/tabs/alert/tab_alert_controller.h"
 #include "chrome/browser/ui/tabs/tab_data.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/thumbnails/thumbnail_tab_helper.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/contents_container_view.h"
@@ -87,9 +99,14 @@
 #include "components/prefs/pref_service.h"
 #include "components/security_state/core/security_state.h"
 #include "components/tabs/public/tab_interface.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
+#include "components/zoom/zoom_controller.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/actions/actions.h"
@@ -103,12 +120,14 @@
 #include "ui/display/screen.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/win/events_win_utils.h"
+#include "ui/gfx/image/image_skia_operations.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/win/hwnd_util.h"
 
 namespace krypton_ui {
 namespace {
+constexpr KrActionId kZoomResetAction = uint64_t{9} << 56;
 KrStr Borrow(std::string_view text) {
   return {text.data(), text.size()};
 }
@@ -119,13 +138,13 @@ std::string_view Read(KrStr text) {
 WindowOpenDisposition Disposition(uint32_t value) {
   switch (value) {
     case KR_OPEN_NEW_TAB:
-      return WindowOpenDisposition::NEW_FOREGROUND_TAB;
+      return WindowOpenDisposition::kNewForegroundTab;
     case KR_OPEN_NEW_BACKGROUND_TAB:
-      return WindowOpenDisposition::NEW_BACKGROUND_TAB;
+      return WindowOpenDisposition::kNewBackgroundTab;
     case KR_OPEN_NEW_WINDOW:
-      return WindowOpenDisposition::NEW_WINDOW;
+      return WindowOpenDisposition::kNewWindow;
     default:
-      return WindowOpenDisposition::CURRENT_TAB;
+      return WindowOpenDisposition::kCurrentTab;
   }
 }
 uint32_t Security(security_state::SecurityLevel level) {
@@ -213,6 +232,10 @@ class BrowserAdapter::Tab final : public content::WebContentsObserver {
     }
   }
   void DidChangeVisibleSecurityState() override { owner_->PublishNavigation(); }
+  void NavigationEntriesDeleted() override {
+    if (tab_ && tab_->IsActivated())
+      owner_->PublishNavigation();
+  }
   void DidStartNavigation(content::NavigationHandle* handle) override {
     if (!handle->IsInPrimaryMainFrame() || handle->IsSameDocument()) {
       return;
@@ -230,11 +253,6 @@ class BrowserAdapter::Tab final : public content::WebContentsObserver {
       owner_->site_customization_->NavigationReady(*handle);
     }
   }
-  void DOMContentLoaded(content::RenderFrameHost* frame) override {
-    if (owner_->site_customization_) {
-      owner_->site_customization_->ApplyStyles(*frame);
-    }
-  }
   void DidFinishNavigation(content::NavigationHandle* handle) override {
     if (tab_ && owner_->site_customization_) {
       owner_->site_customization_->NavigationFinished(*tab_, *handle);
@@ -244,6 +262,9 @@ class BrowserAdapter::Tab final : public content::WebContentsObserver {
     }
     Changed();
     owner_->PublishNavigation();
+    if (tab_ && tab_->IsActivated() && handle->HasCommitted() &&
+        !handle->IsSameDocument())
+      owner_->ScheduleActions();
     owner_->SchedulePageBackgrounds();
     if (tab_) {
       owner_->UpdateEssential(*tab_);
@@ -444,6 +465,105 @@ bool BrowserAdapter::IsEligible(const BrowserWindowInterface& browser) {
   return browser.GetType() == BrowserWindowInterface::Type::TYPE_NORMAL;
 }
 
+// Bounded, one-shot snapshots. Copy compressed background data into a detached
+// ThumbnailImage so observing it cannot start a renderer/video capture. Active
+// content is copied once from Viz, without invalidating or painting the page.
+class BrowserAdapter::SwitcherPreview final : public ThumbnailImage::Delegate {
+ public:
+  SwitcherPreview(BrowserAdapter& owner,
+                  uint32_t request,
+                  tabs::TabInterface& tab)
+      : owner_(owner),
+        tab_(tab.GetWeakPtr()),
+        request_(request),
+        url_(tab.GetContents()->GetVisibleURL()) {}
+  ~SwitcherPreview() override { owner_->images_.Release(image_); }
+  void Start() {
+    auto* contents = tab_->GetContents();
+    const auto& prefs = *g_browser_process->local_state();
+    if (contents->IsCrashed() ||
+        !prefs.GetBoolean(prefs::kHoverCardImagesEnabled) ||
+        (ReadAppearancePrefs(owner_->WindowPrefs()).flags &
+         KR_APPEARANCE_HIDE_HOVER_IMAGES)) {
+      return;
+    }
+    if (tab_->IsActivated()) {
+      auto* view = contents->GetRenderWidgetHostView();
+      if (view && view->IsSurfaceAvailableForCopy()) {
+        const auto source = view->GetViewBounds().size();
+        const float scale = std::min(480.0f / std::max(1, source.width()),
+                                     270.0f / std::max(1, source.height()));
+        const gfx::Size output(
+            std::max(1, static_cast<int>(source.width() * scale)),
+            std::max(1, static_cast<int>(source.height() * scale)));
+        view->CopyFromSurface(
+            gfx::Rect(), output, base::Milliseconds(750),
+            base::BindPostTaskToCurrentDefault(base::BindOnce(
+                &SwitcherPreview::OnSurface, weak_factory_.GetWeakPtr())));
+        return;
+      }
+    }
+    if (const auto* helper = ThumbnailTabHelper::From(tab_.get());
+        helper && helper->thumbnail()->has_data()) {
+      cached_ = base::MakeRefCounted<ThumbnailImage>(
+          this, helper->thumbnail()->data());
+      subscription_ = cached_->Subscribe();
+      subscription_->SetSizeHint(gfx::Size(480, 270));
+      subscription_->SetUncompressedImageCallback(base::BindRepeating(
+          &SwitcherPreview::OnImage, weak_factory_.GetWeakPtr()));
+      cached_->RequestThumbnailImage();
+    }
+  }
+
+ private:
+  // ThumbnailImage always requires a live delegate, even for a detached cached
+  // snapshot. This delegate owns no capture driver and cannot wake the tab.
+  // It outlives cached_ and subscription_, which are destroyed before the base.
+  void ThumbnailImageBeingObservedChanged(bool) override {}
+  ThumbnailImage::CaptureReadiness GetCaptureReadiness() const override {
+    return ThumbnailImage::CaptureReadiness::kReadyForFinalCapture;
+  }
+
+  void OnSurface(const content::CopyFromSurfaceResult& result) {
+    if (result.has_value())
+      OnImage(gfx::ImageSkia::CreateFrom1xBitmap(result->bitmap));
+  }
+  void OnImage(gfx::ImageSkia image) {
+    if (image_ || image.isNull() || !tab_ ||
+        owner_->switcher_request_ != request_ ||
+        tab_->GetContents()->GetVisibleURL() != url_)
+      return;
+    // Bound decoded/UI-side pixels even if a cached thumbnail was much larger.
+    const auto size = image.size();
+    if (size.width() > 480 || size.height() > 270) {
+      const float scale =
+          std::min(480.0f / size.width(), 270.0f / size.height());
+      image = gfx::ImageSkiaOperations::CreateResizedImage(
+          image, skia::ImageOperations::RESIZE_GOOD,
+          gfx::Size(std::max(1, static_cast<int>(size.width() * scale)),
+                    std::max(1, static_cast<int>(size.height() * scale))));
+    }
+    const auto acquired =
+        owner_->AcquireImage(ui::ImageModel::FromImageSkia(image));
+    if (!acquired.has_value())
+      return;
+    image_ = *acquired;
+    if (const auto* api = owner_->session_.api(); api && api->set_tab_preview) {
+      const KrTabPreview value{
+          sizeof(KrTabPreview), Identity(*tab_), image_, 0, 0, {}, {}, {}, {}};
+      std::ignore = api->set_tab_preview(api->self, request_, &value);
+    }
+  }
+  const raw_ref<BrowserAdapter> owner_;
+  base::WeakPtr<tabs::TabInterface> tab_;
+  const uint32_t request_;
+  const GURL url_;
+  KrImageId image_ = 0;
+  scoped_refptr<ThumbnailImage> cached_;
+  std::unique_ptr<ThumbnailImage::Subscription> subscription_;
+  base::WeakPtrFactory<SwitcherPreview> weak_factory_{this};
+};
+
 BrowserAdapter::BrowserAdapter(BrowserView& view)
     : view_(view),
       browser_(*view.browser()),
@@ -451,6 +571,9 @@ BrowserAdapter::BrowserAdapter(BrowserView& view)
                base::SingleThreadTaskRunner::GetCurrentDefault()),
       anchors_(view),
       images_(session_) {
+  // Before BrowserWidget asks for its native widget: a Space host for another
+  // profile becomes a child of its frame instead of a top-level window.
+  InitializeSpaceHost();
   auto backdrop = std::make_unique<NativeBackdrop>();
   backdrop_ = backdrop.get();
   view.SetBackground(std::move(backdrop));
@@ -485,9 +608,10 @@ BrowserAdapter::BrowserAdapter(BrowserView& view)
           },
           weak_factory_.GetWeakPtr()),
       base::BindRepeating(
-          [](base::WeakPtr<BrowserAdapter> owner, uint32_t kind,
+          [](base::WeakPtr<BrowserAdapter> owner, uint32_t kind, uint64_t zone,
              tabs::TabInterface* target) -> std::unique_ptr<ui::MenuModel> {
-            return owner ? owner->CreateContextMenu(kind, target) : nullptr;
+            return owner ? owner->CreateContextMenu(kind, target, zone)
+                         : nullptr;
           },
           weak_factory_.GetWeakPtr()),
       base::BindRepeating(
@@ -508,12 +632,19 @@ BrowserAdapter::BrowserAdapter(BrowserView& view)
   location_ = std::make_unique<NativeLocationBar>(
       *browser_, commands, *LocationBarModel::From(&*browser_), session_,
       anchors_, view, publish_image, release_image, changed);
+  location_->SetCommandProvider(base::BindRepeating(
+      [](base::WeakPtr<BrowserAdapter> owner, std::string_view query) {
+        return owner ? owner->CommandBarEntries(query)
+                     : std::vector<CommandBarEntry>();
+      },
+      weak_factory_.GetWeakPtr()));
   toolbar_ = view.AddChildView(std::make_unique<NativeToolbar>(
       *browser_, commands, view, session_, anchors_, std::move(publish_image),
       std::move(release_image), std::move(changed)));
 }
 
 BrowserAdapter::~BrowserAdapter() {
+  dictation_.reset();
   Close();
   location_.reset();
   view_->RemoveChildViewT(toolbar_.ExtractAsDangling());
@@ -564,8 +695,9 @@ base::expected<void, std::string> BrowserAdapter::Attach() {
       browser_->GetProfile()->IsOffTheRecord(),
       theme->forced_colors() != ui::ColorProviderKey::ForcedColors::kNone,
       view_->GetColorProvider()->GetColor(ui::kColorAccent)};
-  result =
-      session_.Initialize(views::HWNDForView(&*view_), MakeBrowser(), initial);
+  // A hosted shell shares its frame's HWND and starts hidden.
+  result = session_.Initialize(views::HWNDForView(&*view_), MakeBrowser(),
+                               initial, hosted_);
   if (!result.has_value()) {
     return result;
   }
@@ -579,7 +711,8 @@ base::expected<void, std::string> BrowserAdapter::Attach() {
             base::BindRepeating(&BrowserAdapter::PublishWindowState,
                                 weak_factory_.GetWeakPtr()));
   }
-  layout_prefs_.Init(browser_->GetProfile()->GetPrefs());
+  // Window-level settings and the Space catalog belong to the frame's profile.
+  layout_prefs_.Init(&WindowPrefs());
   const auto publish_layout = base::BindRepeating(
       &BrowserAdapter::PublishLayout, base::Unretained(this));
   layout_prefs_.Add(kLayoutFlagsPref, publish_layout);
@@ -590,15 +723,25 @@ base::expected<void, std::string> BrowserAdapter::Attach() {
     layout_prefs_.Add(name, publish_layout);
   }
   PublishLayout();
-  workspaces_ = ReadWorkspaces(*browser_->GetProfile()->GetPrefs());
-  active_space_ =
-      LastWorkspace(*browser_->GetProfile()->GetPrefs(), workspaces_);
-  layout_prefs_.Add(kWorkspacesPref,
-                    base::BindRepeating(&BrowserAdapter::OnWorkspacesChanged,
-                                        base::Unretained(this)));
+  workspaces_ = ReadWorkspaces(WindowPrefs());
+  if (hosted_ && frame_) {
+    active_space_ = frame_->active_space_;
+  } else {
+    active_space_ = LastWorkspace(WindowPrefs(), workspaces_);
+    // Startup never opens another profile: a remembered Space of another
+    // profile presents again only when the user switches to it.
+    if (!HostsSpace(active_space_)) {
+      active_space_ = kDefaultWorkspace;
+    }
+  }
+  for (const char* name : {kWorkspacesPref, kWorkspaceProfilesPref}) {
+    layout_prefs_.Add(name,
+                      base::BindRepeating(&BrowserAdapter::OnWorkspacesChanged,
+                                          base::Unretained(this)));
+  }
   PublishWorkspaces();
   if (CanFolders()) {
-    folders_ = ReadFolders(*browser_->GetProfile()->GetPrefs());
+    folders_ = ReadFolders(WindowPrefs());
     layout_prefs_.Add(kFoldersPref,
                       base::BindRepeating(&BrowserAdapter::OnFoldersChanged,
                                           base::Unretained(this)));
@@ -617,9 +760,11 @@ base::expected<void, std::string> BrowserAdapter::Attach() {
   for (int index = 0; index < model->count(); ++index) {
     Insert(*model->GetTabAtIndex(index), base::checked_cast<size_t>(index));
   }
-  layout_prefs_.Add(kEssentialsPref,
-                    base::BindRepeating(&BrowserAdapter::OnEssentialsChanged,
-                                        weak_factory_.GetWeakPtr()));
+  // Essentials belong to each tab's own profile.
+  profile_prefs_.Init(browser_->GetProfile()->GetPrefs());
+  profile_prefs_.Add(kEssentialsPref,
+                     base::BindRepeating(&BrowserAdapter::OnEssentialsChanged,
+                                         weak_factory_.GetWeakPtr()));
   essential_restore_ =
       SessionRestore::RegisterOnSessionRestoredCallback(base::BindRepeating(
           [](base::WeakPtr<BrowserAdapter> owner, Profile* profile, int) {
@@ -629,6 +774,20 @@ base::expected<void, std::string> BrowserAdapter::Attach() {
             }
           },
           weak_factory_.GetWeakPtr()));
+  if (auto* exit_type =
+          ExitTypeService::GetInstanceForProfile(browser_->GetProfile())) {
+    // Crash recovery starts later, after the user accepts the crash prompt.
+    // Resume catalog reconciliation after either restore or dismissal, when
+    // Chromium also resumes saving the current session.
+    exit_type->AddCrashAckCallback(base::BindOnce(
+        [](base::WeakPtr<BrowserAdapter> owner) {
+          if (owner) {
+            std::ignore = owner->session_.Defer(
+                base::BindOnce(&BrowserAdapter::OnEssentialsChanged, owner));
+          }
+        },
+        weak_factory_.GetWeakPtr()));
+  }
   // Attach runs while Browser is still constructing its window, before startup
   // tabs are inserted. Recreating essentials navigates, which needs both.
   std::ignore = session_.Defer(base::BindOnce(
@@ -641,12 +800,18 @@ base::expected<void, std::string> BrowserAdapter::Attach() {
     return base::unexpected(std::move(state.error()));
   }
   view_->InvalidateLayout();
-  std::ignore = session_.Defer(
-      base::BindOnce(&BrowserServices::MaybeShowFirstRun,
-                     browser_services_->weak_factory_.GetWeakPtr()));
+  // A hosted shell is hidden until presented; the frame owns first run.
+  if (!hosted_) {
+    std::ignore = session_.Defer(
+        base::BindOnce(&BrowserServices::MaybeShowFirstRun,
+                       browser_services_->weak_factory_.GetWeakPtr()));
+  }
   sidebar_->Initialize();
   site_customization_ = std::make_unique<SiteCustomization>(*this);
   site_customization_->Initialize();
+  if (CanFolders())
+    live_folders_ = std::make_unique<LiveFolders>(*this);
+  AttachSpaceHost();
   return {};
 }
 
@@ -661,6 +826,9 @@ void BrowserAdapter::Close() {
     ApplyWorkspaceTheme(value, true);
   }
   closed_ = true;
+  CloseSpaceHost();
+  live_folders_.reset();
+  page_corner_overlays_.reset();
   TabStripModelObserver::StopObservingAll(this);
   layout_prefs_.RemoveAll();
   essential_restore_ = {};
@@ -678,6 +846,8 @@ void BrowserAdapter::Close() {
   screenshot_.reset();
   sidebar_.reset();
   location_->Close();
+  switcher_previews_.clear();
+  switcher_request_ = 0;
   tab_preview_.reset();
   glass_.reset();
   multi_page_.reset();
@@ -690,6 +860,12 @@ void BrowserAdapter::Close() {
   // destroying XAML. The process-lifetime module remains loaded.
   session_.Close();
   images_.Clear();
+}
+
+void BrowserAdapter::DropPreviews() {
+  switcher_previews_.clear();
+  switcher_request_ = 0;
+  tab_preview_.reset();
 }
 
 KrTabId BrowserAdapter::Identity(const tabs::TabInterface& tab) {
@@ -761,6 +937,11 @@ void BrowserAdapter::PublishTab(tabs::TabInterface& tab) {
   if (contents->IsAudioMuted()) {
     flags |= KR_TAB_MUTED;
   }
+  if (auto* helper = TabUIHelper::From(&tab);
+      (helper && helper->IsDiscarded()) ||
+      contents->GetController().NeedsReload()) {
+    flags |= KR_TAB_SLEEPING;
+  }
   if (contents->IsCrashed()) {
     flags |= KR_TAB_CRASHED;
   }
@@ -812,6 +993,8 @@ void BrowserAdapter::OnTabStripModelChanged(
     TabStripModel*,
     const TabStripModelChange& change,
     const TabStripSelectionChange& selection) {
+  if (selection.active_tab_changed() && dictation_)
+    dictation_->Stop();
   const auto* api = session_.api();
   if (!api) {
     return;
@@ -866,6 +1049,7 @@ void BrowserAdapter::OnTabStripModelChanged(
       change.type() == TabStripModelChange::kReplaced) {
     PublishSelection();
     PublishNavigation();
+    ScheduleActions();
     SchedulePageBackgrounds();
   }
 }
@@ -913,6 +1097,7 @@ void BrowserAdapter::OnTabChangedAt(tabs::TabInterface* tab, TabChangeType) {
   }
 }
 void BrowserAdapter::OnTabPinnedStateChanged(tabs::TabInterface* tab, int) {
+  RecordPinnedHome(*tab);
   if (!tab->IsPinned() && FolderForTab(tab->GetContents())) {
     AssignFolder(*tab, 0);
   }
@@ -931,12 +1116,10 @@ void BrowserAdapter::PublishSelection() {
   const auto next = tab ? Identity(*tab) : 0;
   if (tab) {
     const auto space = WorkspaceForTab(tab->GetContents());
+    // Only the presented profile's selection decides the window's Space.
     if (!EssentialForTab(tab->GetContents()) && space != active_space_ &&
-        workspaces_.Contains(space)) {
-      menus_->CloseAll();
-      active_space_ = space;
-      RememberWorkspace(*browser_->GetProfile()->GetPrefs(), space);
-      PublishWorkspaces();
+        presented_) {
+      std::ignore = FollowSpace(space);
     }
   }
   if (active_tab_ != next) {
@@ -958,6 +1141,7 @@ void BrowserAdapter::PublishNavigation() {
   }
   auto* tab = browser_->GetActiveTabInterface();
   auto* contents = tab ? tab->GetContents() : nullptr;
+  UpdateDocumentPageTheme(contents);
   auto& model = *LocationBarModel::From(&*browser_);
   auto display = base::UTF16ToUTF8(model.GetURLForDisplay());
   auto full = base::UTF16ToUTF8(model.GetFormattedFullURL());
@@ -1024,6 +1208,63 @@ void BrowserAdapter::ScheduleActions() {
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&BrowserAdapter::PublishActions,
                                 weak_factory_.GetWeakPtr()));
+}
+
+void BrowserAdapter::ShowTranslationMenu() {
+  if (!ready() || !presented_)
+    return;
+  auto* tab = browser_->GetActiveTabInterface();
+  if (!tab || !CanShowTranslationPanel(tab->GetContents()))
+    return;
+  std::ignore = session_.Defer(base::BindOnce(
+      [](base::WeakPtr<BrowserAdapter> owner,
+         base::WeakPtr<tabs::TabInterface> tab,
+         content::WeakDocumentPtr document) {
+        if (!owner || !owner->ready() || !owner->presented_ || !tab ||
+            owner->browser_->GetActiveTabInterface() != tab.get() ||
+            !CanShowTranslationPanel(tab->GetContents()) ||
+            document.AsRenderFrameHostIfValid() !=
+                tab->GetContents()->GetPrimaryMainFrame())
+          return;
+        auto bounds =
+            owner->anchors_.GetBounds({AnchorKind::kAction, kTranslateAction});
+        if (!bounds)
+          bounds = owner->anchors_.GetBounds(
+              {AnchorKind::kAction, kSiteToolsAction});
+        const auto* api = owner->session_.api();
+        if (bounds && api)
+          api->request_context_menu(
+              api->self, KR_MENU_ACTION, kTranslateAction,
+              {bounds->x(), bounds->y(), bounds->width(), bounds->height()});
+      },
+      weak_factory_.GetWeakPtr(), tab->GetWeakPtr(),
+      tab->GetContents()->GetPrimaryMainFrame()->GetWeakDocumentPtr()));
+}
+
+void BrowserAdapter::ShowVoiceMenu() {
+  if (!ready() || !presented_)
+    return;
+  auto* tab = browser_->GetActiveTabInterface();
+  if (!tab)
+    return;
+  std::ignore = session_.Defer(base::BindOnce(
+      [](base::WeakPtr<BrowserAdapter> owner,
+         base::WeakPtr<tabs::TabInterface> tab) {
+        if (!owner || !owner->ready() || !owner->presented_ || !tab ||
+            owner->browser_->GetActiveTabInterface() != tab.get())
+          return;
+        auto bounds = owner->anchors_.GetBounds(
+            {AnchorKind::kElement, KR_ELEMENT_ADDRESS});
+        if (!bounds)
+          bounds = owner->anchors_.GetBounds(
+              {AnchorKind::kAction, kSiteToolsAction});
+        const auto* api = owner->session_.api();
+        if (bounds && api)
+          api->request_context_menu(
+              api->self, KR_MENU_ACTION, kDictationAction,
+              {bounds->x(), bounds->y(), bounds->width(), bounds->height()});
+      },
+      weak_factory_.GetWeakPtr(), tab->GetWeakPtr()));
 }
 
 void BrowserAdapter::PublishActions() {
@@ -1113,6 +1354,49 @@ void BrowserAdapter::PublishActions() {
        {},
        0,
        -1});
+  if (!dictation_) {
+    dictation_ = std::make_unique<DictationController>(
+        *browser_, *view_, session_,
+        base::BindRepeating(
+            [](base::WeakPtr<BrowserAdapter> owner) {
+              return owner && owner->ready() && owner->presented_ &&
+                     owner->location_->IsFocusWithin();
+            },
+            weak_factory_.GetWeakPtr()),
+        base::BindRepeating(&BrowserAdapter::ScheduleActions,
+                            weak_factory_.GetWeakPtr()),
+        base::BindRepeating(&BrowserAdapter::ShowVoiceMenu,
+                            weak_factory_.GetWeakPtr()));
+  }
+  if (auto action = dictation_->Action())
+    action_views_.push_back(*action);
+  if (!translation_actions_) {
+    translation_actions_ = std::make_unique<TranslationActions>(
+        *browser_->GetProfile(),
+        base::BindRepeating(&BrowserAdapter::ScheduleActions,
+                            weak_factory_.GetWeakPtr()));
+  }
+  if (auto* tab = browser_->GetActiveTabInterface()) {
+    auto* contents = tab->GetContents();
+    if (auto* zoom = zoom::ZoomController::FromWebContents(contents);
+        zoom && !zoom->IsAtDefaultZoom() &&
+        chrome::IsCommandEnabled(&*browser_, IDC_ZOOM_NORMAL)) {
+      zoom_label_ = base::NumberToString(zoom->GetZoomPercent()) + "%";
+      zoom_tooltip_ = "Reset page zoom (" + zoom_label_ + ")";
+      KrAction reset{};
+      reset.struct_size = sizeof(reset);
+      reset.id = kZoomResetAction;
+      reset.kind = KR_ACTION_ZOOM_RESET;
+      reset.flags = KR_ACTION_VISIBLE | KR_ACTION_ENABLED;
+      reset.label = Borrow(zoom_label_);
+      reset.tooltip = Borrow(zoom_tooltip_);
+      reset.progress = -1;
+      action_views_.push_back(reset);
+    }
+    if (auto action = TranslationAction(contents, translation_tooltip_,
+                                        translation_locale_))
+      action_views_.push_back(*action);
+  }
   if (site_tools_label_.empty()) {
     site_tools_label_ =
         base::UTF16ToUTF8(l10n_util::GetStringUTF16(IDS_MORE_TOOLS_MENU));
@@ -1138,6 +1422,8 @@ void BrowserAdapter::PublishActions() {
                            -1});
   api->set_actions(api->self, action_views_.data(), action_views_.size(),
                    sizeof(KrAction));
+  if (menus_)
+    menus_->RefreshTranslationMenus();
   for (auto iterator = actions_.begin(); iterator != actions_.end();) {
     const auto& entry = *iterator;
     const bool removed = std::ranges::none_of(
@@ -1159,12 +1445,11 @@ void BrowserAdapter::PublishLayout() {
   if (!api || closed_) {
     return;
   }
-  const auto layout = ReadLayoutPrefs(*browser_->GetProfile()->GetPrefs());
+  const auto layout = ReadLayoutPrefs(WindowPrefs());
   api->set_layout_prefs(api->self, &layout);
   if (KR_HAS_SLOT(api, KrShellUI, set_appearance_prefs) &&
       api->set_appearance_prefs) {
-    const auto appearance =
-        ReadAppearancePrefs(*browser_->GetProfile()->GetPrefs());
+    const auto appearance = ReadAppearancePrefs(WindowPrefs());
     api->set_appearance_prefs(api->self, &appearance);
   }
 }
@@ -1249,7 +1534,8 @@ void BrowserAdapter::CloseTab(KrTabId id) {
   }
 }
 void BrowserAdapter::MoveTab(KrTabId id, KrSpaceId space, size_t index) {
-  if (!workspaces_.Contains(space)) {
+  // Tabs never change profile: only Spaces this browser hosts are targets.
+  if (!HostsSpace(space)) {
     return;
   }
   if (multi_page_ && !multi_page_->BeforeTabMove(id, space, index)) {
@@ -1439,6 +1725,13 @@ uint32_t BrowserAdapter::WindowFlags() const {
   return flags;
 }
 void BrowserAdapter::WindowCommand(uint32_t command) {
+  if (hosted_) {
+    // Caption commands act on the shared frame, never only on this host.
+    if (frame_) {
+      frame_->WindowCommand(command);
+    }
+    return;
+  }
   auto* widget = view_->GetWidget();
   switch (command) {
     case KR_WINDOW_MINIMIZE:
@@ -1475,6 +1768,9 @@ void BrowserAdapter::PublishTheme() {
       native->forced_colors() != ui::ColorProviderKey::ForcedColors::kNone,
       view_->GetColorProvider()->GetColor(ui::kColorAccent)};
   api->set_theme(api->self, &theme);
+  auto* model = browser_->GetTabStripModel();
+  for (int index = 0; index < model->count(); ++index)
+    UpdateDocumentPageTheme(model->GetWebContentsAt(index));
   PublishWorkspaceThemes();
   for (const auto& [id, action] : actions_) {
     action->image_dirty = true;
@@ -1487,7 +1783,8 @@ void BrowserAdapter::PublishTheme() {
 
 void BrowserAdapter::UpdateFrameMaterial() {
   auto* widget = view_->GetWidget();
-  if (!widget || closed_) {
+  // The frame owns the HWND's DWM material; hosts share it.
+  if (!widget || closed_ || hosted_) {
     return;
   }
   const auto material = backdrop_->transparent() ? FrameMaterial::kTransparent
@@ -1521,6 +1818,28 @@ void BrowserAdapter::UpdateFrameMaterial() {
   DwmSetWindowAttribute(window, DWMWA_SYSTEMBACKDROP_TYPE, &type, sizeof(type));
   // Re-evaluates the DWM frame extension and compositor transparency.
   widget->FrameTypeChanged();
+}
+
+void BrowserAdapter::UpdatePageCornerOverlays() {
+  if (closed_) {
+    return;
+  }
+  auto* contents = view_->multi_contents_view();
+  if (!contents) {
+    return;
+  }
+  const float radius = contents->GetBackgroundRadii().upper_left();
+  const bool enabled =
+      !backdrop_->transparent() && radius > 0 &&
+      !(WindowFlags() & (KR_WINDOW_FULLSCREEN | KR_WINDOW_TAB_FULLSCREEN)) &&
+      !contents->IsInSplitView() && !(multi_page_ && multi_page_->active());
+  if (enabled && !page_corner_overlays_) {
+    page_corner_overlays_ =
+        std::make_unique<PageCornerOverlays>(*view_, *backdrop_);
+  }
+  if (page_corner_overlays_) {
+    page_corner_overlays_->Update(*contents, enabled, radius);
+  }
 }
 
 void BrowserAdapter::PublishWindowState() {
@@ -1649,8 +1968,7 @@ KrBrowser BrowserAdapter::MakeBrowser() {
           if (!owner) {
             return;
           }
-          WriteAppearancePrefs(*owner->browser_->GetProfile()->GetPrefs(),
-                               &value);
+          WriteAppearancePrefs(owner->WindowPrefs(), &value);
           owner->PublishLayout();
         },
         owner.weak_factory_.GetWeakPtr(), copy));
@@ -1678,6 +1996,44 @@ KrBrowser BrowserAdapter::MakeBrowser() {
   host.relaunch_browser = [](void* self) noexcept {
     auto& owner = *static_cast<BrowserAdapter*>(self);
     std::ignore = owner.session_.Defer(base::BindOnce(&chrome::AttemptRestart));
+  };
+  host.request_tab_switcher_previews = [](void* self, uint32_t request,
+                                          const KrTabId* ids,
+                                          size_t count) noexcept {
+    if (!request || !ids || count == 0 || count > 6)
+      return;
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    // ABI memory is borrowed only for this call. Defer all host/model work.
+    const std::vector<KrTabId> tabs(ids, ids + count);
+    std::ignore = owner.session_.Defer(base::BindOnce(
+        [](base::WeakPtr<BrowserAdapter> owner, uint32_t request,
+           std::vector<KrTabId> tabs) {
+          if (!owner)
+            return;
+          owner->switcher_previews_.clear();
+          owner->switcher_request_ = request;
+          for (const auto id : tabs) {
+            if (auto* tab = owner->FindTab(id)) {
+              auto preview =
+                  std::make_unique<SwitcherPreview>(*owner, request, *tab);
+              owner->switcher_previews_.push_back(std::move(preview));
+              owner->switcher_previews_.back()->Start();
+            }
+          }
+        },
+        owner.weak_factory_.GetWeakPtr(), request, tabs));
+  };
+  host.cancel_tab_switcher_previews = [](void* self,
+                                         uint32_t request) noexcept {
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    std::ignore = owner.session_.Defer(base::BindOnce(
+        [](base::WeakPtr<BrowserAdapter> owner, uint32_t request) {
+          if (owner && owner->switcher_request_ == request) {
+            owner->switcher_request_ = 0;
+            owner->switcher_previews_.clear();
+          }
+        },
+        owner.weak_factory_.GetWeakPtr(), request));
   };
   host.request_tab_preview = [](void* self, uint32_t request,
                                 KrTabId id) noexcept {
@@ -1725,6 +2081,27 @@ KrBrowser BrowserAdapter::MakeBrowser() {
     std::ignore = owner.session_.Defer(base::BindOnce(
         &BrowserAdapter::EditWorkspace, owner.weak_factory_.GetWeakPtr(), kind,
         std::move(value)));
+  };
+  host.set_space_profile = [](void* self, KrSpaceId space, KrProfileId profile,
+                              KrStr new_profile) noexcept {
+    const auto name = Read(new_profile);
+    if (!base::IsStringUTF8(name)) {
+      return KR_ERR_INVALID_ARGUMENT;
+    }
+    return static_cast<BrowserAdapter*>(self)->SetSpaceProfileCommand(
+        space, profile, base::UTF8ToUTF16(name));
+  };
+  host.create_space = [](void* self, const KrSpace* space, KrProfileId profile,
+                         KrStr new_profile) noexcept {
+    const auto name = Read(new_profile);
+    if (!space || !KR_HAS_FIELD(space, KrSpace, color) || space->id ||
+        !base::IsStringUTF8(name)) {
+      return KR_ERR_INVALID_ARGUMENT;
+    }
+    Workspace value{0, std::string(Read(space->name)),
+                    std::string(Read(space->glyph)), space->color};
+    return static_cast<BrowserAdapter*>(self)->CreateSpaceCommand(
+        std::move(value), profile, base::UTF8ToUTF16(name));
   };
   host.activate_tab = [](void* self, KrTabId id) noexcept {
     auto& owner = *static_cast<BrowserAdapter*>(self);
@@ -1800,6 +2177,20 @@ KrBrowser BrowserAdapter::MakeBrowser() {
   };
   host.invoke_action = [](void* self, KrActionId id, KrRect anchor) noexcept {
     auto& owner = *static_cast<BrowserAdapter*>(self);
+    if (id == kZoomResetAction) {
+      if (auto* tab = owner.browser_->GetActiveTabInterface()) {
+        std::ignore = owner.session_.Defer(base::BindOnce(
+            [](base::WeakPtr<BrowserAdapter> owner,
+               base::WeakPtr<tabs::TabInterface> tab) {
+              if (owner && owner->ready() && owner->presented_ && tab &&
+                  owner->browser_->GetActiveTabInterface() == tab.get()) {
+                chrome::ExecuteCommand(&*owner->browser_, IDC_ZOOM_NORMAL);
+              }
+            },
+            owner.weak_factory_.GetWeakPtr(), tab->GetWeakPtr()));
+      }
+      return;
+    }
     if (id == kCopyLinkAction) {
       auto* tab = owner.browser_->GetActiveTabInterface();
       if (tab) {
@@ -1813,6 +2204,29 @@ KrBrowser BrowserAdapter::MakeBrowser() {
             },
             owner.weak_factory_.GetWeakPtr(), tab->GetWeakPtr()));
       }
+      return;
+    }
+    if (id == kTranslateAction) {
+      auto* tab = owner.browser_->GetActiveTabInterface();
+      if (!tab || !CanShowTranslationPanel(tab->GetContents()))
+        return;
+      std::ignore = owner.session_.Defer(base::BindOnce(
+          [](base::WeakPtr<BrowserAdapter> owner,
+             base::WeakPtr<tabs::TabInterface> tab,
+             content::WeakDocumentPtr document, KrRect anchor) {
+            if (!owner || !owner->ready() || !owner->presented_ || !tab ||
+                owner->browser_->GetActiveTabInterface() != tab.get() ||
+                !CanShowTranslationPanel(tab->GetContents()) ||
+                document.AsRenderFrameHostIfValid() !=
+                    tab->GetContents()->GetPrimaryMainFrame())
+              return;
+            if (const auto* api = owner->session_.api())
+              api->request_context_menu(api->self, KR_MENU_ACTION,
+                                        kTranslateAction, anchor);
+          },
+          owner.weak_factory_.GetWeakPtr(), tab->GetWeakPtr(),
+          tab->GetContents()->GetPrimaryMainFrame()->GetWeakDocumentPtr(),
+          anchor));
       return;
     }
     if (id == kSiteToolsAction) {
@@ -1892,6 +2306,16 @@ KrBrowser BrowserAdapter::MakeBrowser() {
   host.cancel_suggestions = [](void* self, uint32_t request) noexcept {
     static_cast<BrowserAdapter*>(self)->location_->CancelQuery(request);
   };
+  host.start_dictation = [](void* self, uint32_t request) noexcept {
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    if (owner.dictation_)
+      owner.dictation_->Start(request);
+  };
+  host.stop_dictation = [](void* self, uint32_t request) noexcept {
+    auto& owner = *static_cast<BrowserAdapter*>(self);
+    if (owner.dictation_)
+      owner.dictation_->Stop(request);
+  };
   host.address_state_changed = [](void* self,
                                   const KrAddressState* state) noexcept {
     if (state) {
@@ -1950,6 +2374,7 @@ KrBrowser BrowserAdapter::MakeBrowser() {
             result = owner->toolbar_->PresentAppMenu(request);
           } else if (kind == KR_MENU_ACTION &&
                      !NativeExtensions::Handles(target) &&
+                     target != kTranslateAction && target != kDictationAction &&
                      !owner->actions_.contains((uint64_t{1} << 56) |
                                                (target & 0xffffffff))) {
             result = base::unexpected("The toolbar action is gone.");
@@ -2035,6 +2460,10 @@ KrBrowser BrowserAdapter::MakeBrowser() {
     auto& owner = *static_cast<BrowserAdapter*>(self);
     if (backdrop && owner.backdrop_->Set(*backdrop)) {
       owner.UpdateFrameMaterial();
+      owner.UpdatePageCornerOverlays();
+      if (owner.page_corner_overlays_) {
+        owner.page_corner_overlays_->BackdropChanged();
+      }
       owner.view_->SchedulePaint();
       if (owner.multi_page_) {
         owner.multi_page_->ThemeChanged();
@@ -2123,8 +2552,7 @@ KrBrowser BrowserAdapter::MakeBrowser() {
     std::ignore = owner.session_.Defer(base::BindOnce(
         [](base::WeakPtr<BrowserAdapter> owner, KrLayoutPrefs layout) {
           if (owner) {
-            WriteLayoutPrefs(*owner->browser_->GetProfile()->GetPrefs(),
-                             layout);
+            WriteLayoutPrefs(owner->WindowPrefs(), layout);
           }
         },
         owner.weak_factory_.GetWeakPtr(),

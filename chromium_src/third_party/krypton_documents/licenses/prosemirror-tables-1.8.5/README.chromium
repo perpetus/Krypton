@@ -1,0 +1,10 @@
+Name: prosemirror-tables
+Short Name: prosemirror-tables
+URL: https://github.com/ProseMirror/prosemirror-tables.git
+Version: 1.8.5
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

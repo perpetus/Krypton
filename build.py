@@ -173,7 +173,8 @@ def _prepare_fingerprint():
               layout.KRYPTON_VERSION,
               Path(product_version.__file__),
               Path(official_ublock.__file__),
-              layout.HELIUM_CORE_REF, layout.WINDOWS_PATCH_OVERRIDES]
+              layout.HELIUM_CORE_REF, layout.WINDOWS_PATCH_OVERRIDES,
+              layout.CORE_PATCH_OVERRIDES]
     for name, patch_dir in layout.PATCH_LAYERS:
         inputs.append(patch_dir / 'series')
         inputs.extend(layout.layer_patches(name))
