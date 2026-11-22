@@ -1,0 +1,10 @@
+Name: @tiptap/extension-code-block
+Short Name: @tiptap/extension-code-block
+URL: https://github.com/ueberdosis/tiptap
+Version: 3.35.0
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Vendored by web_documents/tools/vendor.mjs. Static remote URL literals disabled; application integrations remain offline.

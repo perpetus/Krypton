@@ -16,13 +16,13 @@ struct RuntimeDependency {
 inline constexpr std::array<RuntimeDependency, 5> kRuntimeDependencies = {{
     {"onnxruntime.dll", 20602168,
      "348c3d29d6995eee37e3451825eaddb7ea7400be3afda6ca2286b12bc775f042"},
-    {"msvcp140.dll", 643512,
-     "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"},
-    {"msvcp140_1.dll", 35768,
-     "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982"},
-    {"vcruntime140.dll", 178616,
-     "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"},
-    {"vcruntime140_1.dll", 50112,
-     "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"},
+    {"msvcp140.dll", 652136,
+     "59d325227321d52b9a523ea401ce6787a5d59f78229a0ff3a6f124e5d3445685"},
+    {"msvcp140_1.dll", 35696,
+     "1c6522f4d005539109aa040f063659704bfda94a224142f50942573cfbcf7ec9"},
+    {"vcruntime140.dll", 176488,
+     "eb1ee979bf02324712346e5bdbfc59c785388bc50d18cc2688aae4b0734915a0"},
+    {"vcruntime140_1.dll", 50544,
+     "a14b4a42a2c6df04d6d53a8340816023d953406f7f3d94996c7cab30c414ff63"},
 }};
 }  // namespace krypton::speech

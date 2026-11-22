@@ -3,7 +3,7 @@ import {Excalidraw, MainMenu, FONT_FAMILY, convertToExcalidrawElements,
   getSceneVersion, exportToBlob} from '@excalidraw/excalidraw';
 import type {ExcalidrawImperativeAPI, BinaryFiles} from '@excalidraw/excalidraw/types';
 import '@excalidraw/excalidraw/index.css';
-import {load, openLink, request, navigate, type DocumentWriter, type LoadedDocument} from './bridge';
+import {openLink, request, type DocumentWriter, type LoadedDocument} from './bridge';
 import {chooseImage, insertImage, pngBase64} from './images';
 
 function safeElements(elements: any[]) {
@@ -67,19 +67,7 @@ export default function Easel({data, writer, dark, report}: {
     transferring.current=true; setBusy(true);
     try {
     await writer.flush();
-    const image = scene.current.elements.find((element:any) => element.type==='image');
-    const png = image && data.images[image.fileId];
-    if (!png) throw new Error('Capture image is missing.');
-    const destination = await request('load', {id, passive:'true'});
-    const inserted = await request('insertImage', {id, png});
-    const target = JSON.parse(destination.content);
-    const element = convertToExcalidrawElements([{...image, id:crypto.randomUUID(), fileId:inserted.image}]);
-    target.elements = [...safeElements(target.elements || []), ...element];
-    delete target.files;
-    await request('save', {id, content:JSON.stringify(target), revision:destination.revision});
-    // Remove only the temporary capture document, after destination commit.
-    await request('delete', {id:data.id, revision:writer.revision});
-    navigate(destination.id);
+    await request('transferCapture', {destination: id, revision: writer.revision});
     } finally {transferring.current=false; setBusy(false);}
   };
   return <><nav aria-label="Easel tools">

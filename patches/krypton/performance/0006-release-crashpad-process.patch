@@ -1,0 +1,26 @@
+# Avoid a dedicated Crashpad self-monitor process in official Release builds.
+#
+# Keep the primary crash handler, fallback and existing report consent intact.
+# Development builds retain the existing sampling policy.
+
+--- a/chrome/app/chrome_crash_reporter_client_win.cc
++++ b/chrome/app/chrome_crash_reporter_client_win.cc
+@@ -178,6 +178,10 @@
+ }
+ 
+ bool ChromeCrashReporterClient::ShouldMonitorCrashHandlerExpensively() {
++#if defined(OFFICIAL_BUILD) && defined(NDEBUG)
++  // The primary handler and its fallback still collect crash reports.
++  return false;
++#else
+   // The expensive mechanism dedicates a process to be crashpad_handler's own
+   // crashpad_handler. In Google Chrome, scale back on this in the more stable
+   // channels. There's a fallback crash handler that can catch crashes when this
+@@ -203,6 +207,7 @@
+   }
+ 
+   return base::RandDouble() < probability;
++#endif
+ }
+ 
+ bool ChromeCrashReporterClient::EnableBreakpadForProcess(

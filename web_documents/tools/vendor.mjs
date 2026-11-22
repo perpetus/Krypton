@@ -100,6 +100,10 @@ for(const file of await files(output)) if(/\.(?:js|css|html)$/.test(file)) {
   if(file.endsWith('.map')) throw new Error('Source maps may not be vendored.');
 }
 const licenses = path.join(vendor,'licenses');
+// Rebuild the license set from the current bundle only. Directories are named
+// per package version, so keeping old ones would ship licenses (and LICENSE
+// sections) for versions that are no longer bundled.
+await fs.rm(licenses,{recursive:true,force:true});
 await fs.mkdir(licenses,{recursive:true});
 await fs.cp(path.join(root,'font-licenses'),path.join(licenses,'fonts'),{recursive:true});
 for(const family of await fs.readdir(path.join(output,'fonts'))) {

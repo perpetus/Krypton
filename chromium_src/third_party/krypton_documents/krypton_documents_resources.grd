@@ -73,83 +73,83 @@
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KATEX_TYPEWRITER_REGULAR_C0XS9MPB_WOFF" file="prebuilt/assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff" type="BINDATA" resource_path="assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KATEX_TYPEWRITER_REGULAR_CO6R4HN1_WOFF2" file="prebuilt/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2" type="BINDATA" resource_path="assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KATEX_TYPEWRITER_REGULAR_D3IB7_HF_TTF" file="prebuilt/assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf" type="BINDATA" resource_path="assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_AR_SA_G6X2FPQ2_DFAA_STJ_JS" file="prebuilt/assets/ar-SA-G6X2FPQ2-DFAA-Stj.js" type="BINDATA" resource_path="assets/ar-SA-G6X2FPQ2-DFAA-Stj.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_AZ_AZ_76LH7QW2_CTEMUME6_JS" file="prebuilt/assets/az-AZ-76LH7QW2-CtEmUMe6.js" type="BINDATA" resource_path="assets/az-AZ-76LH7QW2-CtEmUMe6.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_BG_BG_XCXSNQG7_CZCTSKGH_JS" file="prebuilt/assets/bg-BG-XCXSNQG7-CzCtSkgH.js" type="BINDATA" resource_path="assets/bg-BG-XCXSNQG7-CzCtSkgH.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_BN_BD_2XOGV67Q_CEGJZAAC_JS" file="prebuilt/assets/bn-BD-2XOGV67Q-CEGjZAaC.js" type="BINDATA" resource_path="assets/bn-BD-2XOGV67Q-CEGjZAaC.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_CA_ES_6MX7JW3Y_B1VSDGMD_JS" file="prebuilt/assets/ca-ES-6MX7JW3Y-B1VSdgmD.js" type="BINDATA" resource_path="assets/ca-ES-6MX7JW3Y-B1VSdgmD.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_CHUNK_EIO257PC_DEALMEQR_JS" file="prebuilt/assets/chunk-EIO257PC-DeALmEQr.js" type="BINDATA" resource_path="assets/chunk-EIO257PC-DeALmEQr.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_CS_CZ_2BRQDIVT_DY17GD0M_JS" file="prebuilt/assets/cs-CZ-2BRQDIVT-Dy17gD0M.js" type="BINDATA" resource_path="assets/cs-CZ-2BRQDIVT-Dy17gD0M.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_DA_DK_5WZEPLOC_D0HJFCLZ_JS" file="prebuilt/assets/da-DK-5WZEPLOC-D0HjFCLZ.js" type="BINDATA" resource_path="assets/da-DK-5WZEPLOC-D0HjFCLZ.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_DE_DE_XR44H4JA_COG4OEEG_JS" file="prebuilt/assets/de-DE-XR44H4JA-CoG4OeeG.js" type="BINDATA" resource_path="assets/de-DE-XR44H4JA-CoG4OeeG.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_AR_SA_G6X2FPQ2_DLJL0FFE_JS" file="prebuilt/assets/ar-SA-G6X2FPQ2-DljL0ffE.js" type="BINDATA" resource_path="assets/ar-SA-G6X2FPQ2-DljL0ffE.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_AZ_AZ_76LH7QW2_BBBPTULT_JS" file="prebuilt/assets/az-AZ-76LH7QW2-BbbpTULT.js" type="BINDATA" resource_path="assets/az-AZ-76LH7QW2-BbbpTULT.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_BG_BG_XCXSNQG7_CW3RG_S2_JS" file="prebuilt/assets/bg-BG-XCXSNQG7-CW3rg-S2.js" type="BINDATA" resource_path="assets/bg-BG-XCXSNQG7-CW3rg-S2.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_BN_BD_2XOGV67Q_CNMQZL35_JS" file="prebuilt/assets/bn-BD-2XOGV67Q-CNmQzl35.js" type="BINDATA" resource_path="assets/bn-BD-2XOGV67Q-CNmQzl35.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_CA_ES_6MX7JW3Y_DUHS11SQ_JS" file="prebuilt/assets/ca-ES-6MX7JW3Y-duHs11SQ.js" type="BINDATA" resource_path="assets/ca-ES-6MX7JW3Y-duHs11SQ.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_CHUNK_EIO257PC_NIQZFDC9_JS" file="prebuilt/assets/chunk-EIO257PC-NiqzFdc9.js" type="BINDATA" resource_path="assets/chunk-EIO257PC-NiqzFdc9.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_CS_CZ_2BRQDIVT_BHTGQKFY_JS" file="prebuilt/assets/cs-CZ-2BRQDIVT-BHtgqKFY.js" type="BINDATA" resource_path="assets/cs-CZ-2BRQDIVT-BHtgqKFY.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_DA_DK_5WZEPLOC_CLB3T4SF_JS" file="prebuilt/assets/da-DK-5WZEPLOC-ClB3t4sF.js" type="BINDATA" resource_path="assets/da-DK-5WZEPLOC-ClB3t4sF.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_DE_DE_XR44H4JA_BUOWP0SW_JS" file="prebuilt/assets/de-DE-XR44H4JA-BUoWP0SW.js" type="BINDATA" resource_path="assets/de-DE-XR44H4JA-BUoWP0SW.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_DIRECTORY_OPEN_01563666_D4XXYWB__JS" file="prebuilt/assets/directory-open-01563666-D4xXyWb_.js" type="BINDATA" resource_path="assets/directory-open-01563666-D4xXyWb_.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_DIRECTORY_OPEN_4ED118D0_1I309ASM_JS" file="prebuilt/assets/directory-open-4ed118d0-1i309Asm.js" type="BINDATA" resource_path="assets/directory-open-4ed118d0-1i309Asm.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_DISABLED_DIAGRAMS_U4VUV21F_JS" file="prebuilt/assets/disabled-diagrams-U4vuV21F.js" type="BINDATA" resource_path="assets/disabled-diagrams-U4vuV21F.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EASEL_5OA7STKU_CSS" file="prebuilt/assets/easel-5oA7STku.css" type="BINDATA" resource_path="assets/easel-5oA7STku.css"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EASEL_L6HSDO5L_JS" file="prebuilt/assets/easel-L6HsDO5l.js" type="BINDATA" resource_path="assets/easel-L6HsDO5l.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EL_GR_BZB4AONW_BH6LLFF5_JS" file="prebuilt/assets/el-GR-BZB4AONW-BH6lLff5.js" type="BINDATA" resource_path="assets/el-GR-BZB4AONW-BH6lLff5.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EN_B4ZKOASM_B_I2AUBJ_JS" file="prebuilt/assets/en-B4ZKOASM-B_i2aUbJ.js" type="BINDATA" resource_path="assets/en-B4ZKOASM-B_i2aUbJ.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ES_ES_U4NZUMDT_DHSEPHIU_JS" file="prebuilt/assets/es-ES-U4NZUMDT-dhsePhIU.js" type="BINDATA" resource_path="assets/es-ES-U4NZUMDT-dhsePhIU.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EU_ES_A7QVB2H4_HS7SCPGU_JS" file="prebuilt/assets/eu-ES-A7QVB2H4-hS7ScPGu.js" type="BINDATA" resource_path="assets/eu-ES-A7QVB2H4-hS7ScPGu.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FA_IR_HGAKTJCU_D6SUPKGC_JS" file="prebuilt/assets/fa-IR-HGAKTJCU-D6SUpKgC.js" type="BINDATA" resource_path="assets/fa-IR-HGAKTJCU-D6SUpKgC.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FI_FI_Z5N7JZ37_B7YLNEPQ_JS" file="prebuilt/assets/fi-FI-Z5N7JZ37-B7YlnePQ.js" type="BINDATA" resource_path="assets/fi-FI-Z5N7JZ37-B7YlnePQ.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EASEL_BOY3LODF_JS" file="prebuilt/assets/easel-Boy3LoDF.js" type="BINDATA" resource_path="assets/easel-Boy3LoDF.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EL_GR_BZB4AONW_BF8N9XEL_JS" file="prebuilt/assets/el-GR-BZB4AONW-Bf8N9XEL.js" type="BINDATA" resource_path="assets/el-GR-BZB4AONW-Bf8N9XEL.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EN_B4ZKOASM_DMY_OP1X_JS" file="prebuilt/assets/en-B4ZKOASM-DMy_op1x.js" type="BINDATA" resource_path="assets/en-B4ZKOASM-DMy_op1x.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ES_ES_U4NZUMDT_X_LM5BRW_JS" file="prebuilt/assets/es-ES-U4NZUMDT-x-LM5bRw.js" type="BINDATA" resource_path="assets/es-ES-U4NZUMDT-x-LM5bRw.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_EU_ES_A7QVB2H4_B1JEN__L_JS" file="prebuilt/assets/eu-ES-A7QVB2H4-B1JeN_-L.js" type="BINDATA" resource_path="assets/eu-ES-A7QVB2H4-B1JeN_-L.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FA_IR_HGAKTJCU_BUJXCKID_JS" file="prebuilt/assets/fa-IR-HGAKTJCU-BujxCkiD.js" type="BINDATA" resource_path="assets/fa-IR-HGAKTJCU-BujxCkiD.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FI_FI_Z5N7JZ37_DMZVJPIU_JS" file="prebuilt/assets/fi-FI-Z5N7JZ37-DmzVJPiu.js" type="BINDATA" resource_path="assets/fi-FI-Z5N7JZ37-DmzVJPiu.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FILE_OPEN_002AB408_BHUWM0SH_JS" file="prebuilt/assets/file-open-002ab408-BHUWm0Sh.js" type="BINDATA" resource_path="assets/file-open-002ab408-BHUWm0Sh.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FILE_OPEN_7C801643_DZTJT5ZP_JS" file="prebuilt/assets/file-open-7c801643-DZtJT5zp.js" type="BINDATA" resource_path="assets/file-open-7c801643-DZtJT5zp.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FILE_SAVE_3189631C_CO9S4HFW_JS" file="prebuilt/assets/file-save-3189631c-CO9S4HFW.js" type="BINDATA" resource_path="assets/file-save-3189631c-CO9S4HFW.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FILE_SAVE_745EBA88_BWDFZ6OZ_JS" file="prebuilt/assets/file-save-745eba88-Bwdfz6OZ.js" type="BINDATA" resource_path="assets/file-save-745eba88-Bwdfz6OZ.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FLOATING_UI_DOM_VTOD0C_F_JS" file="prebuilt/assets/floating-ui.dom-vtOd0C_f.js" type="BINDATA" resource_path="assets/floating-ui.dom-vtOd0C_f.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FR_FR_RHASNOE6_W6NE__KW_JS" file="prebuilt/assets/fr-FR-RHASNOE6-W6nE_-kw.js" type="BINDATA" resource_path="assets/fr-FR-RHASNOE6-W6nE_-kw.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_GL_ES_HMX3MZ6V_B5NU1FF8_JS" file="prebuilt/assets/gl-ES-HMX3MZ6V-B5Nu1ff8.js" type="BINDATA" resource_path="assets/gl-ES-HMX3MZ6V-B5Nu1ff8.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_HE_IL_6SHJWFNN_C4G9TNMA_JS" file="prebuilt/assets/he-IL-6SHJWFNN-C4g9tnMA.js" type="BINDATA" resource_path="assets/he-IL-6SHJWFNN-C4g9tnMA.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_HI_IN_IWLTKZ5I_CWS_WFVB_JS" file="prebuilt/assets/hi-IN-IWLTKZ5I-CWs_WFVB.js" type="BINDATA" resource_path="assets/hi-IN-IWLTKZ5I-CWs_WFVB.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_HU_HU_A5ZG7DT2_MYSRTOK__JS" file="prebuilt/assets/hu-HU-A5ZG7DT2-MysrtoK_.js" type="BINDATA" resource_path="assets/hu-HU-A5ZG7DT2-MysrtoK_.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ID_ID_SAP4L64H_BPOSJN0K_JS" file="prebuilt/assets/id-ID-SAP4L64H-Bposjn0K.js" type="BINDATA" resource_path="assets/id-ID-SAP4L64H-Bposjn0K.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_IMAGE_GAAHSSAO_C40G5BAW_JS" file="prebuilt/assets/image-GAAHSSAO-C40G5BAw.js" type="BINDATA" resource_path="assets/image-GAAHSSAO-C40G5BAw.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_FR_FR_RHASNOE6_CL_SKF_4_JS" file="prebuilt/assets/fr-FR-RHASNOE6-Cl-sKF-4.js" type="BINDATA" resource_path="assets/fr-FR-RHASNOE6-Cl-sKF-4.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_GL_ES_HMX3MZ6V_BAOUL5CG_JS" file="prebuilt/assets/gl-ES-HMX3MZ6V-BaOul5cg.js" type="BINDATA" resource_path="assets/gl-ES-HMX3MZ6V-BaOul5cg.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_HE_IL_6SHJWFNN_DZY_HE5N_JS" file="prebuilt/assets/he-IL-6SHJWFNN-DZY_hE5n.js" type="BINDATA" resource_path="assets/he-IL-6SHJWFNN-DZY_hE5n.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_HI_IN_IWLTKZ5I_CYWAEMXQ_JS" file="prebuilt/assets/hi-IN-IWLTKZ5I-CYWAeMxq.js" type="BINDATA" resource_path="assets/hi-IN-IWLTKZ5I-CYWAeMxq.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_HU_HU_A5ZG7DT2_BRQUDPUL_JS" file="prebuilt/assets/hu-HU-A5ZG7DT2-BRquDpul.js" type="BINDATA" resource_path="assets/hu-HU-A5ZG7DT2-BRquDpul.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ID_ID_SAP4L64H_CIKVSJV5_JS" file="prebuilt/assets/id-ID-SAP4L64H-CiKVsjv5.js" type="BINDATA" resource_path="assets/id-ID-SAP4L64H-CiKVsjv5.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_IMAGE_GAAHSSAO_BU_PZUUO_JS" file="prebuilt/assets/image-GAAHSSAO-Bu-Pzuuo.js" type="BINDATA" resource_path="assets/image-GAAHSSAO-Bu-Pzuuo.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_IMAGE_BLOB_REDUCE_ESM_ZIL83EII_JS" file="prebuilt/assets/image-blob-reduce.esm-ZiL83eII.js" type="BINDATA" resource_path="assets/image-blob-reduce.esm-ZiL83eII.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_INDEX_BJUBOZCT_CSS" file="prebuilt/assets/index-BjUbOZCT.css" type="BINDATA" resource_path="assets/index-BjUbOZCT.css"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_INDEX_G7WETX5I_JS" file="prebuilt/assets/index-G7weTX5i.js" type="BINDATA" resource_path="assets/index-G7weTX5i.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_IT_IT_JPQ66NNP_BGBZFHVA_JS" file="prebuilt/assets/it-IT-JPQ66NNP-BGBZFHva.js" type="BINDATA" resource_path="assets/it-IT-JPQ66NNP-BGBZFHva.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_JA_JP_DBVTYXUO_8H911XLV_JS" file="prebuilt/assets/ja-JP-DBVTYXUO-8H911Xlv.js" type="BINDATA" resource_path="assets/ja-JP-DBVTYXUO-8H911Xlv.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KAA_6HZHGXH3_BGZQ3MCB_JS" file="prebuilt/assets/kaa-6HZHGXH3-BGZq3mcb.js" type="BINDATA" resource_path="assets/kaa-6HZHGXH3-BGZq3mcb.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KAB_KAB_ZGHBKWFO_IM_FLYOT_JS" file="prebuilt/assets/kab-KAB-ZGHBKWFO-im_fLYoT.js" type="BINDATA" resource_path="assets/kab-KAB-ZGHBKWFO-im_fLYoT.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KK_KZ_P5N5QNE5_CRAGXR9__JS" file="prebuilt/assets/kk-KZ-P5N5QNE5-CraGXr9-.js" type="BINDATA" resource_path="assets/kk-KZ-P5N5QNE5-CraGXr9-.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KM_KH_HSX4SM5Z_LTL4_GP__JS" file="prebuilt/assets/km-KH-HSX4SM5Z-ltl4-Gp-.js" type="BINDATA" resource_path="assets/km-KH-HSX4SM5Z-ltl4-Gp-.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KO_KR_MTYHY66A_OFLLE5A3_JS" file="prebuilt/assets/ko-KR-MTYHY66A-oFlLE5a3.js" type="BINDATA" resource_path="assets/ko-KR-MTYHY66A-oFlLE5a3.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KU_TR_6OUDTVRD_D8ALNOAN_JS" file="prebuilt/assets/ku-TR-6OUDTVRD-D8aLnOan.js" type="BINDATA" resource_path="assets/ku-TR-6OUDTVRD-D8aLnOan.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_LT_LT_XHIRWOB4_CTBPUD8L_JS" file="prebuilt/assets/lt-LT-XHIRWOB4-CTBPud8L.js" type="BINDATA" resource_path="assets/lt-LT-XHIRWOB4-CTBPud8L.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_LV_LV_5QDEKY6T_DDUOBKAH_JS" file="prebuilt/assets/lv-LV-5QDEKY6T-DDuObKah.js" type="BINDATA" resource_path="assets/lv-LV-5QDEKY6T-DDuObKah.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_MR_IN_CRQNXWMA_YTEEEJOF_JS" file="prebuilt/assets/mr-IN-CRQNXWMA-YteeejoF.js" type="BINDATA" resource_path="assets/mr-IN-CRQNXWMA-YteeejoF.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_MY_MM_5M5IBNSE_U59UFLRV_JS" file="prebuilt/assets/my-MM-5M5IBNSE-U59UflRV.js" type="BINDATA" resource_path="assets/my-MM-5M5IBNSE-U59UflRV.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NB_NO_T6EIAALU_DRPB0GWX_JS" file="prebuilt/assets/nb-NO-T6EIAALU-DRPb0gWx.js" type="BINDATA" resource_path="assets/nb-NO-T6EIAALU-DRPb0gWx.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NL_NL_IS3SIHDZ_ICMJSIFA_JS" file="prebuilt/assets/nl-NL-IS3SIHDZ-IcMjsifA.js" type="BINDATA" resource_path="assets/nl-NL-IS3SIHDZ-IcMjsifA.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NN_NO_6E72VCQL_CUKGRQG__JS" file="prebuilt/assets/nn-NO-6E72VCQL-CuKgrQg-.js" type="BINDATA" resource_path="assets/nn-NO-6E72VCQL-CuKgrQg-.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NOTES_B6ZPVI9A_JS" file="prebuilt/assets/notes-B6ZPVI9a.js" type="BINDATA" resource_path="assets/notes-B6ZPVI9a.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_INDEX_CMIWDK7Z_JS" file="prebuilt/assets/index-CmiwdK7Z.js" type="BINDATA" resource_path="assets/index-CmiwdK7Z.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_IT_IT_JPQ66NNP_IJ3DSEFY_JS" file="prebuilt/assets/it-IT-JPQ66NNP-iJ3dsEfy.js" type="BINDATA" resource_path="assets/it-IT-JPQ66NNP-iJ3dsEfy.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_JA_JP_DBVTYXUO_CI_ZUUUR_JS" file="prebuilt/assets/ja-JP-DBVTYXUO-Ci-ZuuUR.js" type="BINDATA" resource_path="assets/ja-JP-DBVTYXUO-Ci-ZuuUR.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KAA_6HZHGXH3_CKZ85OYT_JS" file="prebuilt/assets/kaa-6HZHGXH3-CKz85OYt.js" type="BINDATA" resource_path="assets/kaa-6HZHGXH3-CKz85OYt.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KAB_KAB_ZGHBKWFO_DT0IA5IU_JS" file="prebuilt/assets/kab-KAB-ZGHBKWFO-DT0Ia5IU.js" type="BINDATA" resource_path="assets/kab-KAB-ZGHBKWFO-DT0Ia5IU.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KK_KZ_P5N5QNE5_CRIIUARC_JS" file="prebuilt/assets/kk-KZ-P5N5QNE5-CRIiUarC.js" type="BINDATA" resource_path="assets/kk-KZ-P5N5QNE5-CRIiUarC.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KM_KH_HSX4SM5Z_DBGJEU_Q_JS" file="prebuilt/assets/km-KH-HSX4SM5Z-DbGJEu-q.js" type="BINDATA" resource_path="assets/km-KH-HSX4SM5Z-DbGJEu-q.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KO_KR_MTYHY66A_CKC3UWG4_JS" file="prebuilt/assets/ko-KR-MTYHY66A-Ckc3Uwg4.js" type="BINDATA" resource_path="assets/ko-KR-MTYHY66A-Ckc3Uwg4.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_KU_TR_6OUDTVRD_BD2JYVB1_JS" file="prebuilt/assets/ku-TR-6OUDTVRD-BD2JyVB1.js" type="BINDATA" resource_path="assets/ku-TR-6OUDTVRD-BD2JyVB1.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_LT_LT_XHIRWOB4_CWXASZWT_JS" file="prebuilt/assets/lt-LT-XHIRWOB4-CWXAsZwT.js" type="BINDATA" resource_path="assets/lt-LT-XHIRWOB4-CWXAsZwT.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_LV_LV_5QDEKY6T_CNVVZAIP_JS" file="prebuilt/assets/lv-LV-5QDEKY6T-CnVvzAiP.js" type="BINDATA" resource_path="assets/lv-LV-5QDEKY6T-CnVvzAiP.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_MR_IN_CRQNXWMA_CNRT6UQT_JS" file="prebuilt/assets/mr-IN-CRQNXWMA-CnrT6uQT.js" type="BINDATA" resource_path="assets/mr-IN-CRQNXWMA-CnrT6uQT.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_MY_MM_5M5IBNSE_CO1NDGIA_JS" file="prebuilt/assets/my-MM-5M5IBNSE-CO1NDGiA.js" type="BINDATA" resource_path="assets/my-MM-5M5IBNSE-CO1NDGiA.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NB_NO_T6EIAALU_CRTBTC_A_JS" file="prebuilt/assets/nb-NO-T6EIAALU-CRtBtC-a.js" type="BINDATA" resource_path="assets/nb-NO-T6EIAALU-CRtBtC-a.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NL_NL_IS3SIHDZ_BP5W5PFZ_JS" file="prebuilt/assets/nl-NL-IS3SIHDZ-Bp5w5pfz.js" type="BINDATA" resource_path="assets/nl-NL-IS3SIHDZ-Bp5w5pfz.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NN_NO_6E72VCQL_DPYVFMMO_JS" file="prebuilt/assets/nn-NO-6E72VCQL-DpYvFmmo.js" type="BINDATA" resource_path="assets/nn-NO-6E72VCQL-DpYvFmmo.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NOTES_BGGD2ML5_CSS" file="prebuilt/assets/notes-BGgd2ml5.css" type="BINDATA" resource_path="assets/notes-BGgd2ml5.css"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_OC_FR_POXYY2M6_B1SZYS8T_JS" file="prebuilt/assets/oc-FR-POXYY2M6-B1SZYS8T.js" type="BINDATA" resource_path="assets/oc-FR-POXYY2M6-B1SZYS8T.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PA_IN_N4M65BXN_OYBOYJIN_JS" file="prebuilt/assets/pa-IN-N4M65BXN-oYBOyJIN.js" type="BINDATA" resource_path="assets/pa-IN-N4M65BXN-oYBOyJIN.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PERCENTAGES_BXMCSKIN_DZOJVN5Y_JS" file="prebuilt/assets/percentages-BXMCSKIN-DZOJVN5y.js" type="BINDATA" resource_path="assets/percentages-BXMCSKIN-DZOJVN5y.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_NOTES_DA06_7I7_JS" file="prebuilt/assets/notes-DA06_7i7.js" type="BINDATA" resource_path="assets/notes-DA06_7i7.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_OC_FR_POXYY2M6_DX7098KQ_JS" file="prebuilt/assets/oc-FR-POXYY2M6-DX7098kq.js" type="BINDATA" resource_path="assets/oc-FR-POXYY2M6-DX7098kq.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PA_IN_N4M65BXN_DSPAJBQ9_JS" file="prebuilt/assets/pa-IN-N4M65BXN-DsPAJbq9.js" type="BINDATA" resource_path="assets/pa-IN-N4M65BXN-DsPAJbq9.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PERCENTAGES_BXMCSKIN_DLZMON9L_JS" file="prebuilt/assets/percentages-BXMCSKIN-DlZmON9L.js" type="BINDATA" resource_path="assets/percentages-BXMCSKIN-DlZmON9L.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PICA_DF4GIJAO_JS" file="prebuilt/assets/pica-Df4gIjao.js" type="BINDATA" resource_path="assets/pica-Df4gIjao.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PL_PL_T2D74RX3_CV9AUI93_JS" file="prebuilt/assets/pl-PL-T2D74RX3-Cv9aUI93.js" type="BINDATA" resource_path="assets/pl-PL-T2D74RX3-Cv9aUI93.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PT_BR_5N22H2LF_D4VQE2EH_JS" file="prebuilt/assets/pt-BR-5N22H2LF-D4vQE2eH.js" type="BINDATA" resource_path="assets/pt-BR-5N22H2LF-D4vQE2eH.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PT_PT_UZXXM6DQ_DDUP0_BS_JS" file="prebuilt/assets/pt-PT-UZXXM6DQ-DDUp0-BS.js" type="BINDATA" resource_path="assets/pt-PT-UZXXM6DQ-DDUp0-BS.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_RO_RO_JPDTUUEW_BHEXQI0X_JS" file="prebuilt/assets/ro-RO-JPDTUUEW-BHexQI0x.js" type="BINDATA" resource_path="assets/ro-RO-JPDTUUEW-BHexQI0x.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PL_PL_T2D74RX3_BCPDHODC_JS" file="prebuilt/assets/pl-PL-T2D74RX3-BcPDhOdC.js" type="BINDATA" resource_path="assets/pl-PL-T2D74RX3-BcPDhOdC.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PT_BR_5N22H2LF_DANIFE4__JS" file="prebuilt/assets/pt-BR-5N22H2LF-DanifE4-.js" type="BINDATA" resource_path="assets/pt-BR-5N22H2LF-DanifE4-.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_PT_PT_UZXXM6DQ_CVTW5_TT_JS" file="prebuilt/assets/pt-PT-UZXXM6DQ-Cvtw5-Tt.js" type="BINDATA" resource_path="assets/pt-PT-UZXXM6DQ-Cvtw5-Tt.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_RO_RO_JPDTUUEW_BCOTS_CO_JS" file="prebuilt/assets/ro-RO-JPDTUUEW-BCots-cO.js" type="BINDATA" resource_path="assets/ro-RO-JPDTUUEW-BCots-cO.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ROLLDOWN_RUNTIME_D_S_G_SO_JS" file="prebuilt/assets/rolldown-runtime-D-s_G-SO.js" type="BINDATA" resource_path="assets/rolldown-runtime-D-s_G-SO.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ROUNDRECT_D01GJRLT_JS" file="prebuilt/assets/roundRect-D01gJrlt.js" type="BINDATA" resource_path="assets/roundRect-D01gJrlt.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_RU_RU_B4JR7IUQ_CHYZEQKX_JS" file="prebuilt/assets/ru-RU-B4JR7IUQ-CHYzeqkx.js" type="BINDATA" resource_path="assets/ru-RU-B4JR7IUQ-CHYzeqkx.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SI_LK_N5RQ5JYF_BWLORWPQ_JS" file="prebuilt/assets/si-LK-N5RQ5JYF-BwloRwpq.js" type="BINDATA" resource_path="assets/si-LK-N5RQ5JYF-BwloRwpq.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SK_SK_C5VTKIMK_BLOFTORV_JS" file="prebuilt/assets/sk-SK-C5VTKIMK-BlOFtoRv.js" type="BINDATA" resource_path="assets/sk-SK-C5VTKIMK-BlOFtoRv.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SL_SI_NN7IZMDC_WYFK1YZD_JS" file="prebuilt/assets/sl-SI-NN7IZMDC-WYfK1YZd.js" type="BINDATA" resource_path="assets/sl-SI-NN7IZMDC-WYfK1YZd.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SUBSET_SHARED_CHUNK_DASWOMCP_JS" file="prebuilt/assets/subset-shared.chunk-Daswomcp.js" type="BINDATA" resource_path="assets/subset-shared.chunk-Daswomcp.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SUBSET_WORKER_CHUNK_I1PQOORH_JS" file="prebuilt/assets/subset-worker.chunk-i1PqOORH.js" type="BINDATA" resource_path="assets/subset-worker.chunk-i1PqOORH.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SV_SE_XGPEYMSR_CAVWUIWL_JS" file="prebuilt/assets/sv-SE-XGPEYMSR-CavWUIwL.js" type="BINDATA" resource_path="assets/sv-SE-XGPEYMSR-CavWUIwL.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_TA_IN_2NMHFXQM_DM3LYXGM_JS" file="prebuilt/assets/ta-IN-2NMHFXQM-Dm3lyxgm.js" type="BINDATA" resource_path="assets/ta-IN-2NMHFXQM-Dm3lyxgm.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_TH_TH_HPSO5L25_CUUPOIV7_JS" file="prebuilt/assets/th-TH-HPSO5L25-CuupOIv7.js" type="BINDATA" resource_path="assets/th-TH-HPSO5L25-CuupOIv7.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_TR_TR_DEFEU3FU_CDB4NLLP_JS" file="prebuilt/assets/tr-TR-DEFEU3FU-CdB4NLLp.js" type="BINDATA" resource_path="assets/tr-TR-DEFEU3FU-CdB4NLLp.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_UK_UA_QMV73CPH_DQJQDYMA_JS" file="prebuilt/assets/uk-UA-QMV73CPH-DQJQDYma.js" type="BINDATA" resource_path="assets/uk-UA-QMV73CPH-DQJQDYma.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_VI_VN_M7AON7JQ_T3EL2WT6_JS" file="prebuilt/assets/vi-VN-M7AON7JQ-t3El2WT6.js" type="BINDATA" resource_path="assets/vi-VN-M7AON7JQ-t3El2WT6.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ZH_CN_LNUGB5OW_KFQ6T0IK_JS" file="prebuilt/assets/zh-CN-LNUGB5OW-KFq6T0Ik.js" type="BINDATA" resource_path="assets/zh-CN-LNUGB5OW-KFq6T0Ik.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ZH_HK_E62DVLB3_DPYRRHNO_JS" file="prebuilt/assets/zh-HK-E62DVLB3-DPYRRHNo.js" type="BINDATA" resource_path="assets/zh-HK-E62DVLB3-DPYRRHNo.js"/>
-      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ZH_TW_RAJ6MFWO_B_YVHSVD_JS" file="prebuilt/assets/zh-TW-RAJ6MFWO-B_YvHsVD.js" type="BINDATA" resource_path="assets/zh-TW-RAJ6MFWO-B_YvHsVD.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_RU_RU_B4JR7IUQ_C9BJNN8Y_JS" file="prebuilt/assets/ru-RU-B4JR7IUQ-C9BjNn8Y.js" type="BINDATA" resource_path="assets/ru-RU-B4JR7IUQ-C9BjNn8Y.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SI_LK_N5RQ5JYF_DWSZ1MCK_JS" file="prebuilt/assets/si-LK-N5RQ5JYF-DWSZ1Mck.js" type="BINDATA" resource_path="assets/si-LK-N5RQ5JYF-DWSZ1Mck.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SK_SK_C5VTKIMK_G6PD_2LB_JS" file="prebuilt/assets/sk-SK-C5VTKIMK-g6pd-2LB.js" type="BINDATA" resource_path="assets/sk-SK-C5VTKIMK-g6pd-2LB.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SL_SI_NN7IZMDC_XWHLDLXU_JS" file="prebuilt/assets/sl-SI-NN7IZMDC-xwHlDLxU.js" type="BINDATA" resource_path="assets/sl-SI-NN7IZMDC-xwHlDLxU.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SUBSET_SHARED_CHUNK_DUMKLT17_JS" file="prebuilt/assets/subset-shared.chunk-DUMKLt17.js" type="BINDATA" resource_path="assets/subset-shared.chunk-DUMKLt17.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SUBSET_WORKER_CHUNK_BIMT3GAO_JS" file="prebuilt/assets/subset-worker.chunk-Bimt3gaO.js" type="BINDATA" resource_path="assets/subset-worker.chunk-Bimt3gaO.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_SV_SE_XGPEYMSR_WKQ6A_CJ_JS" file="prebuilt/assets/sv-SE-XGPEYMSR-WKq6A_cJ.js" type="BINDATA" resource_path="assets/sv-SE-XGPEYMSR-WKq6A_cJ.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_TA_IN_2NMHFXQM_BZCKEKFA_JS" file="prebuilt/assets/ta-IN-2NMHFXQM-BzcKEkFa.js" type="BINDATA" resource_path="assets/ta-IN-2NMHFXQM-BzcKEkFa.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_TH_TH_HPSO5L25_TN6RTNFF_JS" file="prebuilt/assets/th-TH-HPSO5L25-TN6rTNFf.js" type="BINDATA" resource_path="assets/th-TH-HPSO5L25-TN6rTNFf.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_TR_TR_DEFEU3FU_C8EN_UWT_JS" file="prebuilt/assets/tr-TR-DEFEU3FU-C8eN-UWT.js" type="BINDATA" resource_path="assets/tr-TR-DEFEU3FU-C8eN-UWT.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_UK_UA_QMV73CPH_CYWCRFON_JS" file="prebuilt/assets/uk-UA-QMV73CPH-CYWcrfon.js" type="BINDATA" resource_path="assets/uk-UA-QMV73CPH-CYWcrfon.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_VI_VN_M7AON7JQ_B_KVYJ1B_JS" file="prebuilt/assets/vi-VN-M7AON7JQ-B-kVYj1B.js" type="BINDATA" resource_path="assets/vi-VN-M7AON7JQ-B-kVYj1B.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ZH_CN_LNUGB5OW_BYBVBOUL_JS" file="prebuilt/assets/zh-CN-LNUGB5OW-ByBvBOuL.js" type="BINDATA" resource_path="assets/zh-CN-LNUGB5OW-ByBvBOuL.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ZH_HK_E62DVLB3_WD2RYHKN_JS" file="prebuilt/assets/zh-HK-E62DVLB3-wD2RyhkN.js" type="BINDATA" resource_path="assets/zh-HK-E62DVLB3-wD2RyhkN.js"/>
+      <include name="IDR_KRYPTON_DOCUMENTS_ASSETS_ZH_TW_RAJ6MFWO_CCTXVQ77_JS" file="prebuilt/assets/zh-TW-RAJ6MFWO-CCtxvQ77.js" type="BINDATA" resource_path="assets/zh-TW-RAJ6MFWO-CCtxvQ77.js"/>
       <include name="IDR_KRYPTON_DOCUMENTS_FONTS_ASSISTANT_ASSISTANT_BOLD_WOFF2" file="prebuilt/fonts/Assistant/Assistant-Bold.woff2" type="BINDATA" resource_path="fonts/Assistant/Assistant-Bold.woff2"/>
       <include name="IDR_KRYPTON_DOCUMENTS_FONTS_ASSISTANT_ASSISTANT_MEDIUM_WOFF2" file="prebuilt/fonts/Assistant/Assistant-Medium.woff2" type="BINDATA" resource_path="fonts/Assistant/Assistant-Medium.woff2"/>
       <include name="IDR_KRYPTON_DOCUMENTS_FONTS_ASSISTANT_ASSISTANT_REGULAR_WOFF2" file="prebuilt/fonts/Assistant/Assistant-Regular.woff2" type="BINDATA" resource_path="fonts/Assistant/Assistant-Regular.woff2"/>

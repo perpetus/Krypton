@@ -1,0 +1,154 @@
+# Let the bundled filter component defer scheduled transfers on Windows.
+#
+# Reuse the cached connection cost and existing battery policy. The optional
+# runtime result is filled only for the bundled, component-installed extension
+# and carries no individual power or network-state details.
+
+--- a/extensions/browser/api/runtime/runtime_api_delegate.h
++++ b/extensions/browser/api/runtime/runtime_api_delegate.h
+@@ -4,6 +4,8 @@
+ 
+ #ifndef EXTENSIONS_BROWSER_API_RUNTIME_RUNTIME_API_DELEGATE_H_
+ #define EXTENSIONS_BROWSER_API_RUNTIME_RUNTIME_API_DELEGATE_H_
++
++#include <optional>
+ 
+ #include "base/functional/callback.h"
+ #include "extensions/common/api/runtime.h"
+@@ -61,6 +63,10 @@
+   // Populates platform info to be provided by the getPlatformInfo function.
+   // Returns false iff no info is provided.
+   virtual bool GetPlatformInfo(api::runtime::PlatformInfo* info) = 0;
++  virtual std::optional<bool> DeferBackgroundAssetUpdates(
++      const Extension* extension) {
++    return std::nullopt;
++  }
+ 
+   // Request a restart of the host device. Returns false iff the device
+   // will not be restarted.
+--- a/extensions/browser/api/runtime/runtime_api.h
++++ b/extensions/browser/api/runtime/runtime_api.h
+@@ -98,7 +98,8 @@
+   bool CheckForUpdates(const ExtensionId& extension_id,
+                        RuntimeAPIDelegate::UpdateCheckCallback callback);
+   void OpenURL(const GURL& uninstall_url);
+-  bool GetPlatformInfo(api::runtime::PlatformInfo* info);
++  bool GetPlatformInfo(api::runtime::PlatformInfo* info,
++                       const Extension* extension = nullptr);
+   bool RestartDevice(std::string* error_message);
+ 
+   RestartAfterDelayStatus RestartDeviceAfterDelay(
+--- a/extensions/browser/api/runtime/runtime_api.cc
++++ b/extensions/browser/api/runtime/runtime_api.cc
+@@ -460,8 +460,14 @@
+   delegate_->OpenURL(update_url);
+ }
+ 
+-bool RuntimeAPI::GetPlatformInfo(runtime::PlatformInfo* info) {
+-  return delegate_->GetPlatformInfo(info);
++bool RuntimeAPI::GetPlatformInfo(runtime::PlatformInfo* info,
++                                 const Extension* extension) {
++  if (!delegate_->GetPlatformInfo(info)) {
++    return false;
++  }
++  info->defer_background_asset_updates =
++      delegate_->DeferBackgroundAssetUpdates(extension);
++  return true;
+ }
+ 
+ bool RuntimeAPI::RestartDevice(std::string* error_message) {
+@@ -1071,7 +1077,7 @@
+   runtime::PlatformInfo info;
+   if (!RuntimeAPI::GetFactoryInstance()
+            ->Get(browser_context())
+-           ->GetPlatformInfo(&info)) {
++           ->GetPlatformInfo(&info, extension())) {
+     return RespondNow(Error(kPlatformInfoUnavailable));
+   }
+   return RespondNow(
+--- a/chrome/browser/extensions/api/runtime/chrome_runtime_api_delegate.h
++++ b/chrome/browser/extensions/api/runtime/chrome_runtime_api_delegate.h
+@@ -11,6 +11,7 @@
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/scoped_observation.h"
++#include "build/build_config.h"
+ #include "extensions/browser/api/runtime/runtime_api.h"
+ #include "extensions/browser/api/runtime/runtime_api_delegate.h"
+ #include "extensions/browser/extension_registry.h"
+@@ -56,6 +57,10 @@
+                        UpdateCheckCallback callback) override;
+   void OpenURL(const GURL& uninstall_url) override;
+   bool GetPlatformInfo(extensions::api::runtime::PlatformInfo* info) override;
++#if BUILDFLAG(IS_WIN)
++  std::optional<bool> DeferBackgroundAssetUpdates(
++      const extensions::Extension* extension) override;
++#endif
+   bool RestartDevice(std::string* error_message) override;
+   void OpenOptionsPage(const extensions::Extension* extension,
+                        content::BrowserContext* browser_context,
+--- a/chrome/browser/extensions/api/runtime/chrome_runtime_api_delegate.cc
++++ b/chrome/browser/extensions/api/runtime/chrome_runtime_api_delegate.cc
+@@ -58,6 +58,10 @@
+ 
+ #if BUILDFLAG(IS_WIN)
+ #include "base/win/windows_version.h"
++#include "chrome/browser/performance_manager/public/user_tuning/battery_saver_mode_manager.h"
++#include "components/helium_services/extension_ids.h"
++#include "extensions/common/extension.h"
++#include "net/base/network_change_notifier.h"
+ #endif
+ 
+ #if BUILDFLAG(ENABLE_EXTENSIONS)
+@@ -332,6 +336,23 @@
+ #endif
+ }
+ 
++#if BUILDFLAG(IS_WIN)
++std::optional<bool> ChromeRuntimeAPIDelegate::DeferBackgroundAssetUpdates(
++    const Extension* extension) {
++  if (!extension || extension->id() != helium::kUBlockOriginComponentId ||
++      extension->location() !=
++          extensions::mojom::ManifestLocation::kComponent) {
++    return std::nullopt;
++  }
++  using BatterySaverManager =
++      performance_manager::user_tuning::BatterySaverModeManager;
++  return (BatterySaverManager::HasInstance() &&
++          BatterySaverManager::GetInstance()->IsWindowsEnergySaverActive()) ||
++         net::NetworkChangeNotifier::GetConnectionCost() ==
++             net::NetworkChangeNotifier::CONNECTION_COST_METERED;
++}
++#endif
++
+ bool ChromeRuntimeAPIDelegate::GetPlatformInfo(PlatformInfo* info) {
+   const std::string_view os = update_client::UpdateQueryParams::GetOS();
+   if (os == "mac") {
+--- a/extensions/common/api/runtime.json
++++ b/extensions/common/api/runtime.json
+@@ -146,6 +146,12 @@
+           "arch": {
+             "$ref": "PlatformArch",
+             "description": "The machine's processor architecture."
++          },
++          "deferBackgroundAssetUpdates": {
++            "type": "boolean",
++            "optional": true,
++            "nodoc": true,
++            "description": "Whether the bundled filter component should defer scheduled downloads."
+           },
+           "nacl_arch" : {
+             "optional": true,
+--- a/chrome/browser/extensions/BUILD.gn
++++ b/chrome/browser/extensions/BUILD.gn
+@@ -668,6 +668,10 @@
+   ]
+   defines = []
+ 
++  if (is_win) {
++    deps += [ "//chrome/browser/performance_manager/public/user_tuning" ]
++  }
++
+   if (is_mac || is_win || is_linux || is_chromeos) {
+     deps += [ "//components/webapps/isolated_web_apps:scheme" ]
+   }

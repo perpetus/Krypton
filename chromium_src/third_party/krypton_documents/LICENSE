@@ -2199,7 +2199,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-===== prosemirror-history-1.5.1\LICENSE =====
+===== prosemirror-history-1.5.2\LICENSE =====
 --- LICENSE ---
 Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 
@@ -2268,7 +2268,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-===== prosemirror-schema-list-1.6.0\LICENSE =====
+===== prosemirror-schema-list-1.6.1\LICENSE =====
 --- LICENSE ---
 Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 
@@ -2337,7 +2337,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-===== prosemirror-transform-1.12.5\LICENSE =====
+===== prosemirror-transform-1.12.7\LICENSE =====
 --- LICENSE ---
 Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 
@@ -2360,7 +2360,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-===== prosemirror-view-1.42.9\LICENSE =====
+===== prosemirror-view-1.43.0\LICENSE =====
 --- LICENSE ---
 Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 
@@ -3432,7 +3432,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-===== tiptap__core-3.34.0\LICENSE =====
+===== tiptap__core-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3457,7 +3457,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-blockquote-3.34.0\LICENSE =====
+===== tiptap__extension-blockquote-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3482,7 +3482,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-bold-3.34.0\LICENSE =====
+===== tiptap__extension-bold-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3507,7 +3507,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-code-3.34.0\LICENSE =====
+===== tiptap__extension-code-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3532,7 +3532,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-code-block-3.34.0\LICENSE =====
+===== tiptap__extension-code-block-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3557,7 +3557,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-collaboration-3.34.0\LICENSE =====
+===== tiptap__extension-collaboration-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3582,7 +3582,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-details-3.34.0\LICENSE =====
+===== tiptap__extension-details-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3607,7 +3607,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-document-3.34.0\LICENSE =====
+===== tiptap__extension-document-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3632,7 +3632,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-drag-handle-3.34.0\LICENSE =====
+===== tiptap__extension-drag-handle-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3657,7 +3657,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-emoji-3.34.0\LICENSE =====
+===== tiptap__extension-emoji-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3682,7 +3682,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-hard-break-3.34.0\LICENSE =====
+===== tiptap__extension-hard-break-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3707,7 +3707,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-heading-3.34.0\LICENSE =====
+===== tiptap__extension-heading-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3732,7 +3732,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-horizontal-rule-3.34.0\LICENSE =====
+===== tiptap__extension-horizontal-rule-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3757,7 +3757,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-image-3.34.0\LICENSE =====
+===== tiptap__extension-image-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3782,7 +3782,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-italic-3.34.0\LICENSE =====
+===== tiptap__extension-italic-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3807,7 +3807,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-link-3.34.0\LICENSE =====
+===== tiptap__extension-link-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3832,7 +3832,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-list-3.34.0\LICENSE =====
+===== tiptap__extension-list-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3857,7 +3857,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-mathematics-3.34.0\LICENSE =====
+===== tiptap__extension-mathematics-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3882,7 +3882,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-node-range-3.34.0\LICENSE =====
+===== tiptap__extension-node-range-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3907,7 +3907,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-paragraph-3.34.0\LICENSE =====
+===== tiptap__extension-paragraph-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3932,7 +3932,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-placeholder-3.34.0\LICENSE =====
+===== tiptap__extension-placeholder-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3957,7 +3957,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-strike-3.34.0\LICENSE =====
+===== tiptap__extension-strike-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -3982,7 +3982,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-table-3.34.0\LICENSE =====
+===== tiptap__extension-table-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4007,7 +4007,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-task-item-3.34.0\LICENSE =====
+===== tiptap__extension-task-item-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4032,7 +4032,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-task-list-3.34.0\LICENSE =====
+===== tiptap__extension-task-list-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4057,7 +4057,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-text-3.34.0\LICENSE =====
+===== tiptap__extension-text-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4082,7 +4082,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extension-underline-3.34.0\LICENSE =====
+===== tiptap__extension-underline-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4107,7 +4107,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__extensions-3.34.0\LICENSE =====
+===== tiptap__extensions-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4132,7 +4132,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__markdown-3.34.0\LICENSE =====
+===== tiptap__markdown-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4157,7 +4157,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__pm-3.34.0\LICENSE =====
+===== tiptap__pm-3.35.0\LICENSE =====
 --- LICENSE ---
 MIT License
 
@@ -4182,7 +4182,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__starter-kit-3.34.0\LICENSE =====
+===== tiptap__starter-kit-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4207,7 +4207,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__suggestion-3.34.0\LICENSE =====
+===== tiptap__suggestion-3.35.0\LICENSE =====
 --- LICENSE.md ---
 MIT License
 
@@ -4232,7 +4232,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-===== tiptap__y-tiptap-3.3.0\LICENSE =====
+===== tiptap__y-tiptap-3.3.1\LICENSE =====
 --- LICENSE ---
 The MIT License (MIT)
 

@@ -33,6 +33,7 @@
 #include "build/branding_buildflags.h"
 #include "chrome/browser/ui/webui/help/version_updater.h"
 #include "chrome/browser/win/krypton_update_trust.h"
+#include "net/base/network_change_notifier.h"
 
 namespace krypton {
 namespace {
@@ -95,7 +96,11 @@ bool VerifyHelper(std::string_view data, std::string_view signature) {
              static_cast<ULONG>(signature.size()), 0) >= 0;
 }
 
-void StartVerifiedHelper() {
+void StartVerifiedHelper(bool background) {
+  if (background && net::NetworkChangeNotifier::GetConnectionCost() ==
+                        net::NetworkChangeNotifier::CONNECTION_COST_METERED) {
+    return;
+  }
   base::FilePath module;
   if (!base::PathService::Get(base::DIR_MODULE, &module))
     return;
@@ -115,7 +120,7 @@ void StartVerifiedHelper() {
       !VerifyHelper(binary, signature))
     return;
   base::CommandLine command(updater);
-  command.AppendSwitch("browser-start");
+  command.AppendSwitch(background ? "browser-start" : "update-silent");
   base::LaunchOptions options;
   options.start_hidden = true;
   options.current_directory = updater.DirName();
@@ -170,7 +175,8 @@ class UpdateStatusWatcher {
     else if (*state == "downloading" || *state == "installing" ||
              *state == "available")
       status = VersionUpdater::UPDATING;
-    else if (*state == "up_to_date" || *state == "updated")
+    else if (*state == "up_to_date" || *state == "updated" ||
+             *state == "deferred")
       status = VersionUpdater::UPDATED;
     else if (*state == "error")
       status = VersionUpdater::FAILED;
@@ -184,13 +190,38 @@ class UpdateStatusWatcher {
   base::FilePathWatcher watcher_;
 };
 
-void WatchStartupStatus() {
-  static base::NoDestructor<base::SequenceBound<UpdateStatusWatcher>> watcher(
-      base::ThreadPool::CreateSequencedTaskRunner(
-          {base::MayBlock(), base::TaskPriority::BEST_EFFORT}),
-      base::BindRepeating(
-          [](VersionUpdater::Status, int, const std::u16string&) {}));
-}
+class StartupUpdate final
+    : public net::NetworkChangeNotifier::ConnectionCostObserver {
+ public:
+  StartupUpdate()
+      : watcher_(base::BindRepeating(
+            [](VersionUpdater::Status, int, const std::u16string&) {})) {
+    net::NetworkChangeNotifier::AddConnectionCostObserver(this);
+    observing_ = true;
+    OnConnectionCostChanged(net::NetworkChangeNotifier::GetConnectionCost());
+  }
+
+  ~StartupUpdate() override {
+    if (observing_) {
+      net::NetworkChangeNotifier::RemoveConnectionCostObserver(this);
+    }
+  }
+
+  void OnConnectionCostChanged(
+      net::NetworkChangeNotifier::ConnectionCost cost) override {
+    if (!observing_ ||
+        cost == net::NetworkChangeNotifier::CONNECTION_COST_METERED) {
+      return;
+    }
+    observing_ = false;
+    net::NetworkChangeNotifier::RemoveConnectionCostObserver(this);
+    StartVerifiedHelper(true);
+  }
+
+ private:
+  UpdateStatusWatcher watcher_;
+  bool observing_ = false;
+};
 
 #if !BUILDFLAG(GOOGLE_CHROME_BRANDING)
 class KryptonVersionUpdater final : public VersionUpdater {
@@ -207,7 +238,7 @@ class KryptonVersionUpdater final : public VersionUpdater {
             &KryptonVersionUpdater::OnStatus, weak_.GetWeakPtr())));
     base::ThreadPool::PostTask(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-        base::BindOnce(&StartVerifiedHelper));
+        base::BindOnce(&StartVerifiedHelper, false));
   }
 
  private:
@@ -226,11 +257,9 @@ void MaybeStartSignedUpdater() {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           "disable-background-networking"))
     return;
-  WatchStartupStatus();
-  base::ThreadPool::PostTask(FROM_HERE,
-                             {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-                              base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-                             base::BindOnce(&StartVerifiedHelper));
+  static base::NoDestructor<base::SequenceBound<StartupUpdate>> startup(
+      base::ThreadPool::CreateSequencedTaskRunner(
+          {base::MayBlock(), base::TaskPriority::BEST_EFFORT}));
 }
 
 bool PrepareSignedUpdateRelaunch() {

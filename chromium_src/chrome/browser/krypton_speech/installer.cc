@@ -23,10 +23,13 @@
 #include "content/public/browser/storage_partition.h"
 #include "crypto/hash.h"
 #include "net/base/load_flags.h"
+#include "net/base/net_errors.h"
+#include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 
 namespace krypton::speech {
 namespace {
@@ -228,10 +231,15 @@ void Installer::Prepare(std::string id, base::OnceCallback<void(bool)> reply) {
 void Installer::Prepared(std::string id,
                          base::OnceCallback<void(bool)> reply,
                          Verified result) {
-  root_ = std::move(result.root);
+  if (!result.root.empty())
+    root_ = std::move(result.root);
   library_ = std::move(result.library);
-  const bool binary_added = !soda_binary_installed_ && !library_.empty();
+  const bool binary_changed = soda_binary_installed_ != !library_.empty();
   soda_binary_installed_ = !library_.empty();
+  if (!soda_binary_installed_ && !ready_.empty()) {
+    ready_.clear();
+    installed_languages_.clear();
+  }
   for (auto& [found, files] : result.packs) {
     const auto* pack = PackForId(found);
     const bool added = ready_.insert_or_assign(found, std::move(files)).second;
@@ -240,7 +248,7 @@ void Installer::Prepared(std::string id,
     if (added)
       NotifyOnSodaInstalled(code);
   }
-  if (binary_added)
+  if (binary_changed)
     NotifyOnSodaInstalled(::speech::LanguageCode::kNone);
   std::move(reply).Run(Ready(id));
 }
@@ -353,32 +361,40 @@ void Installer::RequestDownload(Profile& profile, std::string id) {
   errors_.erase(id);
   const auto generation = ++generation_;
   worker_->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce([] {
-        base::FilePath user;
-        if (!base::PathService::Get(chrome::DIR_USER_DATA, &user))
-          return base::FilePath();
-        const auto root = user.AppendASCII("KryptonSpeech");
-        const auto temporary = root.AppendASCII(
+      FROM_HERE,
+      base::BindOnce([]() -> base::expected<base::FilePath, std::string> {
+        const auto runtime = Verify({});
+        if (runtime.library.empty()) {
+          return base::unexpected(
+              "Speech runtime files failed verification. Repair or update "
+              "Krypton before downloading a voice model.");
+        }
+        const auto temporary = runtime.root.AppendASCII(
             "install-" + base::Uuid::GenerateRandomV4().AsLowercaseString());
-        return !base::IsLink(root) && base::CreateDirectory(temporary)
-                   ? temporary
-                   : base::FilePath();
+        if (base::IsLink(runtime.root) || !base::CreateDirectory(temporary)) {
+          return base::unexpected("Cannot prepare the speech-pack directory.");
+        }
+        return temporary;
       }),
       base::BindOnce(&Installer::DirectoryReady, weak_factory_.GetWeakPtr(),
                      generation));
   Notify(*pack);
 }
-void Installer::DirectoryReady(uint64_t generation, base::FilePath directory) {
+void Installer::DirectoryReady(
+    uint64_t generation,
+    base::expected<base::FilePath, std::string> directory) {
   if (generation != generation_ || !download_) {
-    worker_->PostTask(FROM_HERE,
-                      base::BindOnce(&RemoveTemporary, std::move(directory)));
+    if (directory) {
+      worker_->PostTask(
+          FROM_HERE, base::BindOnce(&RemoveTemporary, std::move(*directory)));
+    }
     return;
   }
-  if (directory.empty()) {
-    Failed("Cannot prepare the speech-pack directory.");
+  if (!directory) {
+    Failed(std::move(directory.error()));
     return;
   }
-  download_->directory = std::move(directory);
+  download_->directory = std::move(*directory);
   NextFile();
 }
 void Installer::NextFile() {
@@ -455,7 +471,17 @@ void Installer::Downloaded(uint64_t generation, base::FilePath path) {
   if (generation != generation_ || !download_)
     return;
   if (path.empty()) {
-    Failed("Speech-pack download failed. No model was installed.");
+    const auto& loader = *download_->loader;
+    const auto* response = loader.ResponseInfo();
+    const int status =
+        response && response->headers ? response->headers->response_code() : 0;
+    if (status >= 400) {
+      Failed("Moonshine AI could not provide the model file (HTTP " +
+             base::NumberToString(status) + ").");
+    } else {
+      Failed("Speech-pack download failed (" +
+             net::ErrorToShortString(loader.NetError()) + ").");
+    }
     return;
   }
   download_->loader.reset();
@@ -484,13 +510,24 @@ void Installer::Committed(uint64_t generation, bool valid) {
     Failed("Cannot finish the speech-pack installation.");
     return;
   }
+  Prepare(std::string(download_->pack->id),
+          base::BindOnce(&Installer::InstallationVerified,
+                         weak_factory_.GetWeakPtr(), generation));
+}
+void Installer::InstallationVerified(uint64_t generation, bool ready) {
+  if (generation != generation_ || !download_)
+    return;
+  if (!ready) {
+    Failed(
+        "The downloaded voice model could not be opened. Check the speech "
+        "runtime files and try again.");
+    return;
+  }
   const auto* pack = download_->pack;
   const auto temporary = download_->directory;
-  root_ = temporary.DirName();
   download_.reset();
   worker_->PostTask(FROM_HERE, base::BindOnce(&RemoveTemporary, temporary));
   errors_.erase(std::string(pack->id));
-  Prepare(std::string(pack->id), base::DoNothing());
   Notify(*pack);
 }
 void Installer::Failed(std::string message) {

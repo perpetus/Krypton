@@ -4,9 +4,13 @@
 #include "chrome/browser/ui/krypton_ui/live_folder_session.h"
 #include "chrome/browser/ui/krypton_ui/multi_page_session.h"
 
+#include <algorithm>
+
 #include "base/files/file_path.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/ui/krypton_ui/essential_prefs.h"
+#include "components/sessions/core/session_types.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -160,6 +164,37 @@ void RestoreWorkspaceForTab(
   SetEssentialForTab(contents, state.essential);
   SetFolderForTab(contents, state.folder);
   SetWorkspaceCatalogForTab(contents, state.catalog);
+}
+
+void PruneRecoveredEssentials(
+    const PrefService& prefs,
+    std::vector<std::unique_ptr<sessions::SessionWindow>>& windows) {
+  const auto catalog = ReadEssentials(prefs);
+  if (catalog.items.empty()) {
+    return;
+  }
+  // Essential ids always belong to the tab's own profile, the one restoring.
+  const auto saved = [&](const std::unique_ptr<sessions::SessionTab>& tab) {
+    const auto id = DecodeWorkspaceSessionData(tab->extra_data).essential;
+    return id && std::ranges::contains(catalog.items, id, &Essential::id);
+  };
+  for (auto& window : windows) {
+    auto& tabs = window->tabs;
+    if (window->type != sessions::SessionWindow::TYPE_NORMAL || tabs.empty() ||
+        std::ranges::all_of(tabs, saved)) {
+      continue;
+    }
+    // The selected tab keeps its place; a removed one hands the selection to
+    // the next remaining tab, or the last one.
+    const auto selected = static_cast<size_t>(std::clamp<int>(
+        window->selected_tab_index, 0, static_cast<int>(tabs.size()) - 1));
+    const auto before =
+        std::count_if(tabs.begin(), tabs.begin() + selected,
+                      [&](const auto& tab) { return !saved(tab); });
+    std::erase_if(tabs, saved);
+    window->selected_tab_index = static_cast<int>(
+        std::min<size_t>(static_cast<size_t>(before), tabs.size() - 1));
+  }
 }
 
 namespace {

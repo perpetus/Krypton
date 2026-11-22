@@ -80,9 +80,17 @@ krypton/krypton-ui/0031-space-profile-hosts.patch
 krypton/krypton-ui/0032-space-profile-initialization.patch
 krypton/krypton-ui/0033-command-launcher.patch
 krypton/krypton-ui/0034-local-documents.patch
+krypton/krypton-ui/0035-crash-restore-essentials.patch
 krypton/translation/0001-local-bergamot.patch
 krypton/speech/0001-local-moonshine.patch
 krypton/speech/0002-sandboxed-model-files.patch
+krypton/speech/0003-installed-speech-preload.patch
 krypton/build/field-trial-performance-defaults.patch
 krypton/build/chrome-dll-own-link-pool.patch
 krypton/chromium-158/disable-ai-unused-profile.patch
+krypton/performance/0001-windows-renderer-efficiency.patch
+krypton/performance/0002-windows-battery-tier.patch
+krypton/performance/0003-windows-battery-settings.patch
+krypton/performance/0004-windows-filter-update-policy.patch
+krypton/performance/0005-protect-picture-in-picture-from-freezing.patch
+krypton/performance/0006-release-crashpad-process.patch

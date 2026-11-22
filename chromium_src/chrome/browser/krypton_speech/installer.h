@@ -11,6 +11,7 @@
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/types/expected.h"
 #include "chrome/browser/krypton_speech/model_manifest.h"
 #include "components/soda/soda_installer.h"
 class Profile;
@@ -51,11 +52,13 @@ class Installer final : public ::speech::SodaInstaller {
   void Prepared(std::string id,
                 base::OnceCallback<void(bool)> reply,
                 Verified result);
-  void DirectoryReady(uint64_t generation, base::FilePath directory);
+  void DirectoryReady(uint64_t generation,
+                      base::expected<base::FilePath, std::string> directory);
   void NextFile();
   void Downloaded(uint64_t generation, base::FilePath path);
   void FileVerified(uint64_t generation, bool valid);
   void Committed(uint64_t generation, bool valid);
+  void InstallationVerified(uint64_t generation, bool ready);
   void Failed(std::string message);
   void Notify(const krypton_voice::ModelPack& pack);
   void UninstallSoda(PrefService*) override;

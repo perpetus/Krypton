@@ -1,0 +1,39 @@
+Subject: Leave saved Essentials to their catalog in crash recovery
+
+Krypton saves Essentials in each profile's catalog, and every window reopens
+them once the crash prompt is answered. Recovering a crashed session restored
+their old tabs as well, which duplicated saved state the catalog already
+owns. While the profile still awaits the crash acknowledgement, session
+restore now drops tabs of Essentials that remain in the catalog; a window
+holding nothing else keeps them. Pinned and ordinary tabs are restored
+unchanged: after a crash Chromium does not reopen the saved pinned tabs, so
+this recovery is their only source. Normal startup restore is unchanged.
+The owned implementation lives in chromium_src (workspace_session.cc).
+
+--- a/chrome/browser/sessions/session_restore.cc
++++ b/chrome/browser/sessions/session_restore.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "chrome/browser/ui/krypton_ui/buildflags.h"
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
++#include "chrome/browser/sessions/exit_type_service.h"
+ #include "chrome/browser/ui/krypton_ui/workspace_session.h"
+ #endif
+ 
+@@ -809,6 +810,16 @@
+     DVLOG(1) << "ProcessSessionWindows " << windows->size();
+ 
+     PruneWindows(windows);
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++    // Recovering a crashed session: saved Essentials reopen from their
++    // profile catalog once the crash prompt is answered, so their old tabs
++    // would only duplicate them.
++    if (const auto* exit_type =
++            ExitTypeService::GetInstanceForProfile(profile_);
++        exit_type && exit_type->waiting_for_user_to_ack_crash()) {
++      krypton_ui::PruneRecoveredEssentials(*profile_->GetPrefs(), *windows);
++    }
++#endif
+ 
+     if (windows->empty()) {
+       // Restore was unsuccessful. The cookie/storage systems can also delete

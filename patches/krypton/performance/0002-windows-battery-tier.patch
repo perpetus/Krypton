@@ -1,0 +1,421 @@
+# Connect the existing Windows battery tier to system power notifications.
+#
+# Keep freezing, frame-rate controls, discard eligibility and wake-up budgets
+# on their existing paths. Visible frame throttling requires the system saver
+# in unplugged mode, while Always applies it on external power as well.
+
+--- a/chrome/browser/performance_manager/user_tuning/battery_saver_mode_manager.cc
++++ b/chrome/browser/performance_manager/user_tuning/battery_saver_mode_manager.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/performance_manager/public/user_tuning/battery_saver_mode_manager.h"
+ 
++#include <cstring>
+ #include <optional>
+ #include <utility>
+ 
+@@ -23,6 +24,7 @@
+ #include "base/scoped_multi_source_observation.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/values.h"
++#include "build/build_config.h"
+ #include "components/performance_manager/freezing/freezing_policy.h"
+ #include "components/performance_manager/performance_manager_impl.h"
+ #include "components/performance_manager/public/features.h"
+@@ -38,6 +40,14 @@
+ #include "content/public/browser/render_process_host_observer.h"
+ #include "content/public/common/content_features.h"
+ 
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++
++#include "base/win/message_window.h"
++#include "base/win/windows_version.h"
++#include "chrome/browser/performance_manager/policies/memory_saver_mode_policy.h"
++#endif
++
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_features.h"
+ #include "chromeos/dbus/power/power_manager_client.h"
+@@ -47,6 +57,19 @@
+ namespace {
+ 
+ BatterySaverModeManager* g_battery_saver_mode_manager = nullptr;
++
++#if BUILDFLAG(IS_WIN)
++constexpr GUID kEnergySaverStatus = {
++    0x550e8400,
++    0xe29b,
++    0x41d4,
++    {0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00}};
++constexpr GUID kPowerSavingStatus = {
++    0xe00958c0,
++    0xc213,
++    0x4ace,
++    {0xac, 0x77, 0xfe, 0xcc, 0xed, 0x2e, 0xee, 0xa5}};
++#endif
+ 
+ constexpr base::TimeDelta kBatteryUsageWriteFrequency = base::Days(1);
+ 
+@@ -239,10 +262,35 @@
+       battery_state_sampler_obs_.Observe(battery_state_sampler);
+     }
+ 
++#if BUILDFLAG(IS_WIN)
++    SYSTEM_POWER_STATUS initial_status;
++    if (::GetSystemPowerStatus(&initial_status)) {
++      manager_->UpdateWindowsEnergySaver(initial_status.SystemStatusFlag == 1);
++    }
++    if (power_window_.Create(
++            base::BindRepeating(&DesktopBatterySaverProvider::OnPowerMessage,
++                                base::Unretained(this)))) {
++      if (base::win::GetVersion() >= base::win::Version::WIN11_24H2) {
++        power_notification_ = ::RegisterPowerSettingNotification(
++            power_window_.hwnd(), &kEnergySaverStatus,
++            DEVICE_NOTIFY_WINDOW_HANDLE);
++      }
++      if (!power_notification_) {
++        power_notification_ = ::RegisterPowerSettingNotification(
++            power_window_.hwnd(), &kPowerSavingStatus,
++            DEVICE_NOTIFY_WINDOW_HANDLE);
++      }
++    }
++#endif
+     UpdateBatterySaverModeState();
+   }
+ 
+   ~DesktopBatterySaverProvider() override {
++#if BUILDFLAG(IS_WIN)
++    if (power_notification_) {
++      ::UnregisterPowerSettingNotification(power_notification_);
++    }
++#endif
+     base::PowerMonitor::GetInstance()->RemovePowerStateObserver(this);
+   }
+ 
+@@ -282,6 +330,33 @@
+   }
+ 
+  private:
++#if BUILDFLAG(IS_WIN)
++  bool OnPowerMessage(UINT message,
++                      WPARAM event,
++                      LPARAM data,
++                      LRESULT* result) {
++    if (message != WM_POWERBROADCAST || event != PBT_POWERSETTINGCHANGE ||
++        !data) {
++      return false;
++    }
++    const auto* setting = reinterpret_cast<const POWERBROADCAST_SETTING*>(data);
++    if ((setting->PowerSetting != kEnergySaverStatus &&
++         setting->PowerSetting != kPowerSavingStatus) ||
++        setting->DataLength != sizeof(DWORD)) {
++      return false;
++    }
++    DWORD state;
++    std::memcpy(&state, setting->Data, sizeof(state));
++    const bool enabled = state != 0;
++    if (manager_->IsWindowsEnergySaverActive() != enabled) {
++      manager_->UpdateWindowsEnergySaver(enabled);
++      UpdateBatterySaverModeState();
++    }
++    *result = TRUE;
++    return true;
++  }
++#endif
++
+   void OnBatterySaverModePrefChanged() {
+     battery_saver_mode_disabled_for_session_ = false;
+     UpdateBatterySaverModeState();
+@@ -318,7 +393,14 @@
+       }
+     }
+ 
+-    // Don't change throttling or notify observers if the mode didn't change.
++#if BUILDFLAG(IS_WIN)
++    // Unplugging starts the background tier. Cap presentation only when
++    // Windows is saving power as well, or the user has selected Always.
++    manager_->UpdateFrameThrottling(battery_saver_mode_enabled_ &&
++                                    (state == BatterySaverModeState::kEnabled ||
++                                     manager_->IsWindowsEnergySaverActive()));
++#endif
++    // Don't notify observers if the background tier didn't change.
+     if (previously_enabled == battery_saver_mode_enabled_) {
+       return;
+     }
+@@ -405,6 +487,10 @@
+     UpdateBatterySaverModeState();
+   }
+ 
++#if BUILDFLAG(IS_WIN)
++  base::win::MessageWindow power_window_;
++  HPOWERNOTIFY power_notification_ = nullptr;
++#endif
+   bool battery_saver_mode_enabled_ = false;
+   bool battery_saver_mode_disabled_for_session_ = false;
+ 
+@@ -631,17 +717,40 @@
+   }
+ }
+ 
++#if BUILDFLAG(IS_WIN)
++void BatterySaverModeManager::UpdateWindowsEnergySaver(bool active) {
++  if (std::exchange(windows_saver_active_, active) != active) {
++    observers_.Notify(&Observer::OnWindowsEnergySaverChanged, active);
++  }
++}
++
++void BatterySaverModeManager::UpdateFrameThrottling(bool enabled) {
++  if (std::exchange(frame_sinks_throttled_, enabled) == enabled) {
++    return;
++  }
++  if (enabled) {
++    frame_throttling_delegate_->StartThrottlingAllFrameSinks();
++  } else {
++    frame_throttling_delegate_->StopThrottlingAllFrameSinks();
++  }
++}
++#endif
++
+ void BatterySaverModeManager::NotifyOnBatterySaverActiveChanged(
+     bool battery_saver_mode_active) {
+   if (battery_saver_mode_active) {
++#if !BUILDFLAG(IS_WIN)
+     frame_throttling_delegate_->StartThrottlingAllFrameSinks();
++#endif
+     if (base::FeatureList::IsEnabled(
+             ::features::kBatterySaverModeAlignWakeUps)) {
+       base::MessagePump::OverrideAlignWakeUpsState(true,
+                                                    base::Milliseconds(32));
+     }
+   } else {
++#if !BUILDFLAG(IS_WIN)
+     frame_throttling_delegate_->StopThrottlingAllFrameSinks();
++#endif
+     base::MessagePump::ResetAlignWakeUpsState();
+   }
+ 
+@@ -650,6 +759,11 @@
+ 
+   freezing_delegate_->ToggleFreezingOnBatterySaverMode(
+       battery_saver_mode_active);
++#if BUILDFLAG(IS_WIN)
++  if (auto* policy = policies::MemorySaverModePolicy::GetInstance()) {
++    policy->SetBatterySaverActive(battery_saver_mode_active);
++  }
++#endif
+ 
+   for (auto& obs : observers_) {
+     obs.OnBatterySaverActiveChanged(battery_saver_mode_active);
+--- a/chrome/browser/performance_manager/public/user_tuning/battery_saver_mode_manager.h
++++ b/chrome/browser/performance_manager/public/user_tuning/battery_saver_mode_manager.h
+@@ -11,6 +11,7 @@
+ #include "base/observer_list_types.h"
+ #include "base/scoped_observation.h"
+ #include "base/time/time.h"
++#include "build/build_config.h"
+ #include "components/performance_manager/public/user_tuning/prefs.h"
+ #include "components/prefs/pref_change_registrar.h"
+ 
+@@ -71,6 +72,9 @@
+     // Raised when the battery saver mode interventions are activated or
+     // deactivated
+     virtual void OnBatterySaverActiveChanged(bool is_active) {}
++#if BUILDFLAG(IS_WIN)
++    virtual void OnWindowsEnergySaverChanged(bool active) {}
++#endif
+ 
+     // Raised when the device is plugged in or unplugged
+     // Can be used by the UI to show a promo if BSM isn't configured to be
+@@ -133,6 +137,9 @@
+   // the *new* value when the observers are notified so the UI layer can make
+   // decisions based on the most up-to-date state.
+   bool IsBatterySaverActive() const;
++#if BUILDFLAG(IS_WIN)
++  bool IsWindowsEnergySaverActive() const { return windows_saver_active_; }
++#endif
+ 
+   // Returns true if the device is unplugged and using battery power.
+   bool IsUsingBatteryPower() const;
+@@ -188,6 +195,12 @@
+   void NotifyOnBatterySaverModeChanged(bool battery_saver_mode_enabled);
+   void NotifyOnBatterySaverActiveChanged(bool battery_saver_mode_active);
+   void NotifyOnExternalPowerConnectedChanged(bool on_battery_power);
++#if BUILDFLAG(IS_WIN)
++  void UpdateFrameThrottling(bool enabled);
++  void UpdateWindowsEnergySaver(bool active);
++  bool frame_sinks_throttled_ = false;
++  bool windows_saver_active_ = false;
++#endif
+   void NotifyOnDeviceHasBatteryChanged(bool has_battery);
+   void NotifyOnBatteryThresholdReached();
+ 
+--- a/chrome/browser/performance_manager/policies/memory_saver_mode_policy.h
++++ b/chrome/browser/performance_manager/policies/memory_saver_mode_policy.h
+@@ -43,6 +43,7 @@
+   void OnTakenFromGraph(Graph* graph) override;
+ 
+   void OnMemorySaverModeChanged(bool enabled);
++  void SetBatterySaverActive(bool active);
+   base::TimeDelta GetTimeBeforeDiscardForTesting() const;
+   void SetMode(user_tuning::prefs::MemorySaverModeAggressiveness mode);
+ 
+@@ -63,6 +64,7 @@
+   int GetMaxNumRevisitsForCurrentMode() const;
+ 
+   bool memory_saver_mode_enabled_ = false;
++  bool battery_saver_active_ = false;
+ 
+   std::map<const TabPageDecorator::TabHandle*, base::OneShotTimer>
+       active_discard_timers_;
+--- a/chrome/browser/performance_manager/policies/memory_saver_mode_policy.cc
++++ b/chrome/browser/performance_manager/policies/memory_saver_mode_policy.cc
+@@ -116,6 +116,17 @@
+   }
+ }
+ 
++void MemorySaverModePolicy::SetBatterySaverActive(bool active) {
++  if (battery_saver_active_ == active) {
++    return;
++  }
++  battery_saver_active_ = active;
++  if (memory_saver_mode_enabled_) {
++    active_discard_timers_.clear();
++    StartAllDiscardTimers();
++  }
++}
++
+ base::TimeDelta MemorySaverModePolicy::GetTimeBeforeDiscardForTesting() const {
+   return GetTimeBeforeDiscardForCurrentMode();
+ }
+@@ -208,7 +219,7 @@
+   if (elapsed_not_suspended < requested_time_before_discard) {
+     StartDiscardTimerIfEnabled(
+         tab_handle, requested_time_before_discard - elapsed_not_suspended);
+-  } else {
++  } else if (!tab_handle->page_node()->UsesWebRTC()) {
+     GetOwningGraph()
+         ->GetRegisteredObjectAs<PageDiscardingHelper>()
+         ->ImmediatelyDiscardMultiplePages(
+@@ -219,6 +230,9 @@
+ 
+ base::TimeDelta MemorySaverModePolicy::GetTimeBeforeDiscardForCurrentMode()
+     const {
++  if (battery_saver_active_) {
++    return base::Minutes(30);
++  }
+   switch (mode_) {
+     case MemorySaverModeAggressiveness::kConservative:
+       return base::Hours(6);
+--- a/components/performance_manager/user_tuning/prefs.cc
++++ b/components/performance_manager/user_tuning/prefs.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "components/performance_manager/public/user_tuning/prefs.h"
++
++#include "build/build_config.h"
+ 
+ #include <iterator>
+ #include <optional>
+@@ -38,7 +40,11 @@
+       static_cast<int>(MemorySaverModeAggressiveness::kMedium));
+   registry->RegisterIntegerPref(
+       kBatterySaverModeState,
++#if BUILDFLAG(IS_WIN)
++      static_cast<int>(BatterySaverModeState::kEnabledOnBattery));
++#else
+       static_cast<int>(BatterySaverModeState::kEnabledBelowThreshold));
++#endif
+   registry->RegisterTimePref(kLastBatteryUseTimestamp, base::Time());
+   registry->RegisterBooleanPref(kDiscardRingTreatmentEnabled, true);
+   registry->RegisterBooleanPref(kTabFreezingEnabled, true);
+--- a/third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.cc
++++ b/third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.cc
+@@ -1190,6 +1190,9 @@
+   // Energy saver gates fullscreen video timer throttling, so re-evaluate the
+   // throttling policy for all pages (and their frames).
+   for (PageSchedulerImpl* page_scheduler : main_thread_only().page_schedulers) {
++#if BUILDFLAG(IS_WIN)
++    page_scheduler->UpdateBackgroundWakeUpGracePeriod();
++#endif
+     page_scheduler->UpdatePolicy();
+   }
+ }
+--- a/third_party/blink/renderer/platform/scheduler/main_thread/page_scheduler_impl.h
++++ b/third_party/blink/renderer/platform/scheduler/main_thread/page_scheduler_impl.h
+@@ -16,6 +16,7 @@
+ #include "base/task/sequence_manager/task_queue.h"
+ #include "base/time/time.h"
+ #include "base/unguessable_token.h"
++#include "build/build_config.h"
+ #include "third_party/blink/renderer/platform/platform_export.h"
+ #include "third_party/blink/renderer/platform/scheduler/common/cancelable_closure_holder.h"
+ #include "third_party/blink/renderer/platform/scheduler/common/throttling/task_queue_throttler.h"
+@@ -99,6 +100,9 @@
+   bool IsCPUTimeThrottled() const;
+ 
+   bool IsLoading() const;
++#if BUILDFLAG(IS_WIN)
++  void UpdateBackgroundWakeUpGracePeriod();
++#endif
+ 
+   // An "ordinary" PageScheduler is responsible for a fully-featured page
+   // owned by a web view.
+--- a/third_party/blink/renderer/platform/scheduler/main_thread/page_scheduler_impl.cc
++++ b/third_party/blink/renderer/platform/scheduler/main_thread/page_scheduler_impl.cc
+@@ -16,6 +16,7 @@
+ #include "base/notreached.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/time/time.h"
++#include "build/build_config.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/switches.h"
+ #include "third_party/blink/public/platform/platform.h"
+@@ -685,9 +686,13 @@
+           FROM_HERE, do_throttle_cpu_time_callback_.GetCallback(),
+           kThrottlingDelayAfterBackgrounding);
+     }
++#if BUILDFLAG(IS_WIN)
++    UpdateBackgroundWakeUpGracePeriod();
++#else
+     main_thread_scheduler_->ControlTaskRunner()->PostDelayedTask(
+         FROM_HERE, do_intensively_throttle_wake_ups_callback_.GetCallback(),
+         GetIntensiveWakeUpThrottlingGracePeriod(IsLoading()));
++#endif
+   }
+ 
+   UpdateFrozenState(policy_updater);
+@@ -702,6 +707,32 @@
+   UpdateCPUTimeBudgetPool(&lazy_now);
+   UpdatePolicy();
+ }
++
++#if BUILDFLAG(IS_WIN)
++void PageSchedulerImpl::UpdateBackgroundWakeUpGracePeriod() {
++  if (IsPageVisible()) {
++    return;
++  }
++  const auto grace = GetIntensiveWakeUpThrottlingGracePeriod(IsLoading());
++  const auto limit = main_thread_scheduler_->IsBatterySaverEnabled()
++                         ? std::min(grace, base::Seconds(30))
++                         : grace;
++  const auto remaining = page_visibility_changed_time_ + limit -
++                         main_thread_scheduler_->NowTicks();
++  do_intensively_throttle_wake_ups_callback_.Cancel();
++  const bool throttle = !remaining.is_positive();
++  if (are_wake_ups_intensively_throttled_ != throttle) {
++    are_wake_ups_intensively_throttled_ = throttle;
++    base::LazyNow lazy_now(main_thread_scheduler_->GetTickClock());
++    UpdateWakeUpBudgetPools(&lazy_now);
++  }
++  if (!throttle) {
++    main_thread_scheduler_->ControlTaskRunner()->PostDelayedTask(
++        FROM_HERE, do_intensively_throttle_wake_ups_callback_.GetCallback(),
++        remaining);
++  }
++}
++#endif
+ 
+ void PageSchedulerImpl::DoIntensivelyThrottleWakeUps() {
+   do_intensively_throttle_wake_ups_callback_.Cancel();

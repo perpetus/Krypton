@@ -11,6 +11,7 @@
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ref.h"
+#include "base/scoped_observation.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -18,6 +19,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/performance_manager/public/user_tuning/battery_saver_mode_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/browser/sessions/exit_type_service.h"
@@ -46,6 +48,7 @@
 #include "net/base/isolation_info.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_change_notifier.h"
 #include "net/cookies/site_for_cookies.h"
 #include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -59,9 +62,14 @@
 
 namespace krypton_ui {
 namespace {
+using BatterySaverManager =
+    performance_manager::user_tuning::BatterySaverModeManager;
+
 constexpr char kServiceKey = 0;
 constexpr size_t kMaxDismissals = 512;
 constexpr auto kNetworkTimeout = base::Seconds(20);
+constexpr int kBatteryRefreshMultiplier = 4;
+using NetworkCost = net::NetworkChangeNotifier;
 
 bool ValidDigest(std::string_view value) {
   return value.size() == 64 &&
@@ -81,7 +89,9 @@ bool CanPrune(content::WebContents& contents,
 }  // namespace
 
 class LiveFolderService final : public base::SupportsUserData::Data,
-                                public ProfileObserver {
+                                public ProfileObserver,
+                                public BatterySaverManager::Observer,
+                                public NetworkCost::ConnectionCostObserver {
  public:
   static LiveFolderService& Get(Profile& profile) {
     if (!profile.GetUserData(&kServiceKey))
@@ -95,22 +105,43 @@ class LiveFolderService final : public base::SupportsUserData::Data,
     prefs_.Add(kFoldersPref,
                base::BindRepeating(&LiveFolderService::ConfigChanged,
                                    weak_factory_.GetWeakPtr()));
+    if (BatterySaverManager::HasInstance()) {
+      auto* manager = BatterySaverManager::GetInstance();
+      battery_saver_.Observe(manager);
+      battery_saver_active_ = manager->IsBatterySaverActive();
+    }
     ConfigChanged();
   }
   ~LiveFolderService() override {
     if (!shutdown_)
       profile_->RemoveObserver(this);
+    StopObservingCost();
   }
   void OnProfileWillBeDestroyed(Profile*) override {
     shutdown_ = true;
     timer_.Stop();
     loader_.reset();
+    battery_saver_.Reset();
+    StopObservingCost();
     prefs_.RemoveAll();
     weak_factory_.InvalidateWeakPtrs();
     profile_->RemoveObserver(this);
   }
 
+  void OnBatterySaverActiveChanged(bool active) override {
+    battery_saver_active_ = active;
+    Changed();
+  }
+  void OnBatterySaverModeManagerDestroyed() override { battery_saver_.Reset(); }
+  void OnWindowsEnergySaverChanged(bool active) override { Changed(); }
+  void OnConnectionCostChanged(NetworkCost::ConnectionCost cost) override {
+    Changed();
+  }
   void Add(LiveFolders& client) {
+    if (!observing_cost_) {
+      NetworkCost::AddConnectionCostObserver(this);
+      observing_cost_ = true;
+    }
     clients_.push_back(client.weak_factory_.GetWeakPtr());
     Changed();
   }
@@ -119,6 +150,7 @@ class LiveFolderService final : public base::SupportsUserData::Data,
       return !value || value.get() == &client;
     });
     if (clients_.empty()) {
+      StopObservingCost();
       timer_.Stop();
       loader_.reset();
       fetching_ = 0;
@@ -138,8 +170,10 @@ class LiveFolderService final : public base::SupportsUserData::Data,
       found->second.saturated = false;
       Save();
     }
-    if (fetching_ != id)
+    if (fetching_ != id) {
+      found->second.manual_refresh = true;
       found->second.due = base::TimeTicks::Now();
+    }
     Changed();
   }
   void Dismiss(const LiveFolderTabState& state) {
@@ -165,6 +199,7 @@ class LiveFolderService final : public base::SupportsUserData::Data,
 
  private:
   struct FolderState {
+    bool manual_refresh = false;
     LiveFolderConfig config;
     LiveFolderItems items;
     std::set<std::string> dismissed;
@@ -173,6 +208,7 @@ class LiveFolderService final : public base::SupportsUserData::Data,
     std::string status = "Not refreshed yet.";
     base::Time last_success;
     base::TimeTicks due;
+    base::TimeDelta interval;
     unsigned failures = 0;
     bool valid_cache = false;
     bool saturated = false;
@@ -228,9 +264,10 @@ class LiveFolderService final : public base::SupportsUserData::Data,
     const auto now = base::Time::Now();
     if (state.last_success > now)
       state.last_success = {};
-    const auto remaining =
-        state.last_success + base::Minutes(config.interval_minutes) - now;
-    state.due += std::max(base::TimeDelta(), remaining);
+    if (!state.last_success.is_null()) {
+      state.interval = base::Minutes(config.interval_minutes);
+      state.due += state.last_success + state.interval - now;
+    }
     return state;
   }
 
@@ -309,19 +346,52 @@ class LiveFolderService final : public base::SupportsUserData::Data,
     Pump();
   }
 
+  void StopObservingCost() {
+    if (observing_cost_) {
+      NetworkCost::RemoveConnectionCostObserver(this);
+      observing_cost_ = false;
+    }
+  }
+
   void Pump() {
     timer_.Stop();
     if (shutdown_ || fetching_ || clients_.empty() || folders_.empty())
       return;
-    const auto next = std::ranges::min_element(
-        folders_, {}, [](const auto& row) { return row.second.due; });
-    const auto delay = next->second.due - base::TimeTicks::Now();
-    if (delay.is_positive()) {
+    const bool paused =
+        NetworkCost::GetConnectionCost() ==
+            NetworkCost::CONNECTION_COST_METERED ||
+        (battery_saver_.IsObserving() &&
+         battery_saver_.GetSource()->IsWindowsEnergySaverActive());
+    const auto now = base::TimeTicks::Now();
+    auto due = base::TimeTicks::Max();
+    auto next = folders_.end();
+    for (auto it = folders_.begin(); it != folders_.end(); ++it) {
+      const auto& state = it->second;
+      if (state.manual_refresh) {
+        next = it;
+        due = now;
+        break;
+      }
+      if (paused)
+        continue;
+      const auto effective_due =
+          state.due + (battery_saver_active_
+                           ? state.interval * (kBatteryRefreshMultiplier - 1)
+                           : base::TimeDelta());
+      if (effective_due < due) {
+        due = effective_due;
+        next = it;
+      }
+    }
+    if (next == folders_.end())
+      return;
+    if (const auto delay = due - now; delay.is_positive()) {
       timer_.Start(
           FROM_HERE, delay,
           base::BindOnce(&LiveFolderService::Pump, weak_factory_.GetWeakPtr()));
       return;
     }
+    next->second.manual_refresh = false;
     Fetch(next->first);
   }
 
@@ -564,7 +634,8 @@ class LiveFolderService final : public base::SupportsUserData::Data,
     }
     const auto minutes =
         std::min(480u, state.config.interval_minutes * (1u << state.failures));
-    state.due = base::TimeTicks::Now() + base::Minutes(minutes);
+    state.interval = base::Minutes(minutes);
+    state.due = base::TimeTicks::Now() + state.interval;
     fetching_ = 0;
     Save();
     Changed();
@@ -576,6 +647,10 @@ class LiveFolderService final : public base::SupportsUserData::Data,
   PrefChangeRegistrar prefs_;
   std::vector<base::WeakPtr<LiveFolders>> clients_;
   std::map<KrFolderId, FolderState> folders_;
+  bool battery_saver_active_ = false;
+  bool observing_cost_ = false;
+  base::ScopedObservation<BatterySaverManager, BatterySaverManager::Observer>
+      battery_saver_{this};
   base::OneShotTimer timer_;
   std::unique_ptr<network::SimpleURLLoader> loader_;
   LiveFolderConfig request_config_;

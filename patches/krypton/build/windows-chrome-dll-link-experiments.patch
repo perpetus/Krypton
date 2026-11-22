@@ -10,19 +10,32 @@
 # tail merging, and per-DLL ThinLTO optimization/code-generation levels
 # independently. Add partial inlining, IPRA, speculative devirtualization, a
 # hot/cold threshold, and link-only context-sensitive PGO generation/use.
-# CS generation explicitly pulls in the matching Clang 24 x64 profile runtime;
-# training and profile merging are separate, explicitly authorized work.
+# CS generation links the matching Clang 24 x64 profile runtime and a version
+# marker object so the raw profile carries the IR and CS instrumentation bits.
+# Both CS links disable value profiling (link-only lowering would otherwise
+# leave COMDAT profile data undefined). Both CS links report LTO diagnostics
+# without /WX: counters block requested vectorization when generating, and
+# profile-quality warnings that compiles already disable appear when using.
+# An optional compiled-in output pattern reaches sandboxed children, whose
+# filtered environment omits LLVM_PROFILE_FILE.
+# Atomic counter updates are optional: a per-process output pattern (%p with %m)
+# trains much faster with exact plain updates.
+# CS-use links get a ThinLTO cache directory named after the profile file,
+# because LLVM's cache key omits the CS profile and would reuse stale code.
+# Training and profile merging are separate, explicitly authorized work.
 # Chromium already enables performance ExtTSP, REF, ICF and
 # PGO call-graph sorting. String tail merging is normally disabled to improve
 # installer compression; this switch does not authorize packaging or release.
 # Link-only LLVM changes can regenerate ThinLTO backend code and take hours;
 # they do not imply a cheap final native link or a measured performance gain.
 # Also allow opt-in hot import scaling, phi folding and spill-avoidance sinking.
+# Also allow DLL-only ThinLTO import limits, inline and hot-call-site thresholds,
+# and loop alignment; inlining options must match between CS training and use.
 # These remain confined to chrome.dll's link; IPRA remains off after its failing
 # Chromium 157 Windows ThinLTO experiment. No compile flags are added here.
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
-@@ -376,9 +376,163 @@
+@@ -376,9 +376,253 @@
  }  # !is_android && !is_mac
  
  if (is_win) {
@@ -45,10 +58,31 @@
 +    krypton_chrome_dll_phi_node_folding_threshold = -1
 +    krypton_chrome_dll_sink_insts_to_avoid_spills = false
 +
++    # -1 inherits the shared ThinLTO import limit and LLVM's inlining
++    # thresholds. They change the post-inline IR that CS-PGO hashes, so the
++    # training and final links must use the same values.
++    krypton_chrome_dll_import_instr_limit = -1
++    krypton_chrome_dll_inline_threshold = -1
++    krypton_chrome_dll_hot_callsite_threshold = -1
++
++    # -1 keeps the target's loop alignment; 16, 32 or 64 bytes override it.
++    krypton_chrome_dll_align_loops = -1
++
 +    # Link-only context-sensitive PGO. Generation requires a separate training
 +    # run and profile merge before a later link can use the resulting profile.
 +    krypton_chrome_dll_cs_profile_generate = false
 +    krypton_chrome_dll_cs_profile_file = ""
++
++    # Optional absolute raw-profile pattern compiled into the instrumented DLL.
++    # Renderers and some utilities get a filtered environment without
++    # LLVM_PROFILE_FILE; this default lets sandboxed processes write profiles.
++    krypton_chrome_dll_cs_profile_output = ""
++
++    # Atomic counter updates are needed only when processes share one
++    # continuous-mode pool file (%m without %p). A per-process pattern such as
++    # cs-%p-%m%c.profraw gives each process its own file (a reused process ID
++    # merges into it), so plain updates are exact and training runs much faster.
++    krypton_chrome_dll_cs_profile_atomic_counters = true
 +
 +    # ExtTSP performance placement is already enabled by Chromium. Also try its
 +    # size-oriented placement on functions the backend optimizes for size.
@@ -80,6 +114,9 @@
 +  assert(!krypton_chrome_dll_cs_profile_generate ||
 +             krypton_chrome_dll_cs_profile_file == "",
 +         "Chrome DLL CS-PGO generation and profile use are mutually exclusive.")
++  assert(krypton_chrome_dll_cs_profile_output == "" ||
++             krypton_chrome_dll_cs_profile_generate,
++         "Chrome DLL CS-PGO output paths require CS-PGO generation.")
 +
 +  assert(
 +      krypton_chrome_dll_import_hot_multiplier >= -1,
@@ -87,6 +124,15 @@
 +  assert(
 +      krypton_chrome_dll_phi_node_folding_threshold >= -1,
 +      "Chrome DLL phi folding threshold must be -1 (inherit) or nonnegative.")
++  assert(krypton_chrome_dll_import_instr_limit >= -1 &&
++             krypton_chrome_dll_inline_threshold >= -1 &&
++             krypton_chrome_dll_hot_callsite_threshold >= -1,
++         "Chrome DLL inlining limits must be -1 (inherit) or nonnegative.")
++  assert(krypton_chrome_dll_align_loops == -1 ||
++             krypton_chrome_dll_align_loops == 16 ||
++             krypton_chrome_dll_align_loops == 32 ||
++             krypton_chrome_dll_align_loops == 64,
++         "Chrome DLL loop alignment must be -1 (inherit), 16, 32 or 64.")
 +
 +  config("krypton_chrome_dll_link_experiments") {
 +    visibility = [ ":chrome_dll" ]
@@ -101,6 +147,10 @@
 +          krypton_chrome_dll_speculative_devirt ||
 +          krypton_chrome_dll_import_hot_multiplier >= 0 ||
 +          krypton_chrome_dll_phi_node_folding_threshold >= 0 ||
++          krypton_chrome_dll_import_instr_limit >= 0 ||
++          krypton_chrome_dll_inline_threshold >= 0 ||
++          krypton_chrome_dll_hot_callsite_threshold >= 0 ||
++          krypton_chrome_dll_align_loops >= 0 ||
 +          krypton_chrome_dll_sink_insts_to_avoid_spills || _has_cs_profile ||
 +          krypton_chrome_dll_ext_tsp_for_size ||
 +          krypton_chrome_dll_string_tail_merge ||
@@ -137,20 +187,63 @@
 +      if (krypton_chrome_dll_sink_insts_to_avoid_spills) {
 +        ldflags += [ "-mllvm:-sink-insts-to-avoid-spills" ]
 +      }
++      # Appended after the shared ThinLTO flags; LLVM uses the last value.
++      if (krypton_chrome_dll_import_instr_limit >= 0) {
++        ldflags += [ "-mllvm:-import-instr-limit=$krypton_chrome_dll_import_instr_limit" ]
++      }
++      if (krypton_chrome_dll_inline_threshold >= 0) {
++        ldflags +=
++            [ "-mllvm:-inline-threshold=$krypton_chrome_dll_inline_threshold" ]
++      }
++      if (krypton_chrome_dll_hot_callsite_threshold >= 0) {
++        ldflags += [ "-mllvm:-hot-callsite-threshold=$krypton_chrome_dll_hot_callsite_threshold" ]
++      }
++      if (krypton_chrome_dll_align_loops >= 0) {
++        ldflags += [ "-mllvm:-align-loops=$krypton_chrome_dll_align_loops" ]
++      }
++      # Link-only CS-PGO cannot mark each module as IR-instrumented, so COFF
++      # profile lowering groups each COMDAT function's data with its counters.
++      # Copies whose value-profile sites differ then lose that data, leaving
++      # undefined __profd_/__profvp_ symbols. Disable CS value profiling for
++      # both links; the first-phase value profiles are still applied.
 +      if (krypton_chrome_dll_cs_profile_generate) {
++        # Counters block some requested vectorization; the training-only
++        # link reports those warnings without failing. Processes that share
++        # one continuous-mode pool file (%m) need atomic updates to keep
++        # concurrent increments; per-process files (%p with %m) do not.
 +        ldflags += [
 +          "/lto-cs-profile-generate",
 +          "/include:__llvm_profile_runtime",
 +          "-mllvm:-runtime-counter-relocation=true",
++          "-mllvm:-disable-vp=true",
++          "/WX:NO",
 +          rebase_path(
 +              "//third_party/llvm-build/Release+Asserts/lib/clang/24/lib/windows/clang_rt.profile-x86_64.lib",
 +              root_build_dir),
 +        ]
++        if (krypton_chrome_dll_cs_profile_atomic_counters) {
++          ldflags += [ "-mllvm:-instrprof-atomic-counter-update-all=true" ]
++        }
 +      }
 +      if (krypton_chrome_dll_cs_profile_file != "") {
 +        _cs_profile =
 +            rebase_path(krypton_chrome_dll_cs_profile_file, root_build_dir)
-+        ldflags += [ "/lto-cs-profile-file:$_cs_profile" ]
++        # LLVM's ThinLTO cache key covers -mllvm options but not the CS
++        # profile, so a link with a retrained profile would reuse code
++        # optimized with the previous one. Each profile file name gets its
++        # own cache directory, so a retrained profile needs a new file name.
++        _cs_cache = "thinlto-cache-cs-" +
++                    get_path_info(krypton_chrome_dll_cs_profile_file, "name")
++        # Profile use reports a few mismatched non-COMDAT copies, hot-attribute
++        # functions with cold profiles and partially ignored profiles. These
++        # profile-quality warnings are disabled for compiles; LLD cannot
++        # filter them, so they are reported without failing the link.
++        ldflags += [
++          "/lto-cs-profile-file:$_cs_profile",
++          "/lldltocache:$_cs_cache",
++          "-mllvm:-disable-vp=true",
++          "/WX:NO",
++        ]
 +      }
 +      if (krypton_chrome_dll_hot_cold_split_threshold >= 0) {
 +        ldflags += [ "-mllvm:-hotcoldsplit-threshold=$krypton_chrome_dll_hot_cold_split_threshold" ]
@@ -177,6 +270,16 @@
 +    }
 +  }
 +
++  if (krypton_chrome_dll_cs_profile_generate) {
++    source_set("krypton_cs_profile_version") {
++      visibility = [ ":chrome_dll" ]
++      sources = [ "app/krypton_cs_profile_version.c" ]
++      if (krypton_chrome_dll_cs_profile_output != "") {
++        defines = [ "KRYPTON_CS_PROFILE_OUTPUT=\"$krypton_chrome_dll_cs_profile_output\"" ]
++      }
++    }
++  }
++
    shared_library("chrome_dll") {
      configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
 -    configs += [ "//build/config/compiler:thinlto_optimize_max" ]
@@ -187,3 +290,14 @@
  
      defines = []
  
+@@ -427,6 +671,10 @@
+ 
+     configs += [ "//build/config/win:delayloads" ]
+ 
++    if (krypton_chrome_dll_cs_profile_generate) {
++      deps += [ ":krypton_cs_profile_version" ]
++    }
++
+     if (use_aura) {
+       deps += [ "//ui/compositor" ]
+     }

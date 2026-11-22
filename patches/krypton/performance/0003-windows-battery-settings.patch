@@ -1,0 +1,89 @@
+# Expose unplugged and always-on Windows energy saver in Performance settings.
+#
+# Reuse the existing local-state setting and metrics values. Keep the same
+# setting available on desktop PCs so users can select Always.
+
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -1240,6 +1240,9 @@
+     </message>
+     <message name="IDS_SETTINGS_PERFORMANCE_BATTERY_SAVER_MODE_SETTING" desc="Energy saver mode setting label. This mode allows the browser to conserve battery by reducing energy usage">
+       Energy Saver
++    </message>
++    <message name="IDS_SETTINGS_PERFORMANCE_BATTERY_SAVER_ALWAYS_LABEL" desc="Label for the energy saver option which is enabled on battery and external power">
++      Always
+     </message>
+     <message name="IDS_SETTINGS_PERFORMANCE_BATTERY_SAVER_MODE_ON_BATTERY_LABEL" desc="Label for the energy saver mode option which is enabled when unplugged option">
+       Turn on when your computer is unplugged
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -1340,6 +1340,8 @@
+        IDS_SETTINGS_PERFORMANCE_BATTERY_SAVER_MODE_LINK_OS_SETTING_DESCRIPTION},
+       {"batterySaverModeEnabledOnBatteryLabel",
+        IDS_SETTINGS_PERFORMANCE_BATTERY_SAVER_MODE_ON_BATTERY_LABEL},
++      {"batterySaverAlwaysLabel",
++       IDS_SETTINGS_PERFORMANCE_BATTERY_SAVER_ALWAYS_LABEL},
+       {"batterySaverModeRadioGroupAriaLabel",
+        IDS_SETTINGS_PERFORMANCE_BATTERY_SAVER_MODE_RADIO_GROUP_ARIA_LABEL},
+       {"tabDiscardingExceptionsAddButtonAriaLabel",
+--- a/chrome/browser/resources/settings/performance_page/battery_page.html.ts
++++ b/chrome/browser/resources/settings/performance_page/battery_page.html.ts
+@@ -2,6 +2,7 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++import {isWindows} from '//resources/js/platform.js';
+ import {html} from '//resources/lit/v3_0/lit.rollup.js';
+ import type {SettingsBatteryPageElement} from './battery_page.js';
+ import {BatterySaverModeState} from './performance_metrics_proxy.js';
+@@ -29,7 +30,8 @@
+         sub-label-with-link="$i18n{batterySaverModeDescription}"
+         @sub-label-link-clicked="${this.onBatterySaverSubLabelLinkClicked_}"
+         .numericUncheckedValues="${this.numericUncheckedValues_}"
+-        .numericCheckedValue="${BatterySaverModeState.ENABLED_BELOW_THRESHOLD}">
++        .numericCheckedValue="${isWindows ? BatterySaverModeState.ENABLED_ON_BATTERY :
++            BatterySaverModeState.ENABLED_BELOW_THRESHOLD}">
+     </settings-toggle-button>
+     <cr-collapse id="radioGroupCollapse"
+         ?opened="${this.isBatterySaverModeEnabled_()}">
+@@ -37,11 +39,21 @@
+         <settings-radio-group id="radioGroup" @change="${this.onChange_}"
+             pref-key="performance_tuning.battery_saver_mode.state"
+             group-aria-label="$i18n{batterySaverModeRadioGroupAriaLabel}">
++          <if expr="is_win">
++          <controlled-radio-button
++              label="$i18n{batterySaverAlwaysLabel}"
++              name="${BatterySaverModeState.ENABLED}"
++              pref-key="performance_tuning.battery_saver_mode.state">
++          </controlled-radio-button>
++          </if>
++          ${(!isWindows || this.batterySaverStatePref_?.value ===
++                            BatterySaverModeState.ENABLED_BELOW_THRESHOLD) ? html`
+           <controlled-radio-button
+               label="$i18n{batterySaverModeEnabledBelowThresholdLabel}"
+               name="${BatterySaverModeState.ENABLED_BELOW_THRESHOLD}"
+               pref-key="performance_tuning.battery_saver_mode.state">
+           </controlled-radio-button>
++          ` : ''}
+           <controlled-radio-button id="enabledOnBatteryButton"
+               label="$i18n{batterySaverModeEnabledOnBatteryLabel}"
+               name="${BatterySaverModeState.ENABLED_ON_BATTERY}"
+--- a/chrome/browser/resources/settings/performance_page/performance_page_index.html.ts
++++ b/chrome/browser/resources/settings/performance_page/performance_page_index.html.ts
+@@ -2,6 +2,7 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++import {isWindows} from '//resources/js/platform.js';
+ import {html} from '//resources/lit/v3_0/lit.rollup.js';
+ import type {PerformancePageIndexElement} from './performance_page_index.js';
+ 
+@@ -15,7 +16,7 @@
+   <settings-memory-page slot="view" id="memory"></settings-memory-page>
+ 
+   <settings-battery-page slot="view" id="battery"
+-      ?hidden="${!this.showBatterySettings_}">
++      ?hidden="${!isWindows && !this.showBatterySettings_}">
+   </settings-battery-page>
+ 
+   <settings-speed-page slot="view" id="speed"></settings-speed-page>

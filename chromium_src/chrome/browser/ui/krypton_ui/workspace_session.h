@@ -5,11 +5,17 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
+class PrefService;
 namespace content {
 class WebContents;
+}
+namespace sessions {
+struct SessionWindow;
 }
 namespace krypton_ui {
 inline constexpr char kWorkspaceSessionKey[] = "krypton_ui.workspace";
@@ -79,5 +85,13 @@ class ScopedRestoredWindow {
 void RestoreWorkspaceForTab(
     content::WebContents* contents,
     const std::map<std::string, std::string>& extra_data);
+// Crash recovery: Essentials still in the profile's catalog (`prefs`) reopen
+// in every window once the crash prompt is answered, so recovering their old
+// tabs as well would only duplicate them. Removes those tabs from normal
+// windows and keeps each window's selection on the nearest remaining tab. A
+// window holding nothing else keeps its tabs; the catalog then adopts them.
+void PruneRecoveredEssentials(
+    const PrefService& prefs,
+    std::vector<std::unique_ptr<sessions::SessionWindow>>& windows);
 }  // namespace krypton_ui
 #endif

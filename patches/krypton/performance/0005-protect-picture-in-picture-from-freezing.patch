@@ -1,0 +1,64 @@
+# Keep a page running while it owns a picture-in-picture window.
+#
+# A detached picture-in-picture window may remain visible while its owning tab
+# is hidden. Preserve that user-visible media when Energy Saver freezes tabs.
+
+--- a/components/performance_manager/public/freezing/cannot_freeze_reason.h
++++ b/components/performance_manager/public/freezing/cannot_freeze_reason.h
+@@ -39,7 +39,8 @@
+   kOptedOut,
+   kMostRecentlyUsed,
+   kWebUI,
+-  kMax = kWebUI,  // Upper bound for EnumSet.
++  kPictureInPicture,
++  kMax = kPictureInPicture,  // Upper bound for EnumSet.
+ };
+ 
+ using CannotFreezeReasonSet = base::EnumSet<CannotFreezeReason,
+--- a/components/performance_manager/freezing/cannot_freeze_reason.cc
++++ b/components/performance_manager/freezing/cannot_freeze_reason.cc
+@@ -56,6 +56,8 @@
+       return "most recently used";
+     case CannotFreezeReason::kWebUI:
+       return "WebUI";
++    case CannotFreezeReason::kPictureInPicture:
++      return "picture-in-picture is visible";
+   }
+   NOTREACHED();
+ }
+--- a/components/performance_manager/freezing/freezing_policy.h
++++ b/components/performance_manager/freezing/freezing_policy.h
+@@ -199,6 +199,7 @@
+   void OnPageIsHoldingBlockingIndexedDBLockChanged(
+       const PageNode* page_node) override;
+   void OnPageUsesWebRTCChanged(const PageNode* page_node) override;
++  void OnHasPictureInPictureChanged(const PageNode* page_node) override;
+   void OnPageNotificationPermissionStatusChange(
+       const PageNode* page_node,
+       std::optional<blink::mojom::PermissionStatus> previous_status) override;
+--- a/components/performance_manager/freezing/freezing_policy.cc
++++ b/components/performance_manager/freezing/freezing_policy.cc
+@@ -623,6 +623,11 @@
+         CannotFreezeReason::kOptedOut);
+   }
+ 
++  if (page_node->HasPictureInPicture()) {
++    page_freezing_state.cannot_freeze_reasons.Put(
++        CannotFreezeReason::kPictureInPicture);
++  }
++
+   DCHECK(!page_node->HasFreezingOriginTrialOptOut());
+   DCHECK(!page_node->UsesWebRTC());
+   DCHECK(!page_node->GetNotificationPermissionStatus().has_value());
+@@ -781,6 +786,11 @@
+   OnCannotFreezeReasonChange(page_node,
+                              /*add=*/page_node->HasFreezingOriginTrialOptOut(),
+                              CannotFreezeReason::kFreezingOriginTrialOptOut);
++}
++
++void FreezingPolicy::OnHasPictureInPictureChanged(const PageNode* page_node) {
++  OnCannotFreezeReasonChange(page_node, page_node->HasPictureInPicture(),
++                             CannotFreezeReason::kPictureInPicture);
+ }
+ 
+ void FreezingPolicy::OnPageUsesWebRTCChanged(const PageNode* page_node) {

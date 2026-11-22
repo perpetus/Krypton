@@ -52,7 +52,7 @@ function App() {
       <button onClick={() => action(async () => {await writer.current?.flush(); await request('export', {format: 'document'});})}>Export</button>
       <button onClick={() => action(async () => {
         if (!confirm('Delete this document? This cannot be undone.')) return;
-        await writer.current?.flush(); await request('delete', {revision: writer.current!.revision}); navigate('new');
+        await writer.current?.flush(); await request('delete', {revision: writer.current!.revision});
       })}>Delete</button>
     </header>
     {error && <div className="notice" role="alert">{error}<button onClick={() => setError('')}>Dismiss</button></div>}

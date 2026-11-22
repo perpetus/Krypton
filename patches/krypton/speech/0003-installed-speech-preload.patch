@@ -1,0 +1,67 @@
+Preload the verified speech engine in installed Windows builds.
+
+The restricted utility token cannot probe the engine file under the
+per-user application directory. Use the existing pre-lockdown
+library preload for the verified engine path, then load the same
+path through the ordinary native library loader. Preserve the
+sandbox policy and the read-only model-handle transfer.
+
+--- a/content/public/browser/service_process_host_passkeys.h
++++ b/content/public/browser/service_process_host_passkeys.h
+@@ -24,6 +24,10 @@
+ class PlatformRuntimeHost;
+ }  // namespace request_header_integrity
+ 
++namespace speech {
++class ChromeSpeechRecognitionService;
++}  // namespace speech
++
+ namespace content {
+ class VideoCaptureServiceLauncher;
+ shape_detection::mojom::ShapeDetectionService* GetShapeDetectionService();
+@@ -38,6 +42,7 @@
+   // Service launchers using `ServiceProcessHost::Options::WithPreloadLibraries`
+   // should be added here and must be reviewed by the security team.
+   friend class screen_ai::ScreenAIServiceHandlerBase;
++  friend class speech::ChromeSpeechRecognitionService;
+   friend class on_device_translation::OnDeviceTranslationServiceLauncherImpl;
+   friend class request_header_integrity::PlatformRuntimeHost;
+   friend shape_detection::mojom::ShapeDetectionService*
+--- a/chrome/browser/speech/chrome_speech_recognition_service.cc
++++ b/chrome/browser/speech/chrome_speech_recognition_service.cc
+@@ -36,6 +36,7 @@
+ 
+ #if BUILDFLAG(IS_WIN)
+ #include "chrome/browser/krypton_speech/installer.h"
++#include "content/public/browser/service_process_host_passkeys.h"
+ #endif
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_features.h"
+@@ -292,6 +293,13 @@
+ 
+   content::ServiceProcessHost::Options options;
+   options.WithDisplayName(IDS_UTILITY_PROCESS_SPEECH_RECOGNITION_SERVICE_NAME);
++#if BUILDFLAG(IS_WIN)
++  // The installer verifies the engine and its dependencies on a worker.
++  // The restricted token cannot reopen these files in a per-user install.
++  options.WithPreloadedLibraries(
++      {binary_path},
++      content::ServiceProcessHostPreloadLibraries::GetPassKey());
++#endif
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+   // libsoda.so has to be dlopen()ed before the sandbox is engaged, so tell the
+   // utility process which binary it is going to be asked to load below.
+--- a/chrome/services/speech/speech_recognition_recognizer_impl.cc
++++ b/chrome/services/speech/speech_recognition_recognizer_impl.cc
+@@ -408,7 +408,11 @@
+ 
+ void SpeechRecognitionRecognizerImpl::CreateSodaClient(
+     const base::FilePath& binary_path) {
++#if BUILDFLAG(IS_WIN)
++  // The engine is already preloaded before sandbox lockdown.
++#else
+   CHECK(base::PathExists(binary_path));
++#endif
+   CHECK(!soda_client_);
+   soda_client_ = std::make_unique<::soda::SodaClientImpl>(binary_path);
+   if (!soda_client_->BinaryLoadedSuccessfully()) {

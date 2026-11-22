@@ -703,8 +703,41 @@ base::expected<void, std::string> NativeMenus::Present(
       model->AddSubMenu(MultiPageMenuModel::kSubmenu, u"Split view",
                         source->multi_page_menu.get());
     }
-    source->tab_organize->AddCheckItem(WorkspaceTabMenuModel::kEssential,
-                                       u"Essential tab");
+    if (!browser_->GetProfile()->IsOffTheRecord()) {
+      // As in Zen, Essentials are added and removed beside Pin. An Essential
+      // offers neither Unpin nor Close tab: its pin state does not keep it in
+      // the grid, and closing its page hides a saved Essential only until the
+      // profile catalog reopens it, so neither removes it.
+      const bool essential = EssentialForTab(tab->GetContents()) != 0;
+      const auto pin =
+          model->GetIndexOfCommandId(TabStripModel::CommandTogglePinned);
+      model->InsertItemAt(
+          pin.value_or(model->GetItemCount()),
+          WorkspaceTabMenuModel::kEssential,
+          essential ? u"Remove from Essentials" : u"Add to Essentials");
+      if (essential) {
+        for (const int command : {TabStripModel::CommandTogglePinned,
+                                  TabStripModel::CommandCloseTab}) {
+          const auto index = model->GetIndexOfCommandId(command);
+          if (!index) {
+            continue;
+          }
+          model->RemoveItemAt(*index);
+          // Drop a separator left leading, trailing or doubled.
+          const auto separator = [&](size_t at) {
+            return model->GetTypeAt(at) == ui::MenuModel::TYPE_SEPARATOR;
+          };
+          if (*index < model->GetItemCount() && separator(*index) &&
+              (*index == 0 || *index + 1 == model->GetItemCount() ||
+               separator(*index - 1))) {
+            model->RemoveItemAt(*index);
+          } else if (*index > 0 && separator(*index - 1) &&
+                     *index == model->GetItemCount()) {
+            model->RemoveItemAt(*index - 1);
+          }
+        }
+      }
+    }
     source->tab_organize->AddItem(kChangeTabIcon, u"Change icon\u2026");
     model->AddSubMenu(kOrganizeTabMenu, u"Organize tab",
                       source->tab_organize.get());

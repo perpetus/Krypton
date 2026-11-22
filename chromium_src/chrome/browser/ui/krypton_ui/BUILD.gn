@@ -297,6 +297,11 @@ source_set("workspace_session") {
       "//base",
       "//content/public/browser",
     ]
+    deps = [
+      ":workspace_models",
+      "//components/prefs",
+      "//components/sessions",
+    ]
   }
 }
 
@@ -592,6 +597,7 @@ source_set("native_windows") {
       "//chrome/browser/lifetime",
       "//chrome/browser/permissions/system",
       "//chrome/browser/prefs:util",
+      "//chrome/browser/performance_manager/public/user_tuning",
       "//chrome/browser/profiles",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/profiles:profile_manager",

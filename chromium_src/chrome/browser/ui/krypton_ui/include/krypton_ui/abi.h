@@ -58,10 +58,11 @@ extern "C" {
 #define KR_UI_API __attribute__((visibility("default")))
 #endif
 
-/* True when `table` is big enough to contain `slot`, for tables that begin
- * with struct_size. */
+/* True for a non-null record that includes the entire field. A callback
+ * must also be non-null before it can be called. */
 #define KR_HAS_SLOT(table, type, slot) \
-  ((table)->struct_size >= offsetof(type, slot) + sizeof((table)->slot))
+  ((table) != NULL && \
+   (table)->struct_size >= offsetof(type, slot) + sizeof((table)->slot))
 
 /* A payload follows the same complete-field rule as a callback table. */
 #define KR_HAS_FIELD(record, type, field) KR_HAS_SLOT(record, type, field)
@@ -756,7 +757,9 @@ enum KrAppearanceFlags {
   KR_APPEARANCE_SEARCH_BAR_MENU_BACKDROP = 1u << 4,
   /* New tab buttons open a New Tab Page; zero opens the search bar. */
   KR_APPEARANCE_NEW_TAB_PAGE = 1u << 5,
-  KR_APPEARANCE_SWITCHER_AWAKE_ONLY = 1u << 6
+  KR_APPEARANCE_SWITCHER_AWAKE_ONLY = 1u << 6,
+  KR_APPEARANCE_FULL_COLOR_SLEEPING_TABS = 1u << 7,
+  KR_APPEARANCE_HIDE_SHADOWS = 1u << 8
 };
 /* Chrome icon set. Records without icon_pack mean FLUENT. */
 enum KrIconPack {
