@@ -1,0 +1,13 @@
+Name: d3
+URL: https://registry.npmjs.org/d3/-/d3-7.9.2.tgz
+Version: 7.9.2
+License: ISC
+License File: LICENSE
+Shipped: yes
+Security Critical: yes
+Update Mechanism: Manual
+
+Description:
+Bundled for use inside Krypton's network-isolated agent renders.
+Local Modifications:
+None.

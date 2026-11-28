@@ -1,0 +1,211 @@
+# Krypton: deny network, native permissions and secondary navigation in agent renderer partitions.
+--- a/content/public/browser/BUILD.gn
++++ b/content/public/browser/BUILD.gn
+@@ -452,6 +452,7 @@
+     "startup_helper.cc",
+     "startup_helper.h",
+     "storage_notification_service.h",
++    "krypton_agent_partition.h",
+     "storage_partition.h",
+     "storage_partition_config.cc",
+     "storage_partition_config.h",
+--- a/content/browser/websockets/websocket_connector_impl.cc
++++ b/content/browser/websockets/websocket_connector_impl.cc
+@@ -10,6 +10,7 @@
+ #include "base/not_fatal_until.h"
+ #include "content/browser/devtools/devtools_instrumentation.h"
+ #include "content/browser/renderer_host/render_frame_host_impl.h"
++#include "content/public/browser/krypton_agent_partition.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/render_process_host.h"
+@@ -120,7 +121,7 @@
+   }
+ 
+   RenderProcessHost* process = RenderProcessHost::FromID(frame_id_.child_id);
+-  if (!process) {
++  if (!process || IsKryptonAgentPartition(process->GetStoragePartition())) {
+     return;
+   }
+ 
+--- a/content/browser/webtransport/web_transport_connector_impl.cc
++++ b/content/browser/webtransport/web_transport_connector_impl.cc
+@@ -9,6 +9,7 @@
+ #include "content/browser/devtools/devtools_instrumentation.h"
+ #include "content/browser/renderer_host/render_frame_host_impl.h"
+ #include "content/browser/webtransport/web_transport_throttle_context.h"
++#include "content/public/browser/krypton_agent_partition.h"
+ #include "content/public/browser/browser_context.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/content_browser_client.h"
+@@ -205,7 +206,7 @@
+   }
+ 
+   RenderProcessHost* process = RenderProcessHost::FromID(process_id_);
+-  if (!process) {
++  if (!process || IsKryptonAgentPartition(process->GetStoragePartition())) {
+     return;
+   }
+ 
+--- a/content/browser/browser_interface_binders.cc
++++ b/content/browser/browser_interface_binders.cc
+@@ -78,6 +78,7 @@
+ #include "content/browser/xr/service/vr_service_impl.h"
+ #include "content/common/features.h"
+ #include "content/common/input/input_injector.mojom.h"
++#include "content/public/browser/krypton_agent_partition.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/content_browser_client.h"
+ #include "content/public/browser/device_service.h"
+@@ -878,7 +879,8 @@
+   // that a renderer which does not allow WebRTC could still reach this
+   // interface. TODO(crbug.com/571239543): Disable all WebRTC connections on the
+   // renderer side.
+-  if (!IsWebRTCAllowedByConnectionAllowlist(frame)) {
++  if (IsKryptonAgentPartition(frame->GetStoragePartition()) ||
++      !IsWebRTCAllowedByConnectionAllowlist(frame)) {
+     NoOpP2PSocketManager::Create(std::move(receiver));
+     return;
+   }
+--- a/content/browser/permissions/permission_controller_impl.cc
++++ b/content/browser/permissions/permission_controller_impl.cc
+@@ -19,6 +19,7 @@
+ #include "content/browser/permissions/permission_subscription_impl.h"
+ #include "content/browser/permissions/permission_util.h"
+ #include "content/browser/renderer_host/render_frame_host_impl.h"
++#include "content/public/browser/krypton_agent_partition.h"
+ #include "content/public/browser/browser_context.h"
+ #include "content/public/browser/disallow_activation_reason.h"
+ #include "content/public/browser/permission_controller.h"
+@@ -535,6 +536,12 @@
+     RenderFrameHost* render_frame_host,
+     PermissionRequestDescription request_description,
+     base::OnceCallback<void(const std::vector<PermissionResult>&)> callback) {
++  if (IsKryptonAgentPartition(render_frame_host->GetStoragePartition())) {
++    std::move(callback).Run(std::vector<PermissionResult>(
++        request_description.permissions.size(),
++        PermissionResult(PermissionStatus::DENIED)));
++    return;
++  }
+   if (!IsRequestAllowed(request_description.permissions, render_frame_host,
+                         callback)) {
+     return;
+@@ -651,6 +658,9 @@
+     const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
+     RenderFrameHost* render_frame_host,
+     bool should_include_device_status) {
++  if (IsKryptonAgentPartition(render_frame_host->GetStoragePartition())) {
++    return PermissionResult(PermissionStatus::DENIED);
++  }
+   auto permission_type =
+       blink::PermissionDescriptorToPermissionType(permission_descriptor);
+   std::optional<PermissionResult> permission_result = permission_overrides_.Get(
+@@ -690,6 +700,9 @@
+     const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
+     RenderProcessHost* render_process_host,
+     const url::Origin& worker_origin) {
++  if (IsKryptonAgentPartition(render_process_host->GetStoragePartition())) {
++    return PermissionResult(PermissionStatus::DENIED);
++  }
+   auto permission_type =
+       blink::PermissionDescriptorToPermissionType(permission_descriptor);
+ 
+--- a/chrome/browser/predictors/network_hints_handler_impl.cc
++++ b/chrome/browser/predictors/network_hints_handler_impl.cc
+@@ -10,6 +10,7 @@
+ #include "chrome/browser/predictors/loading_predictor.h"
+ #include "chrome/browser/predictors/loading_predictor_factory.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "content/public/browser/krypton_agent_partition.h"
+ #include "content/public/browser/preconnect_manager.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/render_process_host.h"
+@@ -97,8 +98,10 @@
+ 
+   content::RenderFrameHost* render_frame_host =
+       content::RenderFrameHost::FromID(render_frame_host_id_);
+-  if (!render_frame_host)
++  if (!render_frame_host || content::IsKryptonAgentPartition(
++                                render_frame_host->GetStoragePartition())) {
+     return;
++  }
+ 
+   std::vector<GURL> gurls;
+   for (const auto& url : urls) {
+@@ -128,8 +131,10 @@
+ 
+   content::RenderFrameHost* render_frame_host =
+       content::RenderFrameHost::FromID(render_frame_host_id_);
+-  if (!render_frame_host)
++  if (!render_frame_host || content::IsKryptonAgentPartition(
++                                render_frame_host->GetStoragePartition())) {
+     return;
++  }
+ 
+   base::UnguessableToken network_restrictions_id =
+       render_frame_host->GetNetworkRestrictionsID();
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -122,6 +122,9 @@
+ #include "chrome/browser/history/history_service_factory.h"
+ #include "chrome/browser/interstitials/enterprise_util.h"
+ #include "chrome/browser/language_detection/language_detection_model_service_factory.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/isolated_network.h"
++#endif
+ #include "chrome/browser/lifetime/browser_shutdown.h"
+ #include "chrome/browser/loader/keep_alive_request_tracker.h"
+ #include "chrome/browser/media/audio_service_util.h"
+@@ -364,6 +367,7 @@
+ #include "components/version_info/version_info.h"
+ #include "components/webapps/common/web_app_id.h"
+ #include "components/webui/chrome_urls/pref_names.h"
++#include "content/public/browser/krypton_agent_partition.h"
+ #include "content/public/browser/browser_accessibility_state.h"
+ #include "content/public/browser/browser_child_process_host.h"
+ #include "content/public/browser/browser_context.h"
+@@ -4545,6 +4549,9 @@
+     bool* no_javascript_access) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+   DCHECK(opener);
++  if (content::IsKryptonAgentPartition(opener->GetStoragePartition())) {
++    return false;
++  }
+ 
+   content::WebContents* web_contents =
+       content::WebContents::FromRenderFrameHost(opener);
+@@ -5830,11 +5837,21 @@
+ 
+ void ChromeContentBrowserClient::CreateThrottlesForNavigation(
+     content::NavigationThrottleRegistry& registry) {
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::RestrictIsolatedNavigation(registry)) {
++    return;
++  }
++#endif
+   CreateAndAddChromeThrottlesForNavigation(registry);
+ }
+ 
+ void ChromeContentBrowserClient::CreateThrottlesForCommitWithoutUrlLoader(
+     content::NavigationThrottleRegistry& registry) {
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::RestrictIsolatedNavigation(registry)) {
++    return;
++  }
++#endif
+   CreateAndAddChromeThrottlesForCommitWithoutUrlLoader(registry);
+ }
+ 
+@@ -6977,6 +6994,12 @@
+     network::mojom::URLLoaderFactoryOverridePtr* factory_override,
+     scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
+     bool is_for_network_service) {
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::DenyIsolatedNetwork(
++          frame, render_process_id, factory_builder, is_for_network_service)) {
++    return;
++  }
++#endif
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   auto* web_request_api =
+       extensions::BrowserContextKeyedAPIFactory<extensions::WebRequestAPI>::Get(

@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <string_view>
+
 #include "base/component_export.h"
 
 class PrefService;
@@ -24,9 +25,10 @@ enum class Id : unsigned {
   kAutoplayList = 10,
   kCast = 11,
   kWebPush = 12,
-  kScreenAi = 13
+  kScreenAi = 13,
+  kAiAgent = 14,
 };
-inline constexpr size_t kFeatureCount = 13;
+inline constexpr size_t kFeatureCount = 14;
 COMPONENT_EXPORT(KRYPTON_PRIVACY_FEATURES) std::string_view PrefName(Id id);
 COMPONENT_EXPORT(KRYPTON_PRIVACY_FEATURES)
 void RegisterLocalState(PrefRegistrySimple* registry);

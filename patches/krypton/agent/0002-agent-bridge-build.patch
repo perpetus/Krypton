@@ -1,0 +1,49 @@
+# Krypton: Build the Windows agent bridge and connect its opt-in startup and shutdown hooks.
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1723,7 +1723,10 @@
+   }
+ 
+   if (is_win) {
+-    deps += [ "//chrome/browser/krypton_speech:local_speech" ]
++    deps += [
++      "//chrome/browser/krypton_agent",
++      "//chrome/browser/krypton_speech:local_speech",
++    ]
+   }
+   if (enable_on_device_translation && is_win) {
+     deps += [ "//chrome/browser/krypton_translate:local_translation" ]
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -39,6 +39,10 @@
+ #include "base/values.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
++
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/agent_session.h"
++#endif
+ #include "chrome/browser/active_use_util.h"
+ #include "chrome/browser/after_startup_task_utils.h"
+ #include "chrome/browser/browser_features.h"
+@@ -1756,6 +1760,10 @@
+ 
+   browser_process_->browser_policy_connector()->OnBrowserStarted();
+ 
++#if BUILDFLAG(IS_WIN)
++  krypton_agent::MaybeStartDevelopmentSession();
++#endif
++
+ #if BUILDFLAG(ENABLE_PROCESS_SINGLETON)
+   // Allow ProcessSingleton to process messages.
+   // This is done here instead of just relying on the main message loop's start
+@@ -2226,6 +2234,9 @@
+ }
+ 
+ void ChromeBrowserMainParts::PostMainMessageLoopRun() {
++#if BUILDFLAG(IS_WIN)
++  krypton_agent::StopDevelopmentSession();
++#endif
+   krypton::privacy::ShutdownRegistry();
+   TRACE_EVENT_END("toplevel", perfetto::Track::FromPointer(this));
+   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PostMainMessageLoopRun");

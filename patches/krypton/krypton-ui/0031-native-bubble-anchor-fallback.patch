@@ -1,0 +1,462 @@
+# Krypton: Give native toolbar bubbles a browser anchor when their control is unavailable.
+# Keep optional element highlighting out of the null-widget path before bubble creation.
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -807,7 +807,8 @@
+   void UpdateExclusiveAccessBubble(
+       const ExclusiveAccessBubbleParams& params,
+       ExclusiveAccessBubbleHideCallback first_hide_callback) override {
+-    if (base::CommandLine::ForCurrentProcess()->HasSwitch("hide-fullscreen-exit-ui")) {
++    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++            "hide-fullscreen-exit-ui")) {
+       return;
+     }
+     // Whether we should remove the bubble if it exists, or not show the bubble.
+@@ -1382,8 +1383,9 @@
+     auto* contents = multi_contents_view_->GetActiveContentsView();
+     const auto contents_bounds =
+         contents->ConvertRectToWidget(contents->GetLocalBounds());
+-    if (!contents_bounds.IsEmpty())
++    if (!contents_bounds.IsEmpty()) {
+       return contents_bounds;
++    }
+     // A newly attached pane can be queried before its first native layout.
+     return multi_contents_view_->ConvertRectToWidget(
+         krypton_ui_->multi_page()->ActiveBounds());
+@@ -1593,8 +1595,9 @@
+ 
+ bool BrowserView::ShouldDrawTabStrip() const {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     return false;
++  }
+ #endif
+ 
+   // Return false if this window does not normally display a tabstrip or if the
+@@ -1630,8 +1633,9 @@
+ 
+ bool BrowserView::ShouldDrawVerticalTabStrip() const {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     return false;
++  }
+ #endif
+ 
+   auto* controller = tabs::VerticalTabStripStateController::From(browser_);
+@@ -1770,8 +1774,9 @@
+ void BrowserView::OnVerticalTabStripModeChanged(
+     tabs::VerticalTabStripStateController* controller) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     return;
++  }
+ #endif
+ 
+   // Clear selection model
+@@ -2546,8 +2551,9 @@
+ 
+ LocationBar* BrowserView::GetLocationBar() const {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     return &krypton_ui_->location_bar();
++  }
+ #endif
+ 
+   return toolbar_ ? toolbar_->location_bar() : nullptr;
+@@ -2639,8 +2645,9 @@
+ 
+ void BrowserView::ResetToolbarTabState(content::WebContents* contents) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->location_bar().ResetTabState(contents);
++  }
+ #endif
+ 
+   // We may end up here during destruction.
+@@ -3311,8 +3318,9 @@
+ 
+ bool BrowserView::IsToolbarVisible() const {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     return krypton_ui_->ready();
++  }
+ #endif
+ 
+ #if BUILDFLAG(IS_MAC)
+@@ -3343,8 +3351,9 @@
+ 
+ bool BrowserView::IsLocationBarVisible() const {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     return krypton_ui_->ready();
++  }
+ #endif
+ 
+   return WindowFeatureController::From(browser_)->SupportsWindowFeature(
+@@ -3365,9 +3374,19 @@
+     IntentPickerResponse callback) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+   if (krypton_ui_) {
++    auto anchor =
++        krypton_ui_->toolbar().GetBubbleAnchor(kActionShowIntentPicker);
++    std::optional<ui::ElementIdentifier> highlight;
++    if (anchor) {
++      highlight = kIntentPickerPageActionElementId;
++    } else {
++      anchor =
++          views::BubbleAnchor(top_container() && top_container()->IsDrawn()
++                                  ? static_cast<views::View*>(top_container())
++                                  : this);
++    }
+     IntentPickerBubbleView::ShowBubble(
+-        krypton_ui_->toolbar().GetBubbleAnchor(kActionShowIntentPicker),
+-        kIntentPickerPageActionElementId, bubble_type, GetActiveWebContents(),
++        anchor, highlight, bubble_type, GetActiveWebContents(),
+         std::move(app_info), show_stay_in_chrome, show_remember_selection,
+         initiating_origin, std::move(callback));
+     return;
+@@ -3382,9 +3401,19 @@
+ void BrowserView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+   if (krypton_ui_) {
++    if (!GetWidget()) {
++      return;
++    }
+     auto& toolbar = krypton_ui_->toolbar();
++    auto anchor = toolbar.GetBubbleAnchor(kActionBookmarkThisTab);
++    if (!anchor) {
++      anchor =
++          views::BubbleAnchor(top_container() && top_container()->IsDrawn()
++                                  ? static_cast<views::View*>(top_container())
++                                  : this);
++    }
+     BookmarkBubbleView::ShowBubble(
+-        toolbar.GetBubbleAnchor(kActionBookmarkThisTab), GetActiveWebContents(),
++        anchor, GetActiveWebContents(),
+         toolbar.GetPageActionViewInterface(kActionBookmarkThisTab),
+         browser_.get(), url, already_bookmarked);
+     return;
+@@ -3437,6 +3466,15 @@
+ 
+   views::BubbleAnchor anchor =
+       toolbar_button_provider()->GetBubbleAnchor(kActionShowTranslate);
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_ && !anchor) {
++    anchor =
++        views::BubbleAnchor(top_container() && top_container()->IsDrawn()
++                                ? static_cast<views::View*>(top_container())
++                                : this);
++    highlight_element = std::nullopt;
++  }
++#endif
+   if (bubble_anchor_util::IsHighlightable(anchor)) {
+     // No need for a separate highlight.
+     highlight_element = std::nullopt;
+@@ -3588,8 +3626,9 @@
+   if (krypton_ui_) {
+     const gfx::PointF client(views::View::ConvertPointToTarget(
+         GetActiveContentsContainerView(), this, gfx::ToRoundedPoint(point)));
+-    if (krypton_ui_->PreviewUrlDrag(drop_data, client))
++    if (krypton_ui_->PreviewUrlDrag(drop_data, client)) {
+       return;
++    }
+   }
+ #endif
+   if (multi_contents_view_->IsDragAndDropEnabled()) {
+@@ -3609,8 +3648,9 @@
+ 
+ void BrowserView::PreHandleDragExit() {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->UrlDragExited();
++  }
+ #endif
+   if (multi_contents_view_->IsDragAndDropEnabled()) {
+     multi_contents_view_->drop_target_controller().OnWebContentsDragExit();
+@@ -3619,8 +3659,9 @@
+ 
+ void BrowserView::HandleDragEnded() {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->UrlDragChanged({}, false);
++  }
+ #endif
+   if (multi_contents_view_->IsDragAndDropEnabled()) {
+     multi_contents_view_->drop_target_controller().OnWebContentsDragEnded();
+@@ -3736,9 +3777,10 @@
+ WebContentsModalDialogHost* BrowserView::GetWebContentsModalDialogHost() {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+   if (krypton_ui_ && krypton_ui_->multi_page() &&
+-      krypton_ui_->multi_page()->active())
++      krypton_ui_->multi_page()->active()) {
+     return multi_contents_view_->GetActiveContentsContainerView()
+         ->web_contents_modal_dialog_host();
++  }
+ #endif
+   return GetBrowserViewLayout()->GetWebContentsModalDialogHost();
+ }
+@@ -3864,8 +3906,9 @@
+   // can change its preferred size. Re-lay-out the toolbar to reflect the
+   // possible change.
+   if (selection.active_tab_changed()) {
+-    if (toolbar_)
++    if (toolbar_) {
+       toolbar_->InvalidateLayout();
++    }
+ 
+     // Update the accessible URL when the selected tab changes. This ensures
+     // that the accessibility document URL is updated for both keyboard and
+@@ -4469,8 +4512,9 @@
+   suppress_layout_for_teardown_ = true;
+ 
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->Close();
++  }
+ #endif
+ 
+   // Destroy any remaining WebContents early on. Doing so may result in
+@@ -4498,8 +4542,9 @@
+   if (krypton_ui_ && !krypton_ui_->browser_initialized()) {
+     return;
+   }
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->PublishWindowState();
++  }
+ #endif
+ 
+   if (browser_->GetWindow()) {
+@@ -4529,8 +4574,9 @@
+ void BrowserView::OnWidgetBoundsChanged(views::Widget* widget,
+                                         const gfx::Rect& new_bounds) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->PublishWindowState();
++  }
+ #endif
+ 
+   TryNotifyWindowBoundsChanged(new_bounds);
+@@ -4554,8 +4600,9 @@
+ 
+ void BrowserView::OnWidgetMove() {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->PublishWindowState();
++  }
+ #endif
+ 
+   if (!initialized_) {
+@@ -4830,8 +4877,9 @@
+ 
+ void BrowserView::GetAccessiblePanes(std::vector<views::View*>* panes) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     panes->push_back(&krypton_ui_->toolbar());
++  }
+ #endif
+ 
+   // This should be in the order of pane traversal of the panes using F6
+@@ -4984,8 +5032,9 @@
+ 
+ int BrowserView::NonClientHitTest(const gfx::Point& point) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     return HTCLIENT;
++  }
+ #endif
+ 
+ #if BUILDFLAG(IS_MAC)
+@@ -5213,8 +5262,9 @@
+ 
+ void BrowserView::Layout(PassKey) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_ && !krypton_ui_->ready())
++  if (krypton_ui_ && !krypton_ui_->ready()) {
+     return;
++  }
+ #endif
+ 
+   TRACE_EVENT0("ui", "BrowserView::Layout");
+@@ -5271,8 +5321,9 @@
+   LayoutSuperclass<views::View>(this);
+ 
+   // TODO(jamescook): Why was this in the middle of layout code?
+-  if (auto* location = GetLocationBar())
++  if (auto* location = GetLocationBar()) {
+     location->UpdateFocusBehavior(IsToolbarVisible());
++  }
+   GetFrameView()->UpdateMinimumSize();
+ 
+   if (toolbar_ && omnibox::IsWebUIOmniboxInBrowserViewEnabled()) {
+@@ -5420,9 +5471,9 @@
+ #endif
+ 
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->InitializeServices();
+-  else
++  } else
+ #endif
+   {
+     toolbar_->Init();
+@@ -5619,8 +5670,9 @@
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+ bool BrowserView::ExecuteCapturedAccelerator(const ui::Accelerator& accelerator,
+                                              int command_id) {
+-  if (!chrome::IsCommandEnabled(browser(), command_id))
++  if (!chrome::IsCommandEnabled(browser(), command_id)) {
+     return false;
++  }
+   UpdateAcceleratorMetrics(accelerator, command_id);
+ 
+   if (command_id == IDC_NEW_TAB && krypton_ui_ &&
+@@ -5651,16 +5703,19 @@
+ }
+ 
+ void BrowserView::AttachKryptonUi() {
+-  if (!krypton_ui_)
++  if (!krypton_ui_) {
+     return;
++  }
+   auto result = krypton_ui_->Attach();
+-  if (!result.has_value())
++  if (!result.has_value()) {
+     ReportKryptonUiFailure(std::move(result.error()));
++  }
+ }
+ 
+ void BrowserView::ReportKryptonUiFailure(std::string error) {
+-  if (!krypton_ui_ || suppress_layout_for_teardown_)
++  if (!krypton_ui_ || suppress_layout_for_teardown_) {
+     return;
++  }
+   suppress_layout_for_teardown_ = true;
+   krypton_ui_->Close();
+   auto dialog = std::make_unique<views::DialogDelegate>();
+@@ -5677,8 +5732,9 @@
+ void BrowserView::OnThemeChanged() {
+   views::ClientView::OnThemeChanged();
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+-  if (krypton_ui_)
++  if (krypton_ui_) {
+     krypton_ui_->PublishTheme();
++  }
+ #endif
+   if (!initialized_) {
+     return;
+@@ -5881,8 +5937,9 @@
+ bool BrowserView::MaybeUpdateSplitView(content::WebContents* contents) {
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+   if (krypton_ui_ && krypton_ui_->multi_page() &&
+-      krypton_ui_->multi_page()->active())
++      krypton_ui_->multi_page()->active()) {
+     return false;
++  }
+ #endif
+ 
+   const bool current_state = multi_contents_view_->IsInSplitView();
+@@ -5912,14 +5969,16 @@
+   if (krypton_ui_ && krypton_ui_->multi_page() &&
+       krypton_ui_->multi_page()->active()) {
+     auto* controller = DevtoolsUIController::From(browser_.get());
+-    if (!controller)
++    if (!controller) {
+       return false;
++    }
+     bool updated = false;
+     multi_contents_view_->ExecuteOnEachVisibleContentsView(base::BindRepeating(
+         [](DevtoolsUIController* controller, bool* updated,
+            ContentsWebView* pane) {
+-          if (pane->web_contents())
++          if (pane->web_contents()) {
+             *updated |= controller->UpdateDevtools(pane->web_contents(), false);
++          }
+         },
+         controller, &updated));
+     return updated;
+@@ -6163,8 +6222,7 @@
+       base::FeatureList::IsEnabled(features::kCustomizableBrowserShortcuts)) {
+     std::erase_if(accelerator_list, [this](const AcceleratorMapping& entry) {
+       return browser_shortcut_service_->HasDefaultAccelerator(
+-          entry.command_id,
+-          ui::Accelerator(entry.keycode, entry.modifiers));
++          entry.command_id, ui::Accelerator(entry.keycode, entry.modifiers));
+     });
+     for (const auto& [accelerator, command_id] :
+          browser_shortcut_service_->GetAcceleratorMap()) {
+--- a/chrome/browser/ui/views/bookmarks/bookmark_bubble_view.cc
++++ b/chrome/browser/ui/views/bookmarks/bookmark_bubble_view.cc
+@@ -65,6 +65,7 @@
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/url_constants.h"
+ #include "ui/base/interaction/element_identifier.h"
++#include "ui/base/interaction/element_tracker.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/models/dialog_model.h"
+ #include "ui/base/models/dialog_model_host.h"
+@@ -76,6 +77,7 @@
+ #include "ui/gfx/image/image_skia_operations.h"
+ #include "ui/views/bubble/bubble_dialog_model_host.h"
+ #include "ui/views/controls/styled_label.h"
++#include "ui/views/interaction/element_tracker_views.h"
+ 
+ #if !BUILDFLAG(IS_CHROMEOS)
+ #include "chrome/browser/ui/signin/promos/bubble_signin_promo_view.h"
+@@ -574,7 +576,14 @@
+       dialog_model_builder.Build(), bubble_anchor,
+       views::BubbleBorder::TOP_RIGHT);
+   bookmark_bubble_ = bubble.get();
+-  bubble->SetHighlightedElement(kBookmarkStarViewElementId);
++  if (auto* anchor_widget = bubble->anchor_widget()) {
++    const auto context =
++        views::ElementTrackerViews::GetContextForWidget(anchor_widget);
++    if (ui::ElementTracker::GetElementTracker()->GetFirstMatchingElement(
++            kBookmarkStarViewElementId, context)) {
++      bubble->SetHighlightedElement(kBookmarkStarViewElementId, context);
++    }
++  }
+ 
+   if (ShouldShowShoppingCollectionFootnote(profile, bookmark_model,
+                                            bookmark_node)) {
+--- a/ui/views/bubble/bubble_dialog_delegate_view.cc
++++ b/ui/views/bubble/bubble_dialog_delegate_view.cc
+@@ -236,9 +236,7 @@
+   AnchorViewObserver(const AnchorViewObserver&) = delete;
+   AnchorViewObserver& operator=(const AnchorViewObserver&) = delete;
+ 
+-  ~AnchorViewObserver() override {
+-    RemoveFromAnchorVector();
+-  }
++  ~AnchorViewObserver() override { RemoveFromAnchorVector(); }
+ 
+   View* anchor_view() const { return anchor_view_; }
+ 
+@@ -778,8 +776,10 @@
+   auto* parent_widget =
+       anchor_widget() ? anchor_widget()
+                       : views::Widget::GetWidgetForNativeView(parent_window());
+-  SetHighlightedElement(
+-      id, views::ElementTrackerViews::GetContextForWidget(parent_widget));
++  if (parent_widget) {
++    SetHighlightedElement(
++        id, views::ElementTrackerViews::GetContextForWidget(parent_widget));
++  }
+ }
+ 
+ void BubbleDialogDelegate::SetHighlightedElement(ui::ElementIdentifier id,

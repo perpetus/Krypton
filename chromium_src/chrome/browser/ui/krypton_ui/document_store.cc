@@ -89,6 +89,36 @@ std::optional<std::string> CleanPng(std::string_view encoded) {
   return std::string(reinterpret_cast<const char*>(clean->data()),
                      clean->size());
 }
+base::DictValue CaptureImage(std::string_view image, int width, int height) {
+  return base::DictValue()
+      .Set("id", base::Uuid::GenerateRandomV4().AsLowercaseString())
+      .Set("type", "image")
+      .Set("x", 0)
+      .Set("y", 0)
+      .Set("width", width)
+      .Set("height", height)
+      .Set("fileId", image)
+      .Set("status", "saved")
+      .Set("scale", base::ListValue().Append(1).Append(1))
+      .Set("angle", 0)
+      .Set("strokeColor", "transparent")
+      .Set("backgroundColor", "transparent")
+      .Set("fillStyle", "solid")
+      .Set("strokeWidth", 1)
+      .Set("strokeStyle", "solid")
+      .Set("roughness", 0)
+      .Set("opacity", 100)
+      .Set("seed", 1)
+      .Set("version", 1)
+      .Set("versionNonce", 1)
+      .Set("isDeleted", false)
+      .Set("groupIds", base::ListValue())
+      .Set("boundElements", base::Value())
+      .Set("updated", 0)
+      .Set("link", base::Value())
+      .Set("locked", false);
+}
+
 class StoreData final : public base::SupportsUserData::Data {
  public:
   explicit StoreData(scoped_refptr<DocumentStore> value)
@@ -153,34 +183,7 @@ base::DictValue DocumentStore::SaveCapture(std::string png) {
   if (!base::Base64Decode(*pixels, &decoded))
     return Error("Could not decode the capture.");
   auto bitmap = gfx::PNGCodec::Decode(base::as_byte_span(decoded));
-  auto element =
-      base::DictValue()
-          .Set("id", base::Uuid::GenerateRandomV4().AsLowercaseString())
-          .Set("type", "image")
-          .Set("x", 0)
-          .Set("y", 0)
-          .Set("width", bitmap.width())
-          .Set("height", bitmap.height())
-          .Set("fileId", *image_id)
-          .Set("status", "saved")
-          .Set("scale", base::ListValue().Append(1).Append(1))
-          .Set("angle", 0)
-          .Set("strokeColor", "transparent")
-          .Set("backgroundColor", "transparent")
-          .Set("fillStyle", "solid")
-          .Set("strokeWidth", 1)
-          .Set("strokeStyle", "solid")
-          .Set("roughness", 0)
-          .Set("opacity", 100)
-          .Set("seed", 1)
-          .Set("version", 1)
-          .Set("versionNonce", 1)
-          .Set("isDeleted", false)
-          .Set("groupIds", base::ListValue())
-          .Set("boundElements", base::Value())
-          .Set("updated", 0)
-          .Set("link", base::Value())
-          .Set("locked", false);
+  auto element = CaptureImage(*image_id, bitmap.width(), bitmap.height());
   auto serialized = base::WriteJson(
       base::DictValue()
           .Set("type", "excalidraw")
@@ -203,6 +206,104 @@ base::DictValue DocumentStore::SaveCapture(std::string png) {
                                 .Set("title", "Page capture"));
   return base::DictValue().Set("id", *id);
 }
+void DocumentStore::TransferCapture(std::string source,
+                                    std::string destination,
+                                    std::string revision,
+                                    Reply reply) {
+  runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(&DocumentStore::MoveCapture, base::WrapRefCounted(this),
+                     std::move(source), std::move(destination),
+                     std::move(revision)),
+      std::move(reply));
+}
+
+base::DictValue DocumentStore::MoveCapture(std::string source,
+                                           std::string destination,
+                                           std::string revision) {
+  constexpr auto kKind = DocumentKind::kEasel;
+  if (!IsDocumentId(source) || !IsDocumentId(destination) ||
+      source == destination)
+    return Error("Choose a different easel.");
+  const auto from = Directory(kKind, source);
+  const auto to = Directory(kKind, destination);
+  if (base::IsLink(root_) || base::IsLink(from.DirName()) ||
+      base::IsLink(from) || base::IsLink(to) ||
+      base::IsLink(from.AppendASCII("images")))
+    return Error("Invalid capture or destination.");
+
+  const auto captured = Read(from.AppendASCII(Filename(kKind)), kDocumentLimit);
+  const auto original = Read(to.AppendASCII(Filename(kKind)), kDocumentLimit);
+  if (!captured || !original || Revision(*captured) != revision)
+    return Error(
+        "The capture or destination changed. Reload before trying again.");
+  const auto capture_scene =
+      base::JSONReader::ReadDict(*captured, base::JSON_PARSE_RFC);
+  auto scene = base::JSONReader::ReadDict(*original, base::JSON_PARSE_RFC);
+  auto* elements = scene ? scene->FindList("elements") : nullptr;
+  const auto* source_elements =
+      capture_scene ? capture_scene->FindList("elements") : nullptr;
+  if (!elements || !source_elements ||
+      !capture_scene->FindBool("kryptonCapture").value_or(false))
+    return Error("Only page captures can be transferred.");
+
+  const base::DictValue* image = nullptr;
+  for (const auto& value : *source_elements) {
+    const auto* element = value.GetIfDict();
+    const auto* type = element ? element->FindString("type") : nullptr;
+    if (type && *type == "image" &&
+        !element->FindBool("isDeleted").value_or(false)) {
+      image = element;
+      break;
+    }
+  }
+  const auto* file = image ? image->FindString("fileId") : nullptr;
+  if (!file || !IsDocumentId(*file))
+    return Error("The capture image is missing.");
+  const auto png =
+      Read(from.AppendASCII("images").AppendASCII(*file + ".png"), kImageLimit);
+  if (!png)
+    return Error("The capture image is missing.");
+
+  auto inserted = Run(kKind, base::DictValue()
+                                 .Set("operation", "insertImage")
+                                 .Set("id", destination)
+                                 .Set("png", base::Base64Encode(*png)));
+  const auto* asset = inserted.FindString("image");
+  if (!asset)
+    return inserted;
+
+  const auto* encoded = inserted.FindString("png");
+  std::string pixels;
+  SkBitmap bitmap;
+  if (encoded && base::Base64Decode(*encoded, &pixels))
+    bitmap = gfx::PNGCodec::Decode(base::as_byte_span(pixels));
+  if (bitmap.drawsNothing()) {
+    base::DeleteFile(to.AppendASCII("images").AppendASCII(*asset + ".png"));
+    return Error("Could not decode capture.");
+  }
+  elements->Append(CaptureImage(*asset, bitmap.width(), bitmap.height()));
+  scene->Remove("files");
+  const auto serialized = base::WriteJson(*scene);
+  auto saved = serialized ? Run(kKind, base::DictValue()
+                                           .Set("operation", "save")
+                                           .Set("id", destination)
+                                           .Set("revision", Revision(*original))
+                                           .Set("content", *serialized))
+                          : Error("Could not serialize the easel.");
+  if (saved.FindString("error")) {
+    base::DeleteFile(to.AppendASCII("images").AppendASCII(*asset + ".png"));
+    return saved;
+  }
+
+  // The new scene and its image are complete before removing the source.
+  Run(kKind, base::DictValue()
+                 .Set("operation", "delete")
+                 .Set("id", source)
+                 .Set("revision", revision));
+  return base::DictValue().Set("destination", destination);
+}
+
 void DocumentStore::Export(DocumentKind kind,
                            std::string id,
                            std::string format,

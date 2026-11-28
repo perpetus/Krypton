@@ -1,0 +1,27 @@
+# Krypton: Give Krypton Agent its own task source and allow those tasks to run.
+# Keep the upstream AI disable patch in effect for every other client.
+--- a/components/actor/core/task_source_info.h
++++ b/components/actor/core/task_source_info.h
+@@ -33,6 +33,8 @@
+     kTtc = 5,
+     // Tasks created via the browser actuator transport layer.
+     kBrowserActuator = 6,
++    // Tasks created by Krypton Agent.
++    kKrypton = 7,
+   };
+ 
+   TaskSourceInfo(Client type, std::optional<SourceDefinedId> id);
+--- a/chrome/browser/actor/actor_keyed_service.cc
++++ b/chrome/browser/actor/actor_keyed_service.cc
+@@ -930,6 +930,11 @@
+ }
+ 
+ ActorTask* ActorKeyedService::GetTask(TaskId task_id) {
++  const auto task = active_tasks_.find(task_id);
++  if (task != active_tasks_.end() &&
++      task->second->source_info().type == TaskSourceInfo::Client::kKrypton) {
++    return task->second.get();
++  }
+   return nullptr;
+ }
+ 

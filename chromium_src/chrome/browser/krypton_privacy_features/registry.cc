@@ -26,70 +26,76 @@ constexpr Feature kCatalog[]{
     {Id::kAutoplayList, "autoplay_list", 0, 1, true, false,
      IDS_KRYPTON_PRIVACY_AUTOPLAY_TITLE, IDS_KRYPTON_PRIVACY_AUTOPLAY_SUMMARY,
      IDS_KRYPTON_PRIVACY_AUTOPLAY_SHARED, IDS_KRYPTON_PRIVACY_AUTOPLAY_RISK,
-     IDS_KRYPTON_PRIVACY_AUTOPLAY_OFF, ""}};
-std::unique_ptr<Registry>& Instance() {
+     IDS_KRYPTON_PRIVACY_AUTOPLAY_OFF, ""},
+    {Id::kAiAgent, "ai_agent", 0, 2, true, false,
+     IDS_KRYPTON_PRIVACY_AI_AGENT_TITLE, IDS_KRYPTON_PRIVACY_AI_AGENT_SUMMARY,
+     IDS_KRYPTON_PRIVACY_AI_AGENT_SHARED, IDS_KRYPTON_PRIVACY_AI_AGENT_RISK,
+     IDS_KRYPTON_PRIVACY_AI_AGENT_OFF, ""}};
+std::unique_ptr<Registry> &Instance() {
   static base::NoDestructor<std::unique_ptr<Registry>> instance;
   return *instance;
 }
-}  // namespace
-base::span<const Feature> Catalog() {
-  return kCatalog;
-}
-Registry::Registry(PrefService& prefs) : prefs_(prefs) {
+} // namespace
+base::span<const Feature> Catalog() { return kCatalog; }
+Registry::Registry(PrefService &prefs) : prefs_(prefs) {
   registrar_.Init(&prefs);
-  for (const auto& feature : Catalog()) {
-    if (!prefs.FindPreference(PrefName(feature.id)))
+  for (const auto &feature : Catalog()) {
+    const auto name = PrefName(feature.id);
+    if (name.empty() || !prefs.FindPreference(name)) {
       continue;
+    }
     registrar_.Add(
-        PrefName(feature.id),
-        base::BindRepeating(
-            [](Registry* registry, Id id) { registry->changed_.Notify(id); },
-            base::Unretained(this), feature.id));
+        name, base::BindRepeating([](Registry *registry,
+                                     Id id) { registry->changed_.Notify(id); },
+                                  base::Unretained(this), feature.id));
   }
 }
 Registry::~Registry() = default;
-const Feature* Registry::Find(Id id) const {
-  if (PrefName(id).empty() || !prefs_->FindPreference(PrefName(id)))
+const Feature *Registry::Find(Id id) const {
+  if (PrefName(id).empty() || !prefs_->FindPreference(PrefName(id))) {
     return nullptr;
+  }
   const auto catalog = Catalog();
   const auto it = std::ranges::find(catalog, id, &Feature::id);
   return it == catalog.end() ? nullptr : &*it;
 }
 uint32_t Registry::Flags(Id id) const {
-  const auto* feature = Find(id);
-  if (!feature)
+  const auto *feature = Find(id);
+  if (!feature) {
     return 0;
+  }
   const bool enabled = IsEnabled(*prefs_, id);
   uint32_t flags = enabled ? 1u : 0u;
   if (feature->restart) {
     flags |= 1u << 1;
-    if (enabled != IsStartupEnabled(id))
+    if (enabled != IsStartupEnabled(id)) {
       flags |= 1u << 2;
+    }
   }
-  if (prefs_->FindPreference(PrefName(id))->IsManaged())
+  if (prefs_->FindPreference(PrefName(id))->IsManaged()) {
     flags |= 1u << 3;
-  if (feature->onboarding)
+  }
+  if (feature->onboarding) {
     flags |= 1u << 4;
+  }
   return flags;
 }
 bool Registry::SetEnabled(Id id, bool enabled) {
-  if (!Find(id) || prefs_->FindPreference(PrefName(id))->IsManaged())
+  if (!Find(id) || prefs_->FindPreference(PrefName(id))->IsManaged()) {
     return false;
+  }
   prefs_->SetBoolean(PrefName(id), enabled);
   return true;
 }
-base::CallbackListSubscription Registry::Observe(
-    base::RepeatingCallback<void(Id)> callback) {
+base::CallbackListSubscription
+Registry::Observe(base::RepeatingCallback<void(Id)> callback) {
   return changed_.Add(std::move(callback));
 }
-void InitializeRegistry(PrefService& prefs) {
-  if (!Instance())
+void InitializeRegistry(PrefService &prefs) {
+  if (!Instance()) {
     Instance() = std::make_unique<Registry>(prefs);
+  }
 }
-Registry* GetRegistry() {
-  return Instance().get();
-}
-void ShutdownRegistry() {
-  Instance().reset();
-}
-}  // namespace krypton::privacy
+Registry *GetRegistry() { return Instance().get(); }
+void ShutdownRegistry() { Instance().reset(); }
+} // namespace krypton::privacy

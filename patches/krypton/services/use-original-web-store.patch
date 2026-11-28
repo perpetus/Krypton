@@ -34,7 +34,7 @@
 -        return GetDummyURL();
 -    }
 -
--    return GetServicesBaseURL(prefs).Resolve("/ext");
+-    return GetServicesBaseURL(prefs).Resolve("/ext/");
 +    return GURL("https://clients2.google.com/service/update2/crx");
  }
  

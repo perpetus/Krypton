@@ -55,7 +55,12 @@ namespace views {
 class Widget;
 }
 
+namespace krypton_agent {
+class Organization;
+}
+
 namespace krypton_ui {
+class AgentPanel;
 class NativeLocationBar;
 class NativeBackdrop;
 class PageCornerOverlays;
@@ -123,6 +128,10 @@ class BrowserAdapter final : public TabStripModelObserver {
   void InitializeServices();
   [[nodiscard]] base::expected<void, std::string> Attach();
   void Close();
+  void SleepTab(KrTabId id);
+  bool ExecuteNativeShortcut(int command);
+  void ShortcutsChanged();
+  bool shortcuts_suspended() const { return shortcuts_suspended_; }
   [[nodiscard]] bool ready() const { return session_.api() != nullptr; }
   [[nodiscard]] WindowSession& session() { return session_; }
   [[nodiscard]] NativeLocationBar& location_bar() { return *location_; }
@@ -139,6 +148,8 @@ class BrowserAdapter final : public TabStripModelObserver {
   // Follows the module's frame request: opaque theme or DWM acrylic.
   void UpdateFrameMaterial();
   void UpdatePageCornerOverlays();
+  // Maps the module's Agent surface into the frame and refreshes its hole.
+  void UpdateAgentSurface();
   [[nodiscard]] KrResult FolderCommand(const KrFolderCommand& command);
   [[nodiscard]] bool CanFolders() const;
   void PublishWindowState();
@@ -210,6 +221,7 @@ class BrowserAdapter final : public TabStripModelObserver {
  private:
   friend class MultiPageController;
   friend class SiteCustomization;
+  friend class krypton_agent::Organization;
   friend class LiveFolders;
   friend class LiveFolderService;
   friend class SpaceHosts;
@@ -275,6 +287,7 @@ class BrowserAdapter final : public TabStripModelObserver {
   [[nodiscard]] base::OnceClosure CaptureCommand(int command, bool tab_scoped);
   void Activate(KrTabId id);
   void CloseTab(KrTabId id);
+  void ClearTemporaryTabs(KrSpaceId space);
   void MoveTab(KrTabId id, KrSpaceId space, size_t index);
   void SetTabFlags(KrTabId id, uint32_t mask, uint32_t values);
   bool HandleUnhandledKey(const MSG& message);
@@ -344,6 +357,7 @@ class BrowserAdapter final : public TabStripModelObserver {
   const raw_ref<BrowserView> view_;
   const raw_ref<BrowserWindowInterface> browser_;
   WindowSession session_;
+  std::unique_ptr<AgentPanel> agent_panel_;
   ControlAnchors anchors_;
   NativeImages images_;
   std::unique_ptr<TabPreview> tab_preview_;
@@ -352,6 +366,9 @@ class BrowserAdapter final : public TabStripModelObserver {
   std::unique_ptr<MultiPageController> multi_page_;
   bool multi_page_capable_ = false;
   raw_ptr<NativeBackdrop> backdrop_ = nullptr;  // BrowserView's background.
+  // The module's Agent surface in browser-client DIPs; empty when closed.
+  KrRect agent_surface_{};
+  float agent_surface_radius_ = 0;
   std::unique_ptr<PageCornerOverlays> page_corner_overlays_;
   std::unique_ptr<NativeGlassBackdrop> glass_;
   std::unique_ptr<NativeLocationBar> location_;
@@ -366,8 +383,11 @@ class BrowserAdapter final : public TabStripModelObserver {
   std::unique_ptr<SiteCustomization> site_customization_;
   std::unique_ptr<LiveFolders> live_folders_;
   PrefChangeRegistrar layout_prefs_;
+  bool shortcuts_suspended_ = false;
+  bool shortcut_catalog_requested_ = false;
   base::CallbackListSubscription essential_restore_;
   base::CallbackListSubscription fullscreen_changed_;
+  base::CallbackListSubscription agent_privacy_changed_;
   WorkspaceCatalog workspaces_;
   FolderCatalog folders_;
   std::vector<TabFolder> published_folders_;

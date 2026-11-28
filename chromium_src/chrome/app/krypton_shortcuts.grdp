@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<grit-part>
+  <message name="IDS_KRYPTON_SHORTCUT_GROUP_KRYPTON" translateable="false">
+    Krypton
+  </message>
+  <message name="IDS_KRYPTON_SHORTCUT_GROUP_TABS" desc="Keyboard shortcuts category for tab and window actions.">
+    Tabs and windows
+  </message>
+  <message name="IDS_KRYPTON_SHORTCUT_SPLIT_GRID" desc="Keyboard shortcut label for arranging split views in a grid.">
+    Split into grid
+  </message>
+  <message name="IDS_KRYPTON_SHORTCUT_SLEEP_TAB" desc="Command that discards a tab to reduce resource use while keeping it in the tab strip.">
+    Sleep tab
+  </message>
+  <message name="IDS_KRYPTON_SHORTCUT_NEW_NOTE" desc="Keyboard shortcut label for creating a note.">
+    New note
+  </message>
+  <message name="IDS_KRYPTON_SHORTCUT_NEW_EASEL" desc="Keyboard shortcut label for creating an easel.">
+    New easel
+  </message>
+</grit-part>

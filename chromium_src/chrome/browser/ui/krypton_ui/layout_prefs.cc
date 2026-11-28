@@ -2,17 +2,21 @@
 // Use of this source code is governed by the GPL-3.0 license in LICENSE.
 
 #include "chrome/browser/ui/krypton_ui/layout_prefs.h"
-#include "chrome/browser/ui/krypton_ui/essential_prefs.h"
-#include "chrome/browser/ui/krypton_ui/workspace_prefs.h"
 
 #include <cmath>
 #include <cstdint>
 
+#include "chrome/browser/ui/krypton_ui/essential_prefs.h"
+#include "chrome/browser/ui/krypton_ui/workspace_prefs.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "krypton_ui/abi.h"
 
 namespace krypton_ui {
+
+void RegisterShortcutLocalState(PrefRegistrySimple* registry) {
+  registry->RegisterDictionaryPref(kShortcutOverridesPref);
+}
 
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterWorkspacePrefs(registry);

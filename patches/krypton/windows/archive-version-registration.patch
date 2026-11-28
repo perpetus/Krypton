@@ -1,0 +1,48 @@
+Use the installed archive version for Windows Apps registration.
+Give setup the Krypton file version and retain the engine product version
+for native setup and packaging compatibility checks.
+
+--- a/chrome/installer/setup/install_worker.cc
++++ b/chrome/installer/setup/install_worker.cc
+@@ -34,7 +34,6 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/version.h"
+ #include "base/version_info/channel.h"
+-#include "base/version_info/version_info.h"
+ #include "base/win/registry.h"
+ #include "base/win/security_util.h"
+ #include "base/win/sid.h"
+@@ -709,11 +708,10 @@
+                                          InstallUtil::GetPublisherName(), true);
+     install_list->AddSetRegValueWorkItem(
+         reg_root, uninstall_reg, KEY_WOW64_32KEY, L"Version",
+-        ASCIIToWide(version_info::GetHeliumVersionNumber()), true);
++        ASCIIToWide(new_version.GetString()), true);
+     install_list->AddSetRegValueWorkItem(
+         reg_root, uninstall_reg, KEY_WOW64_32KEY, L"DisplayVersion",
+-        ASCIIToWide(version_info::GetHeliumVersionNumber()),
+-        true);
++        ASCIIToWide(new_version.GetString()), true);
+     // TODO(wfh): Ensure that this value is preserved in the 64-bit hive when
+     // 64-bit installs place the uninstall information into the 64-bit registry.
+     install_list->AddSetRegValueWorkItem(reg_root, uninstall_reg,
+--- a/chrome/installer/setup/setup_exe_version.rc.version
++++ b/chrome/installer/setup/setup_exe_version.rc.version
+@@ -10,7 +10,7 @@
+ //
+ 
+ VS_VERSION_INFO VERSIONINFO
+- FILEVERSION @MAJOR@,@MINOR@,@BUILD@,@PATCH@
++ FILEVERSION @HELIUM_MAJOR@,@HELIUM_MINOR@,@HELIUM_PATCH@,@HELIUM_PLATFORM@
+  PRODUCTVERSION @MAJOR@,@MINOR@,@BUILD@,@PATCH@
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+@@ -28,7 +28,7 @@
+         BEGIN
+             VALUE "CompanyName", "@COMPANY_FULLNAME@"
+             VALUE "FileDescription", "@PRODUCT_INSTALLER_FULLNAME@"
+-            VALUE "FileVersion", "@MAJOR@.@MINOR@.@BUILD@.@PATCH@"
++            VALUE "FileVersion", "@HELIUM_MAJOR@.@HELIUM_MINOR@.@HELIUM_PATCH@.@HELIUM_PLATFORM@"
+             VALUE "InternalName", "setup"
+             VALUE "LegalCopyright", "@COPYRIGHT@"
+             VALUE "ProductName", "@PRODUCT_INSTALLER_FULLNAME@"

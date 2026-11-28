@@ -1,0 +1,108 @@
+import("//mojo/public/tools/bindings/mojom.gni")
+import("//ui/webui/resources/tools/build_webui.gni")
+
+mojom("display_mojom") {
+  sources = [ "transcript.mojom" ]
+  webui_module_path = "/"
+}
+
+build_webui("build_transcript") {
+  grd_prefix = "krypton_agent_chat"
+  ts_files = [ "transcript.ts" ]
+  mojo_files = [ "$target_gen_dir/transcript.mojom-webui.ts" ]
+  mojo_files_deps = [ ":display_mojom_ts__generator" ]
+  ts_composite = true
+  ts_deps = [ "//ui/webui/resources/mojo:build_ts" ]
+  webui_context_type = "untrusted"
+}
+
+action("embedded_assets") {
+  script = "embed_assets.py"
+  deps = [ ":build_ts" ]
+  inputs = [
+    "transcript.css",
+    "transcript.html",
+    "$target_gen_dir/tsc/transcript.js",
+    "$target_gen_dir/tsc/transcript.mojom-webui.js",
+  ]
+  outputs = [ "$target_gen_dir/transcript_assets.h" ]
+  args = [ rebase_path(outputs[0], root_build_dir) ]
+  args += rebase_path(inputs, root_build_dir)
+}
+
+action("embedded_kit") {
+  script = "embed_kit.py"
+  vendor = "//third_party/krypton_agent_kit"
+  kit_sources = [
+    "kit/base.css",
+    "kit/chart.js",
+    "kit/guides/charts.md",
+    "kit/guides/motion.md",
+    "kit/guides/report.md",
+    "kit/guides/slides.md",
+    "kit/guides/widgets.md",
+    "kit/icons.js",
+    "kit/report.css",
+    "kit/report.js",
+    "kit/slides.css",
+    "kit/slides.js",
+    "kit/ui.js",
+  ]
+  inputs = kit_sources + [
+             "$vendor/sha256.json",
+             "$vendor/preact/README.chromium",
+             "$vendor/preact/preact.mjs",
+             "$vendor/preact/hooks.mjs",
+             "$vendor/htm/README.chromium",
+             "$vendor/htm/htm.mjs",
+             "$vendor/chart.js/README.chromium",
+             "$vendor/chart.js/chart.umd.min.js",
+             "$vendor/d3/README.chromium",
+             "$vendor/d3/d3.min.js",
+             "$vendor/three/README.chromium",
+             "$vendor/three/three.module.js",
+             "$vendor/three/three.core.js",
+             "$vendor/motion/README.chromium",
+             "$vendor/motion/motion.js",
+             "$vendor/lucide-static/README.chromium",
+             "$vendor/lucide-static/nodes.mjs",
+             "$vendor/simple-icons/README.chromium",
+           ]
+  foreach(group, [
+            "0-9",
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i",
+            "j",
+            "k",
+            "l",
+            "m",
+            "n",
+            "o",
+            "p",
+            "q",
+            "r",
+            "s",
+            "t",
+            "u",
+            "v",
+            "w",
+            "x",
+            "y",
+            "z",
+          ]) {
+    inputs += [ "$vendor/simple-icons/$group.mjs" ]
+  }
+  outputs = [ "$target_gen_dir/render_kit_assets.h" ]
+  args = [
+    rebase_path(outputs[0], root_build_dir),
+    rebase_path(vendor, root_build_dir),
+  ]
+  args += rebase_path(kit_sources, root_build_dir)
+}

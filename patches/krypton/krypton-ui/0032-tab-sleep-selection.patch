@@ -1,0 +1,31 @@
+Reuse tab close selection order when sleeping an active tab.
+
+--- a/chrome/browser/ui/tabs/tab_strip_model.h
++++ b/chrome/browser/ui/tabs/tab_strip_model.h
+@@ -929,6 +929,10 @@
+ 
+   // Convert between tabs and indices.
+   int GetIndexOfTab(const tabs::TabInterface* tab) const;
++
++  // Returns the prospective close selection in current strip coordinates.
++  std::optional<int> GetSelectionAfterRemovingTab(
++      tabs::TabInterface* tab) const;
+   tabs::TabInterface* GetTabAtIndex(int index) const;
+   // Gets the tabs at the specified indices using two pointers instead of
+   // calling GetTabAtIndex repeatedly, making the runtime O(count()) instead of
+--- a/chrome/browser/ui/tabs/tab_strip_model.cc
++++ b/chrome/browser/ui/tabs/tab_strip_model.cc
+@@ -6289,6 +6289,13 @@
+   RemoveFromGroup(tabs_in_group.ToIntVector());
+ }
+ 
++std::optional<int> TabStripModel::GetSelectionAfterRemovingTab(
++    tabs::TabInterface* tab) const {
++  const auto next = DetermineNewSelectedIndex(tab);
++  const int removed = GetIndexOfTab(tab);
++  return next ? std::optional(*next + (*next >= removed)) : std::nullopt;
++}
++
+ std::optional<int> TabStripModel::DetermineNewSelectedIndex(
+     std::variant<tabs::DanglingUntriagedTabInterface,
+                  tabs::DanglingUntriagedTabCollection> tab_or_collection)

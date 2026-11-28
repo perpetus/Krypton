@@ -1,0 +1,107 @@
+# Krypton: expose a semantic user-content marker in page extraction without copying DOM attributes.
+--- a/third_party/blink/renderer/modules/content_extraction/ai_page_content_agent.cc
++++ b/third_party/blink/renderer/modules/content_extraction/ai_page_content_agent.cc
+@@ -2877,7 +2877,8 @@
+     }
+   }
+ 
+-  if (!attributes.annotated_roles.empty()) {
++  if (attributes.user_generated_content ||
++      !attributes.annotated_roles.empty()) {
+     return false;
+   }
+ 
+@@ -3167,6 +3168,28 @@
+   const ax::mojom::blink::Role aria_role =
+       element ? AXObject::DetermineRawAriaRole(*element)
+               : ax::mojom::blink::Role::kUnknown;
++  if (actionable_mode() && element) {
++    DEFINE_STATIC_LOCAL(const AtomicString, itemtype_name, ("itemtype"));
++    DEFINE_STATIC_LOCAL(const AtomicString, ugc_token, ("ugc"));
++    const SpaceSplitString relations(
++        element->getAttribute(html_names::kRelAttr));
++    attributes.user_generated_content = relations.Contains(ugc_token);
++    const SpaceSplitString types(element->getAttribute(itemtype_name));
++    for (wtf_size_t index = 0; index < types.size(); ++index) {
++      const StringView type(types[index]);
++      const StringView suffix =
++          type.starts_with("https://schema.org/")  ? type.substr(19)
++          : type.starts_with("http://schema.org/") ? type.substr(18)
++                                                   : StringView();
++      if (suffix == "Comment" || suffix == "Review" ||
++          suffix == "DiscussionForumPosting" ||
++          suffix == "SocialMediaPosting" || suffix == "QAPage" ||
++          suffix == "Answer") {
++        attributes.user_generated_content = true;
++        break;
++      }
++    }
++  }
+   AddAnnotatedRoles(object, aria_role, attributes.annotated_roles);
+   PopulateLabelForDomNodeId(object, attributes);
+ 
+--- a/third_party/blink/public/mojom/content_extraction/ai_page_content.mojom
++++ b/third_party/blink/public/mojom/content_extraction/ai_page_content.mojom
+@@ -659,6 +659,9 @@
+   // Indicates whether the contents of this element have been determined to be
+   // an ad.
+   bool is_ad_related;
++
++  // Rendered regions identified as user-authored from document markup.
++  bool user_generated_content;
+ };
+ 
+ // A semantic chunk of information on a page. It can represent text, structured
+--- a/components/optimization_guide/proto/features/common_quality_data.proto
++++ b/components/optimization_guide/proto/features/common_quality_data.proto
+@@ -282,3 +282,3 @@
+-// Next ID: 31
++// Next ID: 32
+ message ContentAttributes {
+   oneof content_data {
+@@ -378,6 +378,9 @@
+   // Redaction decision for the node.
+   RedactionDecision redaction_decision = 29 [features = { field_presence: EXPLICIT }];
+ 
++  // Markup supplied a user-authored content signal for this node.
++  bool user_generated_content = 31 [features = { field_presence: EXPLICIT }];
++
+   reserved 5, 6, 7, 17, 18, 1, 22;
+ }
+ 
+--- a/components/optimization_guide/content/browser/page_content_proto_util.cc
++++ b/components/optimization_guide/content/browser/page_content_proto_util.cc
+@@ -996,6 +996,9 @@
+   }
+ 
+   proto_attributes->set_is_ad_related(mojom_attributes.is_ad_related);
++  if (mojom_attributes.user_generated_content) {
++    proto_attributes->set_user_generated_content(true);
++  }
+ 
+   return base::ok();
+ }
+--- a/components/policy/resources/templates/policies.yaml
++++ b/components/policy/resources/templates/policies.yaml
+@@ -1495,6 +1495,7 @@
+   1494: ManagedClientCertificateForBrowserConfig
+   1495: ManagedClientCertificateForUserConfig
+   1496: GeminiEnterpriseUrl
++  1497: KryptonAgentSiteAllowlist
+ 
+ atomic_groups:
+   1: Homepage
+--- a/chrome/browser/policy/configuration_policy_handler_list_factory.cc
++++ b/chrome/browser/policy/configuration_policy_handler_list_factory.cc
+@@ -2666,6 +2666,11 @@
+   handlers->AddHandler(
+       std::make_unique<bookmarks::ManagedBookmarksPolicyHandler>(
+           chrome_schema));
++#if BUILDFLAG(IS_WIN)
++  handlers->AddHandler(std::make_unique<SimplePolicyHandler>(
++      key::kKryptonAgentSiteAllowlist, "krypton.agent.site_allowlist",
++      base::Value::Type::LIST));
++#endif
+   handlers->AddHandler(std::make_unique<syncer::SyncPolicyHandler>());
+   handlers->AddHandler(
+       std::make_unique<URLAllowlistPolicyHandler>(key::kURLAllowlist));

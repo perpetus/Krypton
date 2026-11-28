@@ -1,0 +1,33 @@
+# Krypton: register profile-local preferences for agent history and retention.
+--- a/chrome/browser/prefs/BUILD.gn
++++ b/chrome/browser/prefs/BUILD.gn
+@@ -366,6 +366,7 @@
+   if (is_win) {
+     deps += [
+       "//chrome/browser:font_prewarmer_tab_helper",
++      "//chrome/browser/krypton_agent:history_prefs",
+       "//chrome/browser/os_crypt",
+       "//chrome/browser/ui:network_profile_bubble",
+       "//chrome/browser/webnn",
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -24,6 +24,9 @@
+ #include "build/android_buildflags.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/history_prefs.h"
++#endif
+ #include "chrome/browser/about_flags.h"
+ #include "chrome/browser/accessibility/accessibility_labels_service.h"
+ #include "chrome/browser/accessibility/invert_bubble_prefs.h"
+@@ -2060,6 +2063,9 @@
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+   krypton_ui::RegisterProfilePrefs(registry);
+ #endif
++#if BUILDFLAG(IS_WIN)
++  krypton_agent::RegisterHistoryPrefs(registry);
++#endif
+   // User prefs. Please keep this list alphabetized.
+   AccessibilityLabelsService::RegisterProfilePrefs(registry);
+   registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);

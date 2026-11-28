@@ -103,11 +103,15 @@ class DocumentHandler final : public content::WebUIMessageHandler,
       --pending_;
     if (!IsJavascriptAllowed())
       return;
-    if (const auto* id = response.FindString("id"); id && IsDocumentId(*id))
-      id_ = *id;
     response.Set("dark", dark_);
     CallJavascriptFunction("kryptonDocumentReply", token, response);
   }
+  void Created(std::string token, base::DictValue response) {
+    if (const auto* id = response.FindString("id"); id && IsDocumentId(*id))
+      id_ = *id;
+    Reply(std::move(token), std::move(response));
+  }
+
   void Fail(std::string token, std::string_view error) {
     if (IsJavascriptAllowed())
       CallJavascriptFunction("kryptonDocumentReply", token,
@@ -136,24 +140,30 @@ class DocumentHandler final : public content::WebUIMessageHandler,
           (bytes += value.GetString().size()) > 13 * 1024 * 1024)
         return Fail(token, "Document request exceeds the size limit.");
     }
-    if (!op || !id ||
-        (!IsDocumentId(*id) && !(*op == "load" && *id == "new")) ||
-        pending_ >= 2)
-      return Fail(token, "Document is busy or the id is invalid.");
+    const bool creating = op && *op == "load" && id_ == "new";
+    if (!op || !id || *id != id_ || (!IsDocumentId(id_) && !creating) ||
+        pending_ >= (creating ? 1u : 2u))
+      return Fail(token, "This editor cannot access that document.");
+
+    auto* frame = contents->GetPrimaryMainFrame();
+    if ((*op == "delete" || *op == "rename" || *op == "export" ||
+         *op == "transferCapture") &&
+        !frame->ConsumeTransientUserActivation())
+      return Fail(token, "Click the document action again to continue.");
+    if (*op == "list" && !frame->HasTransientUserActivation())
+      return Fail(token, "Click the document list to open it.");
     auto store = DocumentStore::ForProfile(Profile::FromWebUI(web_ui()));
     if (!store)
       return Fail(token, "Documents are unavailable in this profile.");
     if (*op == "export") {
       const auto* format = request.FindString("format");
       if (dialog_ || !format || (*format != "png" && *format != "document") ||
-          (kind_ == DocumentKind::kNote && *format == "png") ||
-          !contents->GetPrimaryMainFrame()->HasTransientUserActivation())
+          (kind_ == DocumentKind::kNote && *format == "png"))
         return Fail(token, "Choose Export again to open the save dialog.");
       const std::string extension = *format == "png" ? "png"
                                     : kind_ == DocumentKind::kNote
                                         ? "md"
                                         : "excalidraw";
-      id_ = *id;
       export_token_ = token;
       export_format_ = *format;
       export_png_ = request.FindString("png") ? *request.FindString("png") : "";
@@ -171,12 +181,25 @@ class DocumentHandler final : public content::WebUIMessageHandler,
           contents->GetTopLevelNativeWindow(), nullptr);
       return;
     }
+    if (*op == "transferCapture") {
+      const auto* destination = request.FindString("destination");
+      const auto* revision = request.FindString("revision");
+      if (kind_ != DocumentKind::kEasel || !destination || !revision ||
+          !IsDocumentId(*destination) || *destination == id_)
+        return Fail(token, "Choose a different easel.");
+      ++pending_;
+      store->TransferCapture(id_, *destination, *revision,
+                             base::BindOnce(&DocumentHandler::Reply,
+                                            weak_factory_.GetWeakPtr(), token));
+      return;
+    }
     if (*op != "load" && *op != "save" && *op != "list" && *op != "rename" &&
         *op != "delete" && *op != "insertImage")
       return Fail(token, "Unsupported document operation.");
     ++pending_;
     store->Request(kind_, request.Clone(),
-                   base::BindOnce(&DocumentHandler::Reply,
+                   base::BindOnce(creating ? &DocumentHandler::Created
+                                           : &DocumentHandler::Reply,
                                   weak_factory_.GetWeakPtr(), token));
   }
   void FileSelected(const ui::SelectedFileInfo& file, int index) override {

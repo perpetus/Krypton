@@ -1,0 +1,187 @@
+import("//pdf/features.gni")
+
+source_set("history_prefs") {
+  sources = [
+    "history_prefs.cc",
+    "history_prefs.h",
+  ]
+  deps = [ "//components/prefs" ]
+}
+
+source_set("history_space") {
+  sources = [
+    "history_space.cc",
+    "history_space.h",
+  ]
+  deps = [ "//base" ]
+}
+
+source_set("isolated_network") {
+  sources = [
+    "isolated_network.cc",
+    "isolated_network.h",
+  ]
+  deps = [
+    "//base",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+}
+
+source_set("prompt_gate") {
+  sources = [
+    "browser_prompt_gate.cc",
+    "browser_prompt_gate.h",
+  ]
+  deps = [
+    "//base",
+    "//content/public/browser",
+  ]
+}
+
+source_set("krypton_agent") {
+  public_deps = [
+    ":isolated_network",
+    ":prompt_gate",
+  ]
+  sources = [
+    "agent_component.cc",
+    "agent_component.h",
+    "agent_session.cc",
+    "agent_session.h",
+    "agent_tools.cc",
+    "agent_tools.h",
+    "chat/chat_card.cc",
+    "chat/chat_card.h",
+    "confirmation_gate.cc",
+    "confirmation_gate.h",
+    "history_index.cc",
+    "history_index.h",
+    "history_maintenance.cc",
+    "history_maintenance.h",
+    "launch_authorization.cc",
+    "launch_authorization.h",
+    "organization.cc",
+    "organization.h",
+    "page_reader.cc",
+    "page_reader.h",
+    "panel_connection.cc",
+    "panel_connection.h",
+    "privacy_filter.cc",
+    "privacy_filter.h",
+    "research_load.cc",
+    "research_load.h",
+    "saved_transcript_reader.cc",
+    "saved_transcript_reader.h",
+    "sidecar_process.cc",
+    "sidecar_process.h",
+    "site_allowlist.cc",
+    "site_allowlist.h",
+    "skill_import_picker.cc",
+    "skill_import_picker.h",
+    "source_records.cc",
+    "source_records.h",
+    "tool_pipe.cc",
+    "tool_pipe.h",
+    "ui_state_manager.cc",
+    "ui_state_manager.h",
+  ]
+
+  deps = [
+    ":history_prefs",
+    ":history_space",
+    "chat:display_mojom",
+    "chat:embedded_assets",
+    "chat:embedded_kit",
+    "//base",
+    "//base:i18n",
+    "//chrome/browser:browser_process",
+    "//chrome/browser/actor",
+    "//chrome/browser/actor/ui",
+    "//chrome/browser/krypton_models:files",
+    "//chrome/browser/krypton_privacy_features",
+    "//chrome/browser/page_content_annotations:screenshot_service",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/profiles:profile_manager",
+    "//chrome/browser/search_engines",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/krypton_ui:document_store",
+    "//chrome/browser/ui/krypton_ui:native_headers",
+    "//chrome/browser/ui/krypton_ui:workspace_session",
+    "//chrome/browser/ui/navigator",
+    "//chrome/browser/ui/select_file_policy",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/browser/ui/views/frame:browser_view_header",
+    "//chrome/common",
+    "//chrome/common:actor_webui_mojom",
+    "//components/actor/core",
+    "//components/favicon/content",
+    "//components/javascript_dialogs",
+    "//components/krypton_privacy_features",
+    "//components/optimization_guide/content/browser",
+    "//components/optimization_guide/proto:optimization_guide_proto",
+    "//components/os_crypt/async/browser",
+    "//components/page_content_annotations/content",
+    "//components/paint_preview/common/mojom",
+    "//components/permissions",
+    "//components/prefs",
+    "//components/search_engines",
+    "//components/sessions:session_id",
+    "//components/tabs:public",
+    "//content/public/browser",
+    "//crypto",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//pdf:buildflags",
+    "//sandbox/win:sandbox",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//skia",
+    "//third_party/blink/public/common",
+    "//third_party/blink/public/mojom:mojom_platform_headers",
+    "//third_party/icu",
+    "//third_party/zlib/google:compression_utils",
+    "//ui/gfx/codec",
+    "//ui/gfx/geometry",
+    "//ui/shell_dialogs",
+    "//ui/views",
+    "//ui/views/controls/webview",
+    "//ui/webui",
+    "//url",
+  ]
+
+  libs = [
+    "advapi32.lib",
+    "userenv.lib",
+  ]
+  if (enable_pdf) {
+    deps += [
+      "//components/pdf/browser",
+      "//extensions/common",
+    ]
+  }
+}
+
+executable("krypton_agent_launcher") {
+  output_name = "krypton-agent-launcher"
+  sources = [ "agent_launcher.cc" ]
+  deps = [
+    "//base",
+    "//sandbox/win:sandbox",
+  ]
+}
+
+executable("krypton_agent_dev_launcher") {
+  output_dir = "$root_out_dir/krypton-agent-dev-component"
+  output_name = "krypton-agent-launcher"
+  defines = [ "KRYPTON_AGENT_DEVELOPMENT_LAUNCHER" ]
+  sources = [ "agent_launcher.cc" ]
+  deps = [
+    "//base",
+    "//sandbox/win:sandbox",
+  ]
+}

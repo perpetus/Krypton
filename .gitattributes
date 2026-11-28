@@ -1,3 +1,4 @@
 *.patch linguist-language=C++
 * text=auto
 chromium_src/chrome/browser/ui/krypton_ui/include/krypton_ui/abi.h text eol=lf
+chromium_src/third_party/krypton_agent_kit/** -text

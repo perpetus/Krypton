@@ -9,6 +9,7 @@
 #include "chrome/browser/ui/accelerator_utils.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/krypton_ui/browser_adapter.h"
+#include "chrome/browser/ui/krypton_ui/shortcut_settings.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "components/tabs/public/tab_interface.h"
@@ -165,12 +166,32 @@ bool MultiPageMenuModel::IsCommandIdChecked(int command) const {
 bool MultiPageMenuModel::GetAcceleratorForCommandId(
     int command,
     ui::Accelerator* accelerator) const {
-  if (command != kNewSplit || !browser_ || !browser_->GetWindow()) {
+  if (!browser_ || !browser_->GetWindow() || !tab_ || !tab_->IsActivated()) {
     return false;
+  }
+  int shortcut;
+  switch (command) {
+    case kNewSplit:
+      shortcut = IDC_NEW_SPLIT_TAB;
+      break;
+    case kColumns:
+      shortcut = kShortcutSplitColumns;
+      break;
+    case kRows:
+      shortcut = kShortcutSplitRows;
+      break;
+    case kGrid:
+      shortcut = kShortcutSplitGrid;
+      break;
+    case kUnsplit:
+      shortcut = kShortcutUnsplit;
+      break;
+    default:
+      return false;
   }
   auto* provider = AcceleratorProviderForBrowser(browser_.get());
   return provider &&
-         provider->GetAcceleratorForCommandId(IDC_NEW_SPLIT_TAB, accelerator);
+         provider->GetAcceleratorForCommandId(shortcut, accelerator);
 }
 
 void MultiPageMenuModel::ExecuteCommand(int command, int) {

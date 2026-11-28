@@ -35,6 +35,7 @@
 
 namespace krypton_ui {
 namespace {
+constexpr size_t kMaxPendingAnchors = 32;
 DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kNativeToolbarPaneId);
 AnchorKey Element(uint32_t element) {
   return {AnchorKind::kElement, element};
@@ -533,13 +534,26 @@ void NativeToolbar::GetBubbleAnchorAsync(
     std::move(callback).Run(anchor);
     return;
   }
-  if (auto* item = GetActionItemFor(id); !item || !item->GetVisible()) {
+  if (auto* item = GetActionItemFor(id);
+      !item || !item->GetVisible() ||
+      pending_anchors_.size() >= kMaxPendingAnchors) {
     std::move(callback).Run(
         base::unexpected(GetAnchorFailureReason::kAnchorNotFound));
     return;
   }
   pending_anchors_.push_back({id, std::move(callback)});
+  if (!anchor_timeout_.IsRunning()) {
+    anchor_timeout_.Start(FROM_HERE, base::Seconds(2), this,
+                          &NativeToolbar::ExpirePendingAnchors);
+  }
   ShowActionEphemerallyInToolbar(id, true);
+}
+void NativeToolbar::ExpirePendingAnchors() {
+  auto waiting = std::exchange(pending_anchors_, {});
+  for (auto& request : waiting) {
+    std::move(request.callback)
+        .Run(base::unexpected(GetAnchorFailureReason::kAnchorNotFound));
+  }
 }
 void NativeToolbar::OnAnchorsChanged() {
   auto waiting = std::move(pending_anchors_);
@@ -549,13 +563,18 @@ void NativeToolbar::OnAnchorsChanged() {
     auto anchor = GetBubbleAnchor(request.id);
     if (anchor) {
       std::move(request.callback).Run(anchor);
-    } else {
+    } else if (pending_anchors_.size() < kMaxPendingAnchors) {
       pending_anchors_.push_back(std::move(request));
+    } else {
+      std::move(request.callback)
+          .Run(base::unexpected(GetAnchorFailureReason::kAnchorNotFound));
     }
     if (!weak) {
       return;
     }
   }
+  if (pending_anchors_.empty())
+    anchor_timeout_.Stop();
 }
 PinnedActionToolbarButton* NativeToolbar::GetChromeLabsButton() {
   return nullptr;

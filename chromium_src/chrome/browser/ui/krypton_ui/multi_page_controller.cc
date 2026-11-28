@@ -96,8 +96,9 @@ bool BrowserAdapter::SnapLayoutsEnabled() const {
   return MultiPageEnabled() && api && HasSnapLayoutProtocol(*api);
 }
 bool BrowserAdapter::PrepareMultiPageSelection(content::WebContents* contents) {
-  if (!multi_page_)
+  if (!multi_page_) {
     return false;
+  }
   if (auto* selected = contents
                            ? tabs::TabInterface::MaybeGetFromContents(contents)
                            : nullptr;
@@ -107,8 +108,9 @@ bool BrowserAdapter::PrepareMultiPageSelection(content::WebContents* contents) {
     auto* model = browser_->GetTabStripModel();
     for (int index = 0; index < model->count(); ++index) {
       auto* tab = model->GetTabAtIndex(index);
-      if (!tabs_.contains(Identity(*tab)))
+      if (!tabs_.contains(Identity(*tab))) {
         Insert(*tab, base::checked_cast<size_t>(index));
+      }
     }
   }
   return multi_page_->PrepareSelection(contents);
@@ -116,26 +118,31 @@ bool BrowserAdapter::PrepareMultiPageSelection(content::WebContents* contents) {
 content::WebContents* BrowserAdapter::OpenGlance(
     NavigateParams& params,
     base::OnceCallback<void(content::NavigationHandle&)> callback) {
-  if (!MultiPageEnabled())
+  if (!MultiPageEnabled()) {
     return nullptr;
-  if (!multi_page_)
+  }
+  if (!multi_page_) {
     multi_page_ = std::make_unique<MultiPageController>(*this);
+  }
   return multi_page_->OpenGlance(params, std::move(callback));
 }
 bool BrowserAdapter::JoinNativeSplit(KrTabId pivot,
                                      KrTabId other,
                                      KrSplitLayout layout) {
-  if (!MultiPageEnabled())
+  if (!MultiPageEnabled()) {
     return false;
+  }
   // Callers can be inside a tab strip mutation, and follow the request with
   // their own activation. Join once the current task has finished.
   return session_.Defer(base::BindOnce(
       [](base::WeakPtr<BrowserAdapter> self, KrTabId pivot, KrTabId other,
          KrSplitLayout layout) {
-        if (!self || !self->MultiPageEnabled())
+        if (!self || !self->MultiPageEnabled()) {
           return;
-        if (!self->multi_page_)
+        }
+        if (!self->multi_page_) {
           self->multi_page_ = std::make_unique<MultiPageController>(*self);
+        }
         (void)self->multi_page_->JoinSplit(pivot, other, layout);
       },
       weak_factory_.GetWeakPtr(), pivot, other, layout));
@@ -150,33 +157,38 @@ bool BrowserAdapter::ShowSplitOptions(KrTabId tab) {
   const auto* api = session_.api();
   if (!MultiPageEnabled() || !api ||
       !KR_HAS_SLOT(api, KrShellUI, show_split_options) ||
-      !api->show_split_options)
+      !api->show_split_options) {
     return false;
+  }
   auto point = display::Screen::Get()->GetCursorScreenPoint();
   views::View::ConvertPointFromScreen(&*view_, &point);
   const KrRect anchor{static_cast<float>(point.x()),
                       static_cast<float>(point.y()), 1, 1};
   return session_.Defer(base::BindOnce(
       [](base::WeakPtr<BrowserAdapter> self, KrTabId tab, KrRect anchor) {
-        if (!self || !self->FindTab(tab))
+        if (!self || !self->FindTab(tab)) {
           return;
+        }
         if (const auto* api = self->session_.api();
             api && KR_HAS_SLOT(api, KrShellUI, show_split_options) &&
-            api->show_split_options)
+            api->show_split_options) {
           std::ignore = api->show_split_options(api->self, tab, anchor);
+        }
       },
       weak_factory_.GetWeakPtr(), tab, anchor));
 }
 KrResult BrowserAdapter::MultiPageCommand(const KrMultiPageCommand& command) {
-  if (!MultiPageEnabled())
+  if (!MultiPageEnabled()) {
     return KR_ERR_UNSUPPORTED;
+  }
   if (!KR_HAS_FIELD(&command, KrMultiPageCommand, url) ||
       (!command.url.data && command.url.size) || command.member_count > 4 ||
       (command.member_count &&
        (!command.members || command.member_size < offsetof(KrSplitMember, tab) +
                                                       sizeof(KrTabId))) ||
-      (command.edit && !KR_HAS_FIELD(command.edit, KrSplitEdit, weight)))
+      (command.edit && !KR_HAS_FIELD(command.edit, KrSplitEdit, weight))) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   struct Queued {
     KrMultiPageCommand command;
     std::array<KrSplitMember, 4> members{};
@@ -186,15 +198,17 @@ KrResult BrowserAdapter::MultiPageCommand(const KrMultiPageCommand& command) {
   if (command.member_count) {
     if (command.member_size >
         static_cast<size_t>(std::numeric_limits<std::ptrdiff_t>::max()) /
-            command.member_count)
+            command.member_count) {
       return KR_ERR_INVALID_ARGUMENT;
+    }
     const auto* bytes = reinterpret_cast<const std::byte*>(command.members);
     for (size_t i = 0; i < command.member_count; ++i) {
       size_t size = 0;
       std::memcpy(&size, bytes + i * command.member_size, sizeof(size));
       if (size < offsetof(KrSplitMember, tab) + sizeof(KrTabId) ||
-          size > command.member_size)
+          size > command.member_size) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       std::memcpy(&queued.members[i], bytes + i * command.member_size,
                   std::min(size, sizeof(KrSplitMember)));
       queued.members[i].struct_size = sizeof(KrSplitMember);
@@ -209,15 +223,17 @@ KrResult BrowserAdapter::MultiPageCommand(const KrMultiPageCommand& command) {
   queued.url.assign(command.url.data ? command.url.data : "", command.url.size);
   return session_.Defer(base::BindOnce(
              [](base::WeakPtr<BrowserAdapter> self, Queued queued) {
-               if (!self || !self->MultiPageEnabled())
+               if (!self || !self->MultiPageEnabled()) {
                  return;
+               }
                queued.command.members = queued.members.data();
                queued.command.member_size = sizeof(KrSplitMember);
                queued.command.edit = queued.edit ? &*queued.edit : nullptr;
                queued.command.url = {queued.url.data(), queued.url.size()};
-               if (!self->multi_page_)
+               if (!self->multi_page_) {
                  self->multi_page_ =
                      std::make_unique<MultiPageController>(*self);
+               }
                (void)self->multi_page_->Command(queued.command);
              },
              weak_factory_.GetWeakPtr(), std::move(queued)))
@@ -232,8 +248,9 @@ gfx::Rect Bounds(KrRect rect) {
       gfx::RectF(rect.x, rect.y, rect.width, rect.height));
 }
 MultiPageController* ControllerFor(content::WebContents* contents) {
-  if (!base::FeatureList::IsEnabled(kKryptonMultiPage))
+  if (!base::FeatureList::IsEnabled(kKryptonMultiPage)) {
     return nullptr;
+  }
   auto* tab =
       contents ? tabs::TabInterface::MaybeGetFromContents(contents) : nullptr;
   auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
@@ -284,8 +301,9 @@ class GlanceButton final : public views::ImageButton {
   void UpdateTheme(const NativeBackdrop& theme) {
     if (fill_ == theme.glance_button() &&
         hover_ == theme.glance_button_hover() &&
-        ink_ == theme.glance_button_icon())
+        ink_ == theme.glance_button_icon()) {
       return;
+    }
     fill_ = theme.glance_button();
     hover_ = theme.glance_button_hover();
     ink_ = theme.glance_button_icon();
@@ -353,8 +371,9 @@ class GlanceControlsView final : public views::View {
     SetVisible(false);
   }
   void UpdateTheme(const NativeBackdrop& theme) {
-    for (const auto& child : children())
+    for (const auto& child : children()) {
       static_cast<GlanceButton*>(child.get())->UpdateTheme(theme);
+    }
     if (shadow_color_ != theme.glance_button_shadow()) {
       shadow_color_ = theme.glance_button_shadow();
       shadow_looper_ = gfx::CreateShadowDrawLooper({gfx::ShadowValue(
@@ -364,8 +383,9 @@ class GlanceControlsView final : public views::View {
   }
   void SetSide(bool left) { metrics_.glance_controls_on_left = left; }
   void AnimateEntrance() {
-    if (!RichGlanceMotion(*this))
+    if (!RichGlanceMotion(*this)) {
       return;
+    }
     auto* animator = layer()->GetAnimator();
     animator->StopAnimating();
     layer()->SetOpacity(0);
@@ -405,8 +425,9 @@ class GlanceControlsView final : public views::View {
   }
   void VisibilityChanged(views::View* starting_from, bool visible) override {
     views::View::VisibilityChanged(starting_from, visible);
-    if (!visible)
+    if (!visible) {
       return;
+    }
     auto* animator = layer()->GetAnimator();
     animator->StopAnimating();
     layer()->SetOpacity(1);
@@ -444,8 +465,9 @@ class GlanceBackdrop final : public views::View {
       shadow_looper_ = gfx::CreateShadowDrawLooper({gfx::ShadowValue(
           gfx::Vector2d(0, base::ClampRound(offset_)), blur_, shadow_)});
     }
-    if (card_ == card && radius_ == radius && !dirty_)
+    if (card_ == card && radius_ == radius && !dirty_) {
       return;
+    }
     card_ = card;
     radius_ = radius;
     dirty_ = false;
@@ -456,21 +478,25 @@ class GlanceBackdrop final : public views::View {
     SchedulePaint();
   }
   bool OnMousePressed(const ui::MouseEvent& event) override {
-    if (!event.IsOnlyLeftMouseButton())
+    if (!event.IsOnlyLeftMouseButton()) {
       return true;
-    if (!card_.Contains(event.location()))
+    }
+    if (!card_.Contains(event.location())) {
       close_.Run();
+    }
     return true;
   }
   void OnGestureEvent(ui::GestureEvent* event) override {
     if (event->type() == ui::EventType::kGestureTap &&
-        !card_.Contains(event->location()))
+        !card_.Contains(event->location())) {
       close_.Run();
+    }
     event->SetHandled();
   }
   void OnPaint(gfx::Canvas* canvas) override {
-    if (!SkColorGetA(shadow_))
+    if (!SkColorGetA(shadow_)) {
       return;
+    }
     cc::PaintFlags flags;
     flags.setAntiAlias(true);
     // Paint only the shadow. The live card can move away during its genie
@@ -514,8 +540,9 @@ float LargestRadius(const ui::Layer& layer) {
   float radius = std::max({radii.upper_left(), radii.upper_right(),
                            radii.lower_right(), radii.lower_left()});
   for (const ui::Layer* child : layer.children()) {
-    if (child->GetTargetVisibility())
+    if (child->GetTargetVisibility()) {
       radius = std::max(radius, LargestRadius(*child));
+    }
   }
   return radius;
 }
@@ -540,11 +567,13 @@ std::unique_ptr<ui::Layer> StripTree(ui::Layer& source, bool corners) {
   } else {
     layer = source.Mirror();
   }
-  if (!corners)
+  if (!corners) {
     layer->SetRoundedCornerRadius({});
+  }
   for (ui::Layer* child : source.children()) {
-    if (child->GetTargetVisibility())
+    if (child->GetTargetVisibility()) {
       layer->Add(StripTree(*child, corners).release());
+    }
   }
   return layer;
 }
@@ -610,8 +639,9 @@ class GlanceGenie final : public ui::CompositorAnimationObserver,
   static std::unique_ptr<GlanceGenie> Create(views::View& card,
                                              const Spec& spec) {
     ui::Layer* layer = card.layer();
-    if (!layer || !layer->GetCompositor() || layer->bounds().IsEmpty())
+    if (!layer || !layer->GetCompositor() || layer->bounds().IsEmpty()) {
       return nullptr;
+    }
     return base::WrapUnique(new GlanceGenie(card, spec));
   }
   GlanceGenie(const GlanceGenie&) = delete;
@@ -627,13 +657,15 @@ class GlanceGenie final : public ui::CompositorAnimationObserver,
 
   // Ends in the final state at once and runs the completion.
   void Finish() {
-    if (finished_)
+    if (finished_) {
       return;
+    }
     finished_ = true;
     // A closed card stays hidden until its page closes.
     Detach(spec_.opening);
-    if (done_)
+    if (done_) {
       std::move(done_).Run();
+    }
   }
 
  private:
@@ -695,18 +727,21 @@ class GlanceGenie final : public ui::CompositorAnimationObserver,
 
   // ui::CompositorAnimationObserver:
   void OnAnimationStep(base::TimeTicks timestamp) override {
-    if (finished_)
+    if (finished_) {
       return;
-    if (start_.is_null())
+    }
+    if (start_.is_null()) {
       start_ = timestamp;
+    }
     const float progress =
         spec_.duration.is_positive()
             ? static_cast<float>(
                   std::clamp((timestamp - start_) / spec_.duration, 0.0, 1.0))
             : 1.0f;
     Apply(spec_.opening ? 1 - progress : progress);
-    if (progress < 1)
+    if (progress < 1) {
       return;
+    }
     compositor_->RemoveAnimationObserver(this);
     observing_ = false;
     // Tear the strips down after this frame's step, not inside it.
@@ -736,23 +771,26 @@ class GlanceGenie final : public ui::CompositorAnimationObserver,
   void Apply(float closing) {
     const float share = std::clamp(spec_.stretch_share, 0.0f, 1.0f);
     float stretch = 1, squash = 0;
-    if (closing < share)
+    if (closing < share) {
       stretch = closing / share;
-    else if (share < 1)
+    } else if (share < 1) {
       squash = (closing - share) / (1 - share);
+    }
     for (auto& strip : strips_) {
       const gfx::RectF band(strip.band);
       const std::array<gfx::PointF, 4> corners = {
           band.origin(), band.top_right(), band.bottom_right(),
           band.bottom_left()};
       std::array<gfx::PointF, 4> quad;
-      for (size_t i = 0; i < corners.size(); ++i)
+      for (size_t i = 0; i < corners.size(); ++i) {
         quad[i] = Warp(corners[i], stretch, squash) - band.OffsetFromOrigin();
+      }
       // A strip wholly past the source is clipped away; skip drawing it.
       const bool visible = band.y() + squash * distance_ < height_;
       strip.clip->SetVisible(visible);
-      if (visible)
+      if (visible) {
         strip.clip->SetTransform(RectToQuad(band.width(), band.height(), quad));
+      }
     }
   }
 
@@ -768,15 +806,18 @@ class GlanceGenie final : public ui::CompositorAnimationObserver,
   }
 
   void Detach(bool show_card) {
-    if (compositor_ && observing_)
+    if (compositor_ && observing_) {
       compositor_->RemoveAnimationObserver(this);
+    }
     observing_ = false;
     observation_.Reset();
     if (card_) {
-      if (root_)
+      if (root_) {
         card_->RemoveLayerFromRegions(root_.get());
-      if (show_card && card_->layer())
+      }
+      if (show_card && card_->layer()) {
         card_->layer()->SetOpacity(1);
+      }
       card_ = nullptr;
     }
     strips_.clear();
@@ -811,8 +852,9 @@ class GlanceToolbarView final : public views::View {
  protected:
   void VisibilityChanged(views::View* starting_from, bool visible) override {
     views::View::VisibilityChanged(starting_from, visible);
-    if (!visible || !gfx::Animation::ShouldRenderRichAnimation())
+    if (!visible || !gfx::Animation::ShouldRenderRichAnimation()) {
       return;
+    }
     // Applied after the final page-container bounds. Only this native chrome
     // layer's opacity changes on animation ticks; WebContents is never resized.
     layer()->GetAnimator()->StopAnimating();
@@ -840,16 +882,18 @@ class PaneDragHandle final : public views::View {
   }
   ~PaneDragHandle() override { Cancel(); }
   void Style(SkColor color, float stroke, float gap) {
-    if (color_ == color && stroke_ == stroke && gap_ == gap)
+    if (color_ == color && stroke_ == stroke && gap_ == gap) {
       return;
+    }
     color_ = color;
     stroke_ = stroke;
     gap_ = gap;
     SchedulePaint();
   }
   void SetIdentity(KrTabId tab, KrSplitGroupId group, uint64_t revision) {
-    if (tab_ != tab || group_ != group || revision_ != revision)
+    if (tab_ != tab || group_ != group || revision_ != revision) {
       Cancel();
+    }
     tab_ = tab;
     group_ = group;
     revision_ = revision;
@@ -857,8 +901,9 @@ class PaneDragHandle final : public views::View {
   bool pressed() const { return pressed_; }
   bool OnMousePressed(const ui::MouseEvent& event) override {
     if (!event.IsOnlyLeftMouseButton() || event.IsControlDown() ||
-        event.IsAltDown() || event.IsShiftDown())
+        event.IsAltDown() || event.IsShiftDown()) {
       return false;
+    }
     Cancel();
     start_ = event.location();
     pressed_ = true;
@@ -866,8 +911,9 @@ class PaneDragHandle final : public views::View {
     return true;
   }
   bool OnMouseDragged(const ui::MouseEvent& event) override {
-    if (!pressed_)
+    if (!pressed_) {
       return false;
+    }
     if (!event.IsOnlyLeftMouseButton() || event.IsControlDown() ||
         event.IsAltDown() || event.IsShiftDown()) {
       Cancel();
@@ -907,26 +953,30 @@ class PaneDragHandle final : public views::View {
  protected:
   void VisibilityChanged(views::View* starting_from, bool visible) override {
     views::View::VisibilityChanged(starting_from, visible);
-    if (!IsDrawn())
+    if (!IsDrawn()) {
       Cancel();
+    }
   }
   void OnPaint(gfx::Canvas* canvas) override {
     cc::PaintFlags flags;
     flags.setAntiAlias(true);
     flags.setColor(color_);
     const auto center = gfx::RectF(GetLocalBounds()).CenterPoint();
-    for (int row = -1; row <= 1; ++row)
-      for (int column = 0; column < 2; ++column)
+    for (int row = -1; row <= 1; ++row) {
+      for (int column = 0; column < 2; ++column) {
         canvas->DrawCircle(
             {center.x() + (column - 0.5f) * gap_, center.y() + row * gap_},
             stroke_ / 2, flags);
+      }
+    }
   }
 
  private:
   void Cancel() {
     pressed_ = dragging_ = false;
-    if (owner_)
+    if (owner_) {
       owner_->CancelPaneDrag(tab_, group_, revision_);
+    }
   }
   base::WeakPtr<MultiPageController> owner_;
   KrTabId tab_ = 0;
@@ -991,8 +1041,9 @@ class PaneHeader final : public views::View {
   void OnMouseEntered(const ui::MouseEvent&) override { Reveal(true); }
   void OnMouseExited(const ui::MouseEvent&) override {
     const auto* focus = GetFocusManager();
-    if (!drag_->pressed() && !(focus && Contains(focus->GetFocusedView())))
+    if (!drag_->pressed() && !(focus && Contains(focus->GetFocusedView()))) {
       Reveal(false);
+    }
   }
 
  private:
@@ -1004,8 +1055,9 @@ class PaneHeader final : public views::View {
     layer()->SetOpacity(reveal ? 1.f : 0.f);
   }
   void Expand() {
-    if (owner_)
+    if (owner_) {
       owner_->ExpandPane(tab_, group_, revision_);
+    }
   }
   base::WeakPtr<MultiPageController> owner_;
   raw_ptr<PaneDragHandle> drag_ = nullptr;
@@ -1033,8 +1085,9 @@ class PaneDivider final : public views::View {
               bool rtl,
               KrSplitGroupId group,
               uint64_t revision) {
-    if (dragging_ && (group != group_ || revision != revision_))
+    if (dragging_ && (group != group_ || revision != revision_)) {
       dragging_ = false;
+    }
     bounds_ = bounds;
     rtl_ = rtl;
     if (!dragging_) {
@@ -1043,8 +1096,9 @@ class PaneDivider final : public views::View {
     }
   }
   bool OnMousePressed(const ui::MouseEvent& event) override {
-    if (!event.IsOnlyLeftMouseButton())
+    if (!event.IsOnlyLeftMouseButton()) {
       return false;
+    }
     RequestFocus();
     dragging_ = true;
     resized_ = false;
@@ -1057,8 +1111,9 @@ class PaneDivider final : public views::View {
     (void)Resize(event, true);
   }
   void OnMouseCaptureLost() override {
-    if (!std::exchange(dragging_, false) || !resized_ || !owner_)
+    if (!std::exchange(dragging_, false) || !resized_ || !owner_) {
       return;
+    }
     // Losing capture completes the gesture too (for example on Alt+Tab).
     // Persist its last accepted weight even if layout is still coalesced.
     (void)owner_->ResizeDivider(index_, pending_weight_, true, group_,
@@ -1074,50 +1129,59 @@ class PaneDivider final : public views::View {
         event.key_code() == (bounds_.horizontal ? ui::VKEY_UP : ui::VKEY_LEFT);
     const bool increase = event.key_code() ==
                           (bounds_.horizontal ? ui::VKEY_DOWN : ui::VKEY_RIGHT);
-    if ((!decrease && !increase) || !owner_)
+    if ((!decrease && !increase) || !owner_) {
       return false;
+    }
     const auto& available = bounds_.available;
     const float extent = bounds_.horizontal
                              ? available.height - bounds_.bounds.height
                              : available.width - bounds_.bounds.width;
-    if (extent <= 0)
+    if (extent <= 0) {
       return true;
+    }
     float weight = bounds_.horizontal
                        ? (bounds_.bounds.y - available.y) / extent
                        : (bounds_.bounds.x - available.x) / extent;
     weight += increase ? 0.02f : -0.02f;
-    if (rtl_ && !bounds_.horizontal)
+    if (rtl_ && !bounds_.horizontal) {
       weight = 1 - weight;
+    }
     const auto revision =
         owner_->ResizeDivider(index_, weight, true, group_, revision_);
-    if (revision)
+    if (revision) {
       revision_ = *revision;
+    }
     return revision.has_value();
   }
 
  private:
   bool Resize(const ui::MouseEvent& event, bool complete) {
-    if (!owner_ || !parent())
+    if (!owner_ || !parent()) {
       return false;
+    }
     auto point = event.location();
     views::View::ConvertPointToTarget(this, parent(), &point);
     const auto& available = bounds_.available;
     const float extent = bounds_.horizontal
                              ? available.height - bounds_.bounds.height
                              : available.width - bounds_.bounds.width;
-    if (extent <= 0)
+    if (extent <= 0) {
       return false;
+    }
     float weight = (bounds_.horizontal ? point.y() - available.y
                                        : point.x() - available.x) /
                    extent;
-    if (rtl_ && !bounds_.horizontal)
+    if (rtl_ && !bounds_.horizontal) {
       weight = 1 - weight;
-    if (!dragging_)
+    }
+    if (!dragging_) {
       return false;
+    }
     const auto revision =
         owner_->ResizeDivider(index_, weight, complete, group_, revision_);
-    if (revision)
+    if (revision) {
       revision_ = *revision;
+    }
     dragging_ = revision.has_value() && !complete;
     if (revision) {
       pending_weight_ = weight;
@@ -1181,16 +1245,18 @@ class PaneOutline final : public views::View {
     }
   }
   void Update(SkColor color, float width, float radius) {
-    if (color == color_ && width == width_ && radius == radius_)
+    if (color == color_ && width == width_ && radius == radius_) {
       return;
+    }
     color_ = color;
     width_ = width;
     radius_ = radius;
     SchedulePaint();
   }
   void OnPaint(gfx::Canvas* canvas) override {
-    if (!SkColorGetA(color_) || width_ <= 0)
+    if (!SkColorGetA(color_) || width_ <= 0) {
       return;
+    }
     cc::PaintFlags flags;
     flags.setAntiAlias(true);
     flags.setStyle(cc::PaintFlags::kStroke_Style);
@@ -1214,10 +1280,12 @@ BEGIN_METADATA(PaneOutline)
 END_METADATA
 
 MultiPageController::Group::Group() {
-  for (auto& member : members)
+  for (auto& member : members) {
     member.struct_size = sizeof(member);
-  for (auto& weight : weights)
+  }
+  for (auto& weight : weights) {
     weight = {sizeof(weight), 0.5f};
+  }
 }
 KrSplitGroup MultiPageController::Group::Record() {
   return {sizeof(KrSplitGroup),
@@ -1256,14 +1324,17 @@ MultiPageController::MultiPageController(BrowserAdapter& owner)
   for (size_t i = 0; i < 2; ++i) {
     containers_[i] = view_->GetKryptonNativeContainer(i);
     if (auto* contents = containers_[i]->contents_view()->web_contents()) {
-      if (auto* tab = tabs::TabInterface::MaybeGetFromContents(contents))
+      if (auto* tab = tabs::TabInterface::MaybeGetFromContents(contents)) {
         bound_tabs_[i] = BrowserAdapter::Identity(*tab);
+      }
     }
   }
-  for (auto& pane : pane_bounds_)
+  for (auto& pane : pane_bounds_) {
     pane.struct_size = sizeof(pane);
-  for (auto& divider : divider_bounds_)
+  }
+  for (auto& divider : divider_bounds_) {
     divider.struct_size = sizeof(divider);
+  }
 }
 MultiPageController::~MultiPageController() {
   ClearPaneDrag();
@@ -1282,30 +1353,36 @@ tabs::TabInterface* MultiPageController::Tab(KrTabId id) const {
 }
 MultiPageController::Group* MultiPageController::GroupFor(KrTabId tab) {
   const auto member = membership_.find(tab);
-  if (member == membership_.end())
+  if (member == membership_.end()) {
     return nullptr;
+  }
   const auto found = groups_.find(member->second);
   return found == groups_.end() ? nullptr : &found->second;
 }
 std::optional<MultiPageController::GroupInfo> MultiPageController::Describe(
     KrTabId tab) const {
   const auto member = membership_.find(tab);
-  if (member == membership_.end())
+  if (member == membership_.end()) {
     return std::nullopt;
+  }
   const auto found = groups_.find(member->second);
-  if (found == groups_.end())
+  if (found == groups_.end()) {
     return std::nullopt;
+  }
   const auto& group = found->second;
-  for (size_t i = 0; i < group.count; ++i)
-    if (group.members[i].tab == tab)
+  for (size_t i = 0; i < group.count; ++i) {
+    if (group.members[i].tab == tab) {
       return GroupInfo{group.id,     group.space, group.revision,
                        group.layout, group.count, i};
+    }
+  }
   return std::nullopt;
 }
 ContentsContainerView* MultiPageController::EnsureContainer(size_t index) {
   CHECK_LT(index, containers_.size());
-  if (!containers_[index])
+  if (!containers_[index]) {
     containers_[index] = view_->AddKryptonContentsContainer();
+  }
   return containers_[index];
 }
 ContentsContainerView* MultiPageController::ActiveContainer() const {
@@ -1314,8 +1391,9 @@ ContentsContainerView* MultiPageController::ActiveContainer() const {
 ContentsContainerView* MultiPageController::InactiveContainer() const {
   for (size_t i = 0; i < containers_.size(); ++i) {
     if (i != selected_container_ && containers_[i] &&
-        containers_[i]->GetVisible())
+        containers_[i]->GetVisible()) {
       return containers_[i];
+    }
   }
   return containers_[selected_container_ == 0 ? 1 : 0];
 }
@@ -1323,19 +1401,22 @@ ContentsContainerView* MultiPageController::InactiveContainer() const {
 KrResult MultiPageController::CreateGroup(std::span<const KrTabId> selected,
                                           KrSplitLayout layout,
                                           KrTabId active) {
-  if (selected.size() < 2 || selected.size() > 4)
+  if (selected.size() < 2 || selected.size() > 4) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   if (layout < KR_SPLIT_COLUMNS || layout > KR_SPLIT_MAIN_BOTTOM ||
-      (layout > KR_SPLIT_GRID && !HasSnapLayouts()))
+      (layout > KR_SPLIT_GRID && !HasSnapLayouts())) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   const auto* api = owner_->session_.api();
   auto* model = owner_->browser_->GetTabStripModel();
   std::array<KrTab, 4> sources{};
   std::array<KrSplitCopyMember, 4> copies{};
   for (size_t i = 0; i < selected.size(); ++i) {
     auto* tab = Tab(selected[i]);
-    if (!tab || IsTransientGlance(tab->GetContents()))
+    if (!tab || IsTransientGlance(tab->GetContents())) {
       return KR_ERR_INVALID_ARGUMENT;
+    }
     const auto flags =
         (tab->IsPinned() ? KR_TAB_PINNED : 0) |
         (EssentialForTab(tab->GetContents()) ? KR_TAB_FAVORITE : 0);
@@ -1350,8 +1431,9 @@ KrResult MultiPageController::CreateGroup(std::span<const KrTabId> selected,
                                    owner_->active_space_};
   KrSplitCopyPlan copy_plan{sizeof(KrSplitCopyPlan), copies.data(),
                             copies.size(), sizeof(KrSplitCopyMember), false};
-  if (api->plan_split_copies(api->self, &request, &copy_plan) != KR_OK)
+  if (api->plan_split_copies(api->self, &request, &copy_plan) != KR_OK) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   Group group;
   group.count = 4;  // output capacity; MakeSplit supplies actual count
   std::array<KrSplitMember, 4> members{};
@@ -1361,8 +1443,9 @@ KrResult MultiPageController::CreateGroup(std::span<const KrTabId> selected,
     if (copies[i].copy) {
       auto* copied =
           chrome::DuplicateTabAt(&*owner_->browser_, model->GetIndexOfTab(tab));
-      if (!copied)
+      if (!copied) {
         return KR_ERR_PLATFORM;
+      }
       tab = tabs::TabInterface::GetFromContents(copied);
       owner_->AssignEssential(*tab, 0);
       owner_->AssignWorkspace(*tab, owner_->active_space_);
@@ -1373,25 +1456,31 @@ KrResult MultiPageController::CreateGroup(std::span<const KrTabId> selected,
     // the same tab. Unsplit the native collection without recreating either
     // WebContents before adopting a member into the custom layout.
     if (const auto native_split =
-            model->GetSplitForTab(model->GetIndexOfTab(tab)))
+            model->GetSplitForTab(model->GetIndexOfTab(tab))) {
       model->RemoveSplit(*native_split);
+    }
     const auto id = BrowserAdapter::Identity(*tab);
     if (auto* previous = GroupFor(id)) {
       const auto result =
           EditGroup(previous->id,
                     {sizeof(KrSplitEdit), KR_SPLIT_DETACH, previous->revision,
                      id, previous->space, 0, previous->layout, 0.5f});
-      if (result != KR_OK)
+      if (result != KR_OK) {
         return result;
+      }
     }
     members[i] = {sizeof(KrSplitMember), id};
-    if (selected[i] == active)
+    if (selected[i] == active) {
       active_member = id;
+    }
   }
-  if (!active_member)
+  if (!active_member) {
     active_member = members[0].tab;
-  if (!next_group_ || next_group_ == std::numeric_limits<KrSplitGroupId>::max())
+  }
+  if (!next_group_ ||
+      next_group_ == std::numeric_limits<KrSplitGroupId>::max()) {
     return KR_ERR_PLATFORM;
+  }
   const KrSplitCreateRequest create{sizeof(KrSplitCreateRequest),
                                     next_group_++,
                                     owner_->active_space_,
@@ -1401,13 +1490,15 @@ KrResult MultiPageController::CreateGroup(std::span<const KrTabId> selected,
                                     active_member,
                                     layout};
   auto output = group.Record();
-  if (api->make_split(api->self, &create, &output) != KR_OK)
+  if (api->make_split(api->self, &create, &output) != KR_OK) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   group.Adopt(output);
   const auto id = group.id;
   groups_.insert_or_assign(id, group);
-  for (size_t i = 0; i < group.count; ++i)
+  for (size_t i = 0; i < group.count; ++i) {
     membership_.insert_or_assign(group.members[i].tab, id);
+  }
   auto& stored = groups_.at(id);
   Publish(stored);
   Persist(stored);
@@ -1421,15 +1512,17 @@ KrResult MultiPageController::EditGroup(KrSplitGroupId id,
                                         const KrSplitEdit& edit,
                                         bool persist) {
   const auto found = groups_.find(id);
-  if (found == groups_.end())
+  if (found == groups_.end()) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   const auto* api = owner_->session_.api();
   auto input = found->second.Record();
   Group next;
   next.count = 4;
   auto output = next.Record();
-  if (api->reduce_split(api->self, &input, &edit, &output) != KR_OK)
+  if (api->reduce_split(api->self, &input, &edit, &output) != KR_OK) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   next.Adopt(output);
   if (!next.id) {
     Dissolve(id);
@@ -1445,23 +1538,27 @@ KrResult MultiPageController::EditGroup(KrSplitGroupId id,
         if (auto* removed = Tab(tab)) {
           SetSplitSessionForTab(removed->GetContents(), std::nullopt);
           if (auto* service = SessionServiceFactory::GetForProfile(
-                  owner_->browser_->GetProfile()))
+                  owner_->browser_->GetProfile())) {
             service->AddTabExtraData(
                 owner_->browser_->GetSessionID(),
                 sessions::SessionTabHelper::IdForTab(removed->GetContents()),
                 kSplitSessionKey, "");
+          }
         }
       }
     }
-    for (size_t i = 0; i < next.count; ++i)
+    for (size_t i = 0; i < next.count; ++i) {
       membership_.insert_or_assign(next.members[i].tab, id);
+    }
     groups_.at(id) = next;
     Publish(groups_.at(id));
-    if (persist)
+    if (persist) {
       Persist(groups_.at(id));
+    }
   }
-  if (auto* selected = owner_->browser_->GetActiveTabInterface())
+  if (auto* selected = owner_->browser_->GetActiveTabInterface()) {
     (void)PrepareSelection(selected->GetContents());
+  }
   ScheduleLayout();
   return KR_OK;
 }
@@ -1475,25 +1572,29 @@ void MultiPageController::Persist(Group& group) {
       SessionServiceFactory::GetForProfile(owner_->browser_->GetProfile());
   for (size_t i = 0; i < group.count; ++i) {
     auto* tab = Tab(group.members[i].tab);
-    if (!tab)
+    if (!tab) {
       continue;
+    }
     SplitSessionData data{group.id, base::checked_cast<uint32_t>(group.count),
                           base::checked_cast<uint32_t>(i),
                           static_cast<uint32_t>(group.layout)};
-    for (size_t j = 0; j < 3; ++j)
+    for (size_t j = 0; j < 3; ++j) {
       data.weights[j] = group.weights[j].value;
+    }
     SetSplitSessionForTab(tab->GetContents(), data);
     const auto session_id =
         sessions::SessionTabHelper::IdForTab(tab->GetContents());
-    if (service && session_id.is_valid())
+    if (service && session_id.is_valid()) {
       service->AddTabExtraData(owner_->browser_->GetSessionID(), session_id,
                                kSplitSessionKey, EncodeSplitSessionData(data));
+    }
   }
 }
 void MultiPageController::Dissolve(KrSplitGroupId id) {
   const auto found = groups_.find(id);
-  if (found == groups_.end())
+  if (found == groups_.end()) {
     return;
+  }
   const auto previous = found->second;
   const auto* api = owner_->session_.api();
   CHECK_EQ(api->remove_split_group(api->self, id, previous.revision), KR_OK);
@@ -1503,25 +1604,28 @@ void MultiPageController::Dissolve(KrSplitGroupId id) {
     if (auto* tab = Tab(member)) {
       SetSplitSessionForTab(tab->GetContents(), std::nullopt);
       if (auto* service = SessionServiceFactory::GetForProfile(
-              owner_->browser_->GetProfile()))
+              owner_->browser_->GetProfile())) {
         service->AddTabExtraData(
             owner_->browser_->GetSessionID(),
             sessions::SessionTabHelper::IdForTab(tab->GetContents()),
             kSplitSessionKey, "");
+      }
     }
   }
   groups_.erase(id);
 }
 
 void MultiPageController::ScheduleLayout() {
-  if (layout_scheduled_)
+  if (layout_scheduled_) {
     return;
+  }
   layout_scheduled_ = true;
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(
                      [](base::WeakPtr<MultiPageController> self) {
-                       if (!self)
+                       if (!self) {
                          return;
+                       }
                        self->layout_scheduled_ = false;
                        self->view_->InvalidateLayout();
                      },
@@ -1530,8 +1634,9 @@ void MultiPageController::ScheduleLayout() {
 
 void MultiPageController::ReleaseHidden() {
   for (size_t i = 0; i < containers_.size(); ++i) {
-    if (!containers_[i] || !bound_tabs_[i])
+    if (!containers_[i] || !bound_tabs_[i]) {
       continue;
+    }
     const auto id = bound_tabs_[i];
     bool keep = glance_.phase != KR_GLANCE_CLOSED &&
                 (id == glance_.parent || id == glance_.child);
@@ -1542,12 +1647,14 @@ void MultiPageController::ReleaseHidden() {
     }
     // Promotion reparents the same WebContents into an ordinary pane. Release
     // its transient WebView first, even when it is now a member of visible_.
-    if (i == 4 && glance_.phase == KR_GLANCE_CLOSED)
+    if (i == 4 && glance_.phase == KR_GLANCE_CLOSED) {
       keep = false;
+    }
     // A newly activated Glance child may still occupy a stock WebView.
     // Release it before attaching its dedicated transient container.
-    if (glance_.phase != KR_GLANCE_CLOSED && id == glance_.child && i != 4)
+    if (glance_.phase != KR_GLANCE_CLOSED && id == glance_.child && i != 4) {
       keep = false;
+    }
     if (!keep) {
       if (i == 4 && containers_[i]->layer()) {
         containers_[i]->contents_view()->SetFastResize(
@@ -1556,8 +1663,9 @@ void MultiPageController::ReleaseHidden() {
         containers_[i]->SetTransform(gfx::Transform());
         containers_[i]->layer()->SetOpacity(1);
       }
-      if (dimmed_parent_ == containers_[i])
+      if (dimmed_parent_ == containers_[i]) {
         UpdateGlanceParent(nullptr, {}, false);
+      }
       containers_[i]->contents_view()->SetWebContents(nullptr);
       containers_[i]->SetVisible(false);
       bound_tabs_[i] = 0;
@@ -1573,8 +1681,9 @@ void MultiPageController::BindVisible(tabs::TabInterface* selected) {
   // from the real owners before releasing or attaching any page: a second
   // WebView for the same page would register two Reading Mode overlays.
   for (size_t slot = 0; slot < containers_.size(); ++slot) {
-    if (!containers_[slot])
+    if (!containers_[slot]) {
       continue;
+    }
     auto* contents = containers_[slot]->contents_view()->web_contents();
     auto* tab =
         contents ? tabs::TabInterface::MaybeGetFromContents(contents) : nullptr;
@@ -1590,13 +1699,17 @@ void MultiPageController::BindVisible(tabs::TabInterface* selected) {
   for (size_t pane = 0; pane < pane_count_; ++pane) {
     const auto id = group ? group->members[pane].tab : parent;
     size_t slot = 0;
-    for (; slot < 4; ++slot)
-      if (bound_tabs_[slot] == id)
+    for (; slot < 4; ++slot) {
+      if (bound_tabs_[slot] == id) {
         break;
+      }
+    }
     if (slot == 4) {
-      for (slot = 0; slot < 4; ++slot)
-        if (!bound_tabs_[slot])
+      for (slot = 0; slot < 4; ++slot) {
+        if (!bound_tabs_[slot]) {
           break;
+        }
+      }
       CHECK_LT(slot, 4u);
       auto* tab = Tab(id);
       EnsureContainer(slot)->contents_view()->SetWebContents(
@@ -1605,25 +1718,29 @@ void MultiPageController::BindVisible(tabs::TabInterface* selected) {
     }
     pane_containers_[pane] = slot;
     containers_[slot]->SetVisible(Tab(id) != nullptr);
-    if (id == selected_id)
+    if (id == selected_id) {
       selected_container_ = slot;
+    }
   }
   if (glance_.phase != KR_GLANCE_CLOSED) {
     auto* child = Tab(glance_.child);
     CHECK(child);
     auto* container = EnsureContainer(4);
-    if (bound_tabs_[4] != glance_.child)
+    if (bound_tabs_[4] != glance_.child) {
       glance_fast_resize_before_ = container->contents_view()->GetFastResize();
-    if (container->contents_view()->web_contents() != child->GetContents())
+    }
+    if (container->contents_view()->web_contents() != child->GetContents()) {
       container->contents_view()->SetWebContents(child->GetContents());
+    }
     bound_tabs_[4] = glance_.child;
     container->SetVisible(true);
     selected_container_ = 4;
   }
   for (size_t i = 0; i < containers_.size(); ++i) {
-    if (containers_[i])
+    if (containers_[i]) {
       containers_[i]->contents_view()->set_is_primary_web_contents_for_window(
           i == selected_container_);
+    }
   }
   owner_->SchedulePageBackgrounds();
   active_ = true;
@@ -1639,8 +1756,9 @@ void MultiPageController::OpenPaneMenu(size_t slot) {
     return;
   }
   Focus(tab->GetContents());
-  if (!tab->IsActivated())
+  if (!tab->IsActivated()) {
     return;
+  }
   pane_menu_leases_[slot].RunAndReset();
   pane_menus_[slot] =
       std::make_unique<MultiPageMenuModel>(*owner_->browser_, *tab);
@@ -1655,20 +1773,23 @@ void MultiPageController::EnsureChrome() {
   }
   if (visible_) {
     for (size_t i = 0; i < visible_->count - 1; ++i) {
-      if (!dividers_[i])
+      if (!dividers_[i]) {
         dividers_[i] = view_->AddChildView(
             std::make_unique<PaneDivider>(weak_factory_.GetWeakPtr(), i));
+      }
     }
     for (size_t i = 0; i < pane_count_; ++i) {
       const auto slot = pane_containers_[i];
-      if (pane_controls_[slot])
+      if (pane_controls_[slot]) {
         continue;
+      }
       auto header = std::make_unique<PaneHeader>(
           weak_factory_.GetWeakPtr(),
           base::BindRepeating(
               [](base::WeakPtr<MultiPageController> self, size_t slot) {
-                if (self)
+                if (self) {
                   self->OpenPaneMenu(slot);
+                }
               },
               weak_factory_.GetWeakPtr(), slot));
       pane_controls_[slot] = view_->AddChildView(std::move(header));
@@ -1677,20 +1798,23 @@ void MultiPageController::EnsureChrome() {
   if (glance_.phase != KR_GLANCE_CLOSED && !glance_toolbar_) {
     const auto close = base::BindRepeating(
         [](base::WeakPtr<MultiPageController> self) {
-          if (self)
+          if (self) {
             self->RequestCloseGlance();
+          }
         },
         weak_factory_.GetWeakPtr());
     const auto expand = base::BindRepeating(
         [](base::WeakPtr<MultiPageController> self) {
-          if (self)
+          if (self) {
             self->PromoteGlance(false);
+          }
         },
         weak_factory_.GetWeakPtr());
     const auto split = base::BindRepeating(
         [](base::WeakPtr<MultiPageController> self) {
-          if (self)
+          if (self) {
             self->PromoteGlance(true);
+          }
         },
         weak_factory_.GetWeakPtr());
     if (metrics_.glance_button_size > 0 &&
@@ -1725,18 +1849,20 @@ void MultiPageController::EnsureChrome() {
   if (glance_.phase != KR_GLANCE_CLOSED) {
     if (glance_controls_) {
       for (size_t i = 0; i < containers_.size(); ++i) {
-        if (!containers_[i] || (bound_tabs_[i] != glance_.parent && i != 4))
+        if (!containers_[i] || (bound_tabs_[i] != glance_.parent && i != 4)) {
           continue;
+        }
         if (!containers_[i]->layer()) {
           containers_[i]->SetPaintToLayer();
           containers_[i]->layer()->SetFillsBoundsOpaquely(false);
         }
       }
     }
-    if (glance_backdrop_)
+    if (glance_backdrop_) {
       view_->ReorderChildView(
           glance_backdrop_,
           base::checked_cast<int>(view_->children().size() - 1));
+    }
     view_->ReorderChildView(
         containers_[4], base::checked_cast<int>(view_->children().size() - 1));
     view_->ReorderChildView(
@@ -1744,20 +1870,23 @@ void MultiPageController::EnsureChrome() {
   }
 }
 bool MultiPageController::PrepareSelection(content::WebContents* contents) {
-  if (binding_ || !contents)
+  if (binding_ || !contents) {
     return active_;
+  }
   pending_focus_ = 0;
   pending_focus_contents_.reset();
   auto* selected = tabs::TabInterface::MaybeGetFromContents(contents);
-  if (!selected)
+  if (!selected) {
     return false;
+  }
   // Browser::OnActiveTabChanged runs before BrowserAdapter receives the
   // removal notification. Closing the active preview has already detached
   // its TabInterface at this point. Retire the transient identity before
   // BindVisible can try to attach that missing child again. Removed is
   // idempotent; the later observer notification still releases normal tabs.
-  if (glance_.phase != KR_GLANCE_CLOSED && !Tab(glance_.child))
+  if (glance_.phase != KR_GLANCE_CLOSED && !Tab(glance_.child)) {
     Removed(glance_.child);
+  }
   const auto id = BrowserAdapter::Identity(*selected);
   if (opening_parent_ && IsTransientGlance(contents) &&
       glance_.phase == KR_GLANCE_CLOSED) {
@@ -1779,25 +1908,33 @@ bool MultiPageController::PrepareSelection(content::WebContents* contents) {
                           : id;
   auto* group = GroupFor(parent);
   if (!group && glance_.phase == KR_GLANCE_CLOSED) {
-    if (!active_)
+    if (!active_) {
       return false;
+    }
     const base::AutoReset<bool> binding(&binding_, true);
     ClearPaneDrag();
     visible_.reset();
     ReleaseHidden();
     // Native single-page layout does not manage our lazily added chrome.
-    if (glance_toolbar_)
+    if (glance_toolbar_) {
       glance_toolbar_->SetVisible(false);
-    if (glance_backdrop_)
+    }
+    if (glance_backdrop_) {
       glance_backdrop_->SetVisible(false);
-    if (outline_)
+    }
+    if (outline_) {
       outline_->SetVisible(false);
-    for (const auto& divider : dividers_)
-      if (divider)
+    }
+    for (const auto& divider : dividers_) {
+      if (divider) {
         divider->SetVisible(false);
-    for (const auto& control : pane_controls_)
-      if (control)
+      }
+    }
+    for (const auto& control : pane_controls_) {
+      if (control) {
         control->SetVisible(false);
+      }
+    }
     active_ = false;
     EnsureContainer(0)->SetVisible(true);
     view_->SetActiveIndex(0);
@@ -1807,11 +1944,13 @@ bool MultiPageController::PrepareSelection(content::WebContents* contents) {
     // later removal/replacement of that old tab hide or overwrite a new page.
     bound_tabs_.fill(0);
     selected_container_ = 0;
-    for (size_t slot = 0; slot < containers_.size(); ++slot)
-      if (containers_[slot])
+    for (size_t slot = 0; slot < containers_.size(); ++slot) {
+      if (containers_[slot]) {
         containers_[slot]
             ->contents_view()
             ->set_is_primary_web_contents_for_window(slot == 0);
+      }
+    }
     ScheduleLayout();
     return false;
   }
@@ -1835,68 +1974,82 @@ bool MultiPageController::PrepareSelection(content::WebContents* contents) {
   return true;
 }
 void MultiPageController::Focus(content::WebContents* contents) {
-  if (!active_ || binding_ || !contents)
+  if (!active_ || binding_ || !contents) {
     return;
+  }
   auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
-  if (!tab || tab->GetBrowserWindowInterface() != &*owner_->browser_)
+  if (!tab || tab->GetBrowserWindowInterface() != &*owner_->browser_) {
     return;
-  if (tab == owner_->browser_->GetActiveTabInterface())
+  }
+  if (tab == owner_->browser_->GetActiveTabInterface()) {
     return;
+  }
   const auto id = BrowserAdapter::Identity(*tab);
   if (glance_.phase != KR_GLANCE_CLOSED && id == glance_.parent) {
-    if (auto* child = Tab(glance_.child))
+    if (auto* child = Tab(glance_.child)) {
       child->GetContents()->Focus();
+    }
     return;
   }
   const auto weak = weak_factory_.GetWeakPtr();
   owner_->Activate(id);
-  if (!weak || glance_.phase == KR_GLANCE_CLOSED)
+  if (!weak || glance_.phase == KR_GLANCE_CLOSED) {
     return;
+  }
   const auto* active = owner_->browser_->GetActiveTabInterface();
   if (!active || BrowserAdapter::Identity(*active) != id) {
     // The unload guard rejected this focus departure. Keep native keyboard
     // focus aligned with Chromium's still-active preview while it confirms.
-    if (auto* child = Tab(glance_.child))
+    if (auto* child = Tab(glance_.child)) {
       child->GetContents()->Focus();
+    }
   }
 }
 void MultiPageController::ScheduleFocus(content::WebContents* contents) {
-  if (!active_ || binding_ || !contents)
+  if (!active_ || binding_ || !contents) {
     return;
+  }
   auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
   auto* active = owner_->browser_->GetActiveTabInterface();
-  if (!tab || !active || tab->GetBrowserWindowInterface() != &*owner_->browser_)
+  if (!tab || !active ||
+      tab->GetBrowserWindowInterface() != &*owner_->browser_) {
     return;
+  }
   // RestoreFocus synchronously notifies us while selection is still guarded.
   // It confirms the existing selection and must not activate it a second time.
   pending_focus_ = tab == active ? 0 : BrowserAdapter::Identity(*tab);
   pending_focus_contents_ = pending_focus_ ? contents->GetWeakPtr() : nullptr;
   focus_origin_ = BrowserAdapter::Identity(*active);
-  if (!pending_focus_ || focus_scheduled_)
+  if (!pending_focus_ || focus_scheduled_) {
     return;
+  }
   focus_scheduled_ = true;
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(
           [](base::WeakPtr<MultiPageController> self) {
-            if (!self)
+            if (!self) {
               return;
+            }
             self->focus_scheduled_ = false;
             const auto target = std::exchange(self->pending_focus_, 0);
             auto contents = std::exchange(self->pending_focus_contents_, {});
             auto* active = self->owner_->browser_->GetActiveTabInterface();
             // A later selection supersedes an earlier native focus event.
             if (!target || !contents || !active ||
-                BrowserAdapter::Identity(*active) != self->focus_origin_)
+                BrowserAdapter::Identity(*active) != self->focus_origin_) {
               return;
+            }
             for (size_t slot = 0; slot < self->bound_tabs_.size(); ++slot) {
               if (self->bound_tabs_[slot] != target ||
                   !self->containers_[slot] ||
-                  !self->containers_[slot]->GetVisible())
+                  !self->containers_[slot]->GetVisible()) {
                 continue;
+              }
               if (auto* tab = self->Tab(target);
-                  tab && tab->GetContents() == contents.get())
+                  tab && tab->GetContents() == contents.get()) {
                 self->Focus(tab->GetContents());
+              }
               return;
             }
           },
@@ -1950,9 +2103,11 @@ void MultiPageController::AppendLayout(gfx::Rect available,
   }
   if (glance_.phase != KR_GLANCE_CLOSED && !fullscreen) {
     KrRect parent{};
-    for (size_t i = 0; i < geometry.pane_count; ++i)
-      if (pane_bounds_[i].tab == glance_.parent)
+    for (size_t i = 0; i < geometry.pane_count; ++i) {
+      if (pane_bounds_[i].tab == glance_.parent) {
         parent = pane_bounds_[i].bounds;
+      }
+    }
     KrGlanceGeometry glance_geometry{.struct_size = sizeof(KrGlanceGeometry)};
     const auto glance_layout =
         glance_controls_ ? api->layout_glance_card : api->layout_glance;
@@ -1970,9 +2125,11 @@ void MultiPageController::AppendLayout(gfx::Rect available,
       card.Offset(-backdrop_bounds.x(), -backdrop_bounds.y());
       glance_backdrop_->Update(card, view_->GetBackgroundRadii().upper_left(),
                                owner_->backdrop_->glance_shadow(), metrics_);
-      for (size_t i = 0; i < geometry.pane_count; ++i)
-        if (pane_bounds_[i].tab == glance_.parent)
+      for (size_t i = 0; i < geometry.pane_count; ++i) {
+        if (pane_bounds_[i].tab == glance_.parent) {
           glance_parent = containers_[pane_containers_[i]];
+        }
+      }
       parent_size = backdrop_bounds.size();
       containers_[4]->SetRoundedCorners(view_->GetBackgroundRadii());
     }
@@ -1997,9 +2154,10 @@ void MultiPageController::AppendLayout(gfx::Rect available,
   }
   if (visible_) {
     // Each page in a group is its own rounded card, like a single page.
-    for (size_t pane = 0; pane < geometry.pane_count; ++pane)
+    for (size_t pane = 0; pane < geometry.pane_count; ++pane) {
       containers_[pane_containers_[pane]]->SetRoundedCorners(
           view_->GetBackgroundRadii());
+    }
   }
   if (outline_) {
     // Zen outlines the selected page only; with Glance open, its parent.
@@ -2008,8 +2166,9 @@ void MultiPageController::AppendLayout(gfx::Rect available,
       for (size_t pane = 0; pane < geometry.pane_count; ++pane) {
         if (glance_.phase != KR_GLANCE_CLOSED
                 ? pane_bounds_[pane].tab == glance_.parent
-                : pane_containers_[pane] == selected_container_)
+                : pane_containers_[pane] == selected_container_) {
           focused = pane;
+        }
       }
     }
     gfx::Rect outline;
@@ -2021,8 +2180,9 @@ void MultiPageController::AppendLayout(gfx::Rect available,
     layout.child_layouts.emplace_back(outline_.get(), focused.has_value(),
                                       outline);
   }
-  if (glance_close_animating_)
+  if (glance_close_animating_) {
     glance_parent = nullptr;
+  }
   surface_bounds_ = bounds;
   if (!glance_parent) {
     UpdateGlanceParent(nullptr, {}, false);
@@ -2030,30 +2190,36 @@ void MultiPageController::AppendLayout(gfx::Rect available,
              dimmed_parent_ != glance_parent || dimmed_size_ != parent_size) {
     ScheduleGlancePresentation(glance_parent, parent_size);
   }
-  for (size_t i = 0; i < containers_.size(); ++i)
-    if (containers_[i])
+  for (size_t i = 0; i < containers_.size(); ++i) {
+    if (containers_[i]) {
       layout.child_layouts.emplace_back(containers_[i].get(), visible[i],
                                         bounds[i]);
-  if (glance_backdrop_)
+    }
+  }
+  if (glance_backdrop_) {
     layout.child_layouts.emplace_back(glance_backdrop_.get(), show_toolbar,
                                       backdrop_bounds);
-  if (glance_toolbar_)
+  }
+  if (glance_toolbar_) {
     layout.child_layouts.emplace_back(glance_toolbar_.get(), show_toolbar,
                                       toolbar_bounds);
+  }
   for (size_t i = 0; i < dividers_.size(); ++i) {
     const bool show = i < geometry.divider_count;
     if (dividers_[i]) {
-      if (show)
+      if (show) {
         dividers_[i]->Update(divider_bounds_[i], base::i18n::IsRTL(),
                              visible_->id, visible_->revision);
+      }
       layout.child_layouts.emplace_back(
           dividers_[i].get(), show,
           show ? Bounds(divider_bounds_[i].bounds) : gfx::Rect());
     }
   }
   for (size_t slot = 0; slot < pane_controls_.size(); ++slot) {
-    if (!pane_controls_[slot])
+    if (!pane_controls_[slot]) {
       continue;
+    }
     gfx::Rect control;
     bool show = false;
     if (visible_ && !fullscreen) {
@@ -2076,8 +2242,9 @@ void MultiPageController::AppendLayout(gfx::Rect available,
                          glance_.phase == KR_GLANCE_CLOSED &&
                          pane_drag_->group == visible_->id &&
                          pane_drag_->revision == visible_->revision;
-    if (!current)
+    if (!current) {
       ClearPaneDrag();
+    }
     const bool show = current && pane_drag_->target &&
                       *pane_drag_->target < geometry.pane_count;
     drop_outline_->DropStyle(*owner_->backdrop_, metrics_,
@@ -2097,18 +2264,21 @@ std::optional<uint64_t> MultiPageController::ResizeDivider(
     KrSplitGroupId expected_group,
     uint64_t expected_revision) {
   if (!visible_ || index >= visible_->count - 1 ||
-      visible_->id != expected_group)
+      visible_->id != expected_group) {
     return std::nullopt;
+  }
   const auto id = visible_->id;
   const auto found = groups_.find(id);
-  if (found == groups_.end() || found->second.revision != expected_revision)
+  if (found == groups_.end() || found->second.revision != expected_revision) {
     return std::nullopt;
+  }
   const auto group = found->second;
   if (EditGroup(id,
                 {sizeof(KrSplitEdit), KR_SPLIT_RESIZE, group.revision, 0,
                  group.space, index, group.layout, weight},
-                complete) != KR_OK)
+                complete) != KR_OK) {
     return std::nullopt;
+  }
   return groups_.at(id).revision;
 }
 
@@ -2116,11 +2286,14 @@ void MultiPageController::ExpandPane(KrTabId id,
                                      KrSplitGroupId group,
                                      uint64_t revision) {
   const auto info = Describe(id);
-  if (!info || info->id != group || info->revision != revision)
+  if (!info || info->id != group || info->revision != revision) {
     return;
-  if (DetachMember(id))
-    if (auto* tab = Tab(id))
+  }
+  if (DetachMember(id)) {
+    if (auto* tab = Tab(id)) {
       Focus(tab->GetContents());
+    }
+  }
 }
 bool MultiPageController::BeginPaneDrag(KrTabId id,
                                         KrSplitGroupId group,
@@ -2129,8 +2302,9 @@ bool MultiPageController::BeginPaneDrag(KrTabId id,
   const auto info = Describe(id);
   if (!info || info->id != group || info->revision != revision || !visible_ ||
       visible_->id != group || glance_.phase != KR_GLANCE_CLOSED ||
-      !view_->GetWidget() || !view_->GetWidget()->IsActive())
+      !view_->GetWidget() || !view_->GetWidget()->IsActive()) {
     return false;
+  }
   if (!drop_outline_) {
     drop_outline_ = view_->AddChildView(std::make_unique<PaneOutline>(true));
     drop_outline_->SetVisible(false);
@@ -2146,13 +2320,16 @@ std::optional<size_t> MultiPageController::PaneDropIndex(
   const auto info = Describe(id);
   if (!info || info->id != group || info->revision != revision || !visible_ ||
       visible_->id != group || glance_.phase != KR_GLANCE_CLOSED ||
-      !view_->GetWidget() || !view_->GetWidget()->IsActive())
+      !view_->GetWidget() || !view_->GetWidget()->IsActive()) {
     return std::nullopt;
+  }
   views::View::ConvertPointFromScreen(view_, &screen);
-  for (size_t index = 0; index < visible_->count; ++index)
+  for (size_t index = 0; index < visible_->count; ++index) {
     if (index != info->index &&
-        Bounds(pane_bounds_[index].bounds).Contains(screen))
+        Bounds(pane_bounds_[index].bounds).Contains(screen)) {
       return index;
+    }
+  }
   return std::nullopt;
 }
 bool MultiPageController::UpdatePaneDrag(KrTabId id,
@@ -2160,46 +2337,52 @@ bool MultiPageController::UpdatePaneDrag(KrTabId id,
                                          uint64_t revision,
                                          gfx::Point screen) {
   if (!pane_drag_ || pane_drag_->tab != id || pane_drag_->group != group ||
-      pane_drag_->revision != revision)
+      pane_drag_->revision != revision) {
     return false;
+  }
   const auto index = PaneDropIndex(id, group, revision, screen);
   if (pane_drag_->target != index) {
     pane_drag_->target = index;
     drop_outline_->DropStyle(*owner_->backdrop_, metrics_,
                              view_->GetBackgroundRadii().upper_left());
-    if (index)
+    if (index) {
       drop_outline_->SetBoundsRect(Bounds(pane_bounds_[*index].bounds));
+    }
     drop_outline_->SetVisible(index.has_value());
   }
   return index.has_value();
 }
 void MultiPageController::ClearPaneDrag() {
   pane_drag_.reset();
-  if (drop_outline_)
+  if (drop_outline_) {
     drop_outline_->SetVisible(false);
+  }
 }
 void MultiPageController::CancelPaneDrag(KrTabId id,
                                          KrSplitGroupId group,
                                          uint64_t revision) {
   if (pane_drag_ && pane_drag_->tab == id && pane_drag_->group == group &&
-      pane_drag_->revision == revision)
+      pane_drag_->revision == revision) {
     ClearPaneDrag();
+  }
 }
 void MultiPageController::DropPane(KrTabId id,
                                    KrSplitGroupId group,
                                    uint64_t revision,
                                    gfx::Point screen) {
   if (!pane_drag_ || pane_drag_->tab != id || pane_drag_->group != group ||
-      pane_drag_->revision != revision)
+      pane_drag_->revision != revision) {
     return;
+  }
   const auto index = PaneDropIndex(id, group, revision, screen);
   const auto info = Describe(id);
   ClearPaneDrag();
   if (index && info &&
       EditGroup(group, {sizeof(KrSplitEdit), KR_SPLIT_MOVE, revision, id,
                         info->space, *index, info->layout, 0.5f}) == KR_OK) {
-    if (auto* tab = Tab(id))
+    if (auto* tab = Tab(id)) {
       Focus(tab->GetContents());
+    }
   }
 }
 
@@ -2210,8 +2393,9 @@ void MultiPageController::PublishGlance() {
 }
 void MultiPageController::RequestCloseGlance(KrTabId departure,
                                              bool close_parent) {
-  if (glance_.phase != KR_GLANCE_OPEN)
+  if (glance_.phase != KR_GLANCE_OPEN) {
     return;
+  }
   const auto* api = owner_->session_.api();
   const KrGlanceEdit edit{sizeof(KrGlanceEdit),
                           KR_GLANCE_REQUEST_CLOSE,
@@ -2221,8 +2405,9 @@ void MultiPageController::RequestCloseGlance(KrTabId departure,
                           departure,
                           visible_ ? visible_->count : 1};
   KrGlanceState next{.struct_size = sizeof(KrGlanceState)};
-  if (api->reduce_glance(api->self, &glance_, &edit, &next) != KR_OK)
+  if (api->reduce_glance(api->self, &glance_, &edit, &next) != KR_OK) {
     return;
+  }
   glance_ = next;
   close_parent_ = close_parent;
   PublishGlance();
@@ -2231,63 +2416,74 @@ void MultiPageController::RequestCloseGlance(KrTabId departure,
       [](base::WeakPtr<MultiPageController> self, KrGlanceState expected) {
         if (!self || self->glance_.generation != expected.generation ||
             self->glance_.child != expected.child ||
-            self->glance_.phase != KR_GLANCE_CLOSING)
+            self->glance_.phase != KR_GLANCE_CLOSING) {
           return;
-        if (auto* tab = self->Tab(expected.child))
+        }
+        if (auto* tab = self->Tab(expected.child)) {
           self->owner_->browser_->GetTabStripModel()->CloseWebContents(
               tab->GetContents(), TabCloseTypes::CLOSE_USER_GESTURE);
+        }
       },
       weak_factory_.GetWeakPtr(), identity));
 }
 bool MultiPageController::BeforeSelection(tabs::TabInterface* target) {
   if (owner_->browser_->GetTabStripModel()->closing_all() ||
-      (glance_.phase == KR_GLANCE_CLOSING && !Tab(glance_.child)))
+      (glance_.phase == KR_GLANCE_CLOSING && !Tab(glance_.child))) {
     return true;
+  }
   if (!target || glance_.phase == KR_GLANCE_CLOSED ||
-      BrowserAdapter::Identity(*target) == glance_.child)
+      BrowserAdapter::Identity(*target) == glance_.child) {
     return true;
+  }
   RequestCloseGlance(BrowserAdapter::Identity(*target));
   return false;
 }
 MultiPageVisibilityChange MultiPageController::SelectionVisibility(
     tabs::TabInterface* target) {
-  if (!target || (!active_ && !IsTransientGlance(target->GetContents())))
+  if (!target || (!active_ && !IsTransientGlance(target->GetContents()))) {
     return {};
+  }
   MultiPageVisibilityChange change{.handled = true};
   const auto next = BrowserAdapter::Identity(*target);
   auto parent = next;
   if (auto* contents = GlanceSessionParent(target->GetContents())) {
-    if (auto* tab = tabs::TabInterface::MaybeGetFromContents(contents))
+    if (auto* tab = tabs::TabInterface::MaybeGetFromContents(contents)) {
       parent = BrowserAdapter::Identity(*tab);
+    }
   }
   const auto* group = GroupFor(parent);
   for (size_t i = 0; i < bound_tabs_.size(); ++i) {
-    if (!bound_tabs_[i] || !containers_[i] || !containers_[i]->GetVisible())
+    if (!bound_tabs_[i] || !containers_[i] || !containers_[i]->GetVisible()) {
       continue;
+    }
     const auto id = bound_tabs_[i];
     bool keep = id == next || id == parent;
-    if (group)
+    if (group) {
       keep |= std::ranges::any_of(
           std::span(group->members).first(group->count),
           [id](const KrSplitMember& member) { return member.tab == id; });
+    }
     if (!keep) {
-      if (auto* tab = Tab(id))
+      if (auto* tab = Tab(id)) {
         change.hidden[change.count++] = tab;
+      }
     }
   }
   return change;
 }
 bool MultiPageController::DeferDeparture(base::OnceClosure action) {
-  if (glance_.phase != KR_GLANCE_OPEN)
+  if (glance_.phase != KR_GLANCE_OPEN) {
     return false;
+  }
   pending_departure_ = std::make_unique<PendingDeparture>();
   pending_departure_->action = std::move(action);
   RequestCloseGlance();
   return false;
 }
 bool MultiPageController::BeforeWorkspaceChange(KrSpaceId space) {
-  if (glance_.phase == KR_GLANCE_CLOSED || space == owner_->active_space_)
+  if (glance_.phase == KR_GLANCE_CLOSED || space == owner_->active_space_) {
     return true;
+  }
   return DeferDeparture(base::BindOnce(&BrowserAdapter::SwitchWorkspace,
                                        owner_->weak_factory_.GetWeakPtr(),
                                        space));
@@ -2304,25 +2500,30 @@ bool MultiPageController::BeforeTabMove(KrTabId id,
                                         size_t index) {
   const auto* tab = Tab(id);
   if (!tab || glance_.phase == KR_GLANCE_CLOSED ||
-      WorkspaceForTab(tab->GetContents()) == space)
+      WorkspaceForTab(tab->GetContents()) == space) {
     return true;
+  }
   const auto* group = GroupFor(id);
-  if (id != glance_.parent && (!group || group != GroupFor(glance_.parent)))
+  if (id != glance_.parent && (!group || group != GroupFor(glance_.parent))) {
     return true;
+  }
   return DeferDeparture(base::BindOnce(&BrowserAdapter::MoveTab,
                                        owner_->weak_factory_.GetWeakPtr(), id,
                                        space, index));
 }
 bool MultiPageController::BeforeClose(content::WebContents* contents) {
-  if (owner_->browser_->GetTabStripModel()->closing_all())
+  if (owner_->browser_->GetTabStripModel()->closing_all()) {
     return true;
+  }
   auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
-  if (!tab || glance_.phase == KR_GLANCE_CLOSED)
+  if (!tab || glance_.phase == KR_GLANCE_CLOSED) {
     return true;
+  }
   const auto id = BrowserAdapter::Identity(*tab);
   if (id == glance_.child) {
-    if (glance_.phase == KR_GLANCE_CLOSING)
+    if (glance_.phase == KR_GLANCE_CLOSING) {
       return true;
+    }
     RequestCloseGlance();
     return false;
   }
@@ -2336,8 +2537,9 @@ void MultiPageController::BeforeUnloadResult(content::WebContents* contents,
                                              bool proceed) {
   auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
   if (proceed || !tab || glance_.phase != KR_GLANCE_CLOSING ||
-      BrowserAdapter::Identity(*tab) != glance_.child)
+      BrowserAdapter::Identity(*tab) != glance_.child) {
     return;
+  }
   const auto* api = owner_->session_.api();
   const KrGlanceEdit edit{sizeof(KrGlanceEdit),
                           KR_GLANCE_CANCEL_CLOSE,
@@ -2375,8 +2577,9 @@ void MultiPageController::Removed(KrTabId id) {
   for (size_t i = 0; i < bound_tabs_.size(); ++i) {
     if (bound_tabs_[i] == id) {
       bound_tabs_[i] = 0;
-      if (!active_)
+      if (!active_) {
         continue;
+      }
       // Selection can rebind Chromium's stock WebView before our removal
       // observer runs. Only detach the page that actually belongs to this id.
       auto* contents = containers_[i]->contents_view()->web_contents();
@@ -2386,17 +2589,19 @@ void MultiPageController::Removed(KrTabId id) {
         bound_tabs_[i] = BrowserAdapter::Identity(*tab);
         continue;
       }
-      if (i == 4)
+      if (i == 4) {
         containers_[i]->contents_view()->SetFastResize(
             glance_fast_resize_before_);
+      }
       containers_[i]->contents_view()->SetWebContents(nullptr);
       containers_[i]->SetVisible(false);
     }
   }
-  if (auto* group = GroupFor(id))
+  if (auto* group = GroupFor(id)) {
     (void)EditGroup(group->id,
                     {sizeof(KrSplitEdit), KR_SPLIT_DETACH, group->revision, id,
                      group->space, 0, group->layout, 0.5f});
+  }
   if (glance_.phase != KR_GLANCE_CLOSED && id == glance_.child) {
     const auto previous = glance_;
     glance_close_animating_ = false;
@@ -2409,16 +2614,18 @@ void MultiPageController::Removed(KrTabId id) {
         [](base::WeakPtr<MultiPageController> self, KrGlanceState expected,
            bool close_parent) {
           if (!self || self->glance_.phase != KR_GLANCE_CLOSED ||
-              self->glance_.generation != expected.generation)
+              self->glance_.generation != expected.generation) {
             return;
+          }
           const auto target =
               expected.departure ? expected.departure : expected.parent;
           auto pending = std::move(self->pending_departure_);
           if (pending && !close_parent && pending->action) {
             self->owner_->Activate(expected.parent);
             if (self && self->glance_.phase == KR_GLANCE_CLOSED &&
-                self->glance_.generation == expected.generation)
+                self->glance_.generation == expected.generation) {
               std::move(pending->action).Run();
+            }
             return;
           }
           if (pending && !close_parent && pending->parent == target &&
@@ -2427,16 +2634,18 @@ void MultiPageController::Removed(KrTabId id) {
             if (parent && parent->GetContents() == pending->source.get()) {
               pending->params->source_contents = pending->source.get();
               self->owner_->Activate(target);
-              if (self)
+              if (self) {
                 (void)self->OpenGlance(*pending->params,
                                        std::move(pending->callback));
+              }
               return;
             }
           }
-          if (close_parent)
+          if (close_parent) {
             self->owner_->CloseTab(expected.parent);
-          else
+          } else {
             self->owner_->Activate(target);
+          }
         },
         weak_factory_.GetWeakPtr(), previous, close_parent));
   } else if (glance_.phase != KR_GLANCE_CLOSED && id == glance_.parent) {
@@ -2446,17 +2655,21 @@ void MultiPageController::Removed(KrTabId id) {
 }
 void MultiPageController::Replaced(KrTabId id) {
   if (auto* tab = Tab(id)) {
-    for (size_t i = 0; i < bound_tabs_.size(); ++i)
-      if (active_ && bound_tabs_[i] == id && containers_[i])
+    for (size_t i = 0; i < bound_tabs_.size(); ++i) {
+      if (active_ && bound_tabs_[i] == id && containers_[i]) {
         containers_[i]->contents_view()->SetWebContents(tab->GetContents());
-    if (auto* group = GroupFor(id))
+      }
+    }
+    if (auto* group = GroupFor(id)) {
       Persist(*group);
+    }
     if (glance_.phase != KR_GLANCE_CLOSED &&
         (id == glance_.child || id == glance_.parent)) {
       auto* child = Tab(glance_.child);
       auto* parent = Tab(glance_.parent);
-      if (child && parent)
+      if (child && parent) {
         SetTransientGlance(child->GetContents(), true, parent->GetContents());
+      }
     }
   }
 }
@@ -2467,19 +2680,22 @@ content::WebContents* MultiPageController::OpenGlance(
   auto* parent =
       source ? tabs::TabInterface::MaybeGetFromContents(source) : nullptr;
   if (!parent || parent->GetBrowserWindowInterface() != &*owner_->browser_ ||
-      !params.url.SchemeIsHTTPOrHTTPS() || !params.user_gesture)
+      !params.url.SchemeIsHTTPOrHTTPS() || !params.user_gesture) {
     return nullptr;
+  }
   if (glance_.phase != KR_GLANCE_CLOSED) {
-    if (glance_.phase != KR_GLANCE_OPEN)
+    if (glance_.phase != KR_GLANCE_OPEN) {
       return nullptr;
+    }
     const auto parent_id = BrowserAdapter::Identity(*parent);
     if (parent_id != glance_.parent && parent_id != glance_.child) {
       // A link in another pane replaces the window's preview only after the
       // old child has passed Chromium's unload confirmation. Preserve the
       // original navigation metadata and validate both identities on resume.
       auto* child = Tab(glance_.child);
-      if (!child)
+      if (!child) {
         return nullptr;
+      }
       pending_departure_ = std::make_unique<PendingDeparture>();
       pending_departure_->parent = parent_id;
       pending_departure_->source = source->GetWeakPtr();
@@ -2494,12 +2710,15 @@ content::WebContents* MultiPageController::OpenGlance(
     params.source_contents = Tab(glance_.child)->GetContents();
     const auto weak = weak_factory_.GetWeakPtr();
     const auto handle = Navigate(&params);
-    if (!weak)
+    if (!weak) {
       return nullptr;
-    if (handle && callback)
+    }
+    if (handle && callback) {
       std::move(callback).Run(*handle);
-    if (!weak)
+    }
+    if (!weak) {
       return nullptr;
+    }
     return params.navigated_or_inserted_contents;
   }
   const auto previous_opening =
@@ -2510,30 +2729,36 @@ content::WebContents* MultiPageController::OpenGlance(
   params.disposition = WindowOpenDisposition::kNewForegroundTab;
   const auto weak = weak_factory_.GetWeakPtr();
   const auto handle = Navigate(&params);
-  if (!weak)
+  if (!weak) {
     return nullptr;
+  }
   if (params.navigated_or_inserted_contents) {
     (void)owner_->PrepareMultiPageSelection(
         params.navigated_or_inserted_contents);
     PublishGlance();
   }
   opening_parent_ = previous_opening;
-  if (handle && callback)
+  if (handle && callback) {
     std::move(callback).Run(*handle);
-  if (!weak)
+  }
+  if (!weak) {
     return nullptr;
+  }
   return params.navigated_or_inserted_contents;
 }
 void MultiPageController::PromoteGlance(bool split) {
-  if (glance_.phase != KR_GLANCE_OPEN)
+  if (glance_.phase != KR_GLANCE_OPEN) {
     return;
+  }
   auto* child = Tab(glance_.child);
   auto* parent = Tab(glance_.parent);
-  if (!child || !parent)
+  if (!child || !parent) {
     return;
+  }
   auto* group = GroupFor(glance_.parent);
-  if (split && group && group->count == 4)
+  if (split && group && group->count == 4) {
     return;
+  }
   const auto previous = glance_;
   const auto* api = owner_->session_.api();
   const KrGlanceEdit edit{
@@ -2542,8 +2767,9 @@ void MultiPageController::PromoteGlance(bool split) {
       glance_.generation,      0,
       group ? group->count : 1};
   KrGlanceState next{.struct_size = sizeof(KrGlanceState)};
-  if (api->reduce_glance(api->self, &glance_, &edit, &next) != KR_OK)
+  if (api->reduce_glance(api->self, &glance_, &edit, &next) != KR_OK) {
     return;
+  }
   SetTransientGlance(child->GetContents(), false);
   owner_->AssignWorkspace(*child, WorkspaceForTab(parent->GetContents()));
   glance_ = next;
@@ -2570,8 +2796,9 @@ void MultiPageController::PromoteGlance(bool split) {
     // Mixed pinned/unpinned splits use regular copies of saved tabs. Keep the
     // pinned group intact and adopt the promoted child's original WebContents.
     std::array<KrTabId, 4> members{};
-    for (size_t i = 0; i < group->count; ++i)
+    for (size_t i = 0; i < group->count; ++i) {
       members[i] = group->members[i].tab;
+    }
     members[group->count] = previous.child;
     (void)CreateGroup(std::span(members).first(group->count + 1), group->layout,
                       previous.child);
@@ -2590,8 +2817,9 @@ KrResult MultiPageController::JoinSplit(KrTabId pivot,
   auto* other_tab = Tab(other);
   if (!pivot_tab || !other_tab || pivot == other ||
       IsTransientGlance(pivot_tab->GetContents()) ||
-      IsTransientGlance(other_tab->GetContents()))
+      IsTransientGlance(other_tab->GetContents())) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   // A page joins whichever of the two is already in a group.
   if (!GroupFor(pivot) && GroupFor(other)) {
     std::swap(pivot, other);
@@ -2617,8 +2845,10 @@ KrResult MultiPageController::JoinSplit(KrTabId pivot,
       };
       for (auto* tab : {pivot_tab, other_tab}) {
         if (tab->IsSplit()) {
-          for (auto* member : model->GetSplitData(*tab->GetSplit())->ListTabs())
+          for (auto* member :
+               model->GetSplitData(*tab->GetSplit())->ListTabs()) {
             append(member);
+          }
         } else {
           append(tab);
         }
@@ -2632,10 +2862,12 @@ KrResult MultiPageController::JoinSplit(KrTabId pivot,
     const std::array pair{pivot, other};
     return CreateGroup(pair, layout, focus);
   }
-  if (GroupFor(other) == group)
+  if (GroupFor(other) == group) {
     return KR_OK;
-  if (group->count >= 4)
+  }
+  if (group->count >= 4) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   if (!GroupFor(other) && !pivot_tab->IsPinned() && !other_tab->IsPinned() &&
       !EssentialForTab(other_tab->GetContents())) {
     const auto id = group->id;
@@ -2646,8 +2878,9 @@ KrResult MultiPageController::JoinSplit(KrTabId pivot,
   // Saved tabs and members of another group take a new group's copy and
   // detach rules, as a promoted Glance does.
   std::array<KrTabId, 4> members{};
-  for (size_t i = 0; i < group->count; ++i)
+  for (size_t i = 0; i < group->count; ++i) {
     members[i] = group->members[i].tab;
+  }
   members[group->count] = other;
   return CreateGroup(std::span(members).first(group->count + 1), group->layout,
                      focus);
@@ -2657,49 +2890,57 @@ void MultiPageController::ScheduleGlancePresentation(
     gfx::Size size) {
   desired_glance_parent_ = parent;
   desired_glance_parent_size_ = size;
-  if (glance_presentation_scheduled_)
+  if (glance_presentation_scheduled_) {
     return;
+  }
   glance_presentation_scheduled_ = true;
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(
           [](base::WeakPtr<MultiPageController> self) {
-            if (!self)
+            if (!self) {
               return;
+            }
             auto* widget = self->view_->GetWidget();
             // CalculateProposedLayout can be speculative. Never transform a
             // native host until real child layout and native visibility have
             // been applied.
-            if (widget)
+            if (widget) {
               widget->LayoutRootViewIfNecessary();
-            if (!self)
+            }
+            if (!self) {
               return;
+            }
             self->glance_presentation_scheduled_ = false;
             if (!self->active_ || self->glance_.phase != KR_GLANCE_OPEN ||
                 !self->desired_glance_parent_ || !self->containers_[4] ||
                 !self->containers_[4]->IsDrawn() ||
                 ExclusiveAccessManager::From(&*self->owner_->browser_)
                     ->fullscreen_controller()
-                    ->IsTabFullscreen())
+                    ->IsTabFullscreen()) {
               return;
+            }
             const auto expected = self->glance_;
             const bool first =
                 self->glance_animated_generation_ != expected.generation;
             self->UpdateGlanceParent(self->desired_glance_parent_,
                                      self->desired_glance_parent_size_, true);
-            if (!first)
+            if (!first) {
               return;
+            }
             self->glance_animated_generation_ = expected.generation;
-            if (self->glance_controls_)
+            if (self->glance_controls_) {
               self->glance_controls_->AnimateEntrance();
+            }
             auto* page = self->containers_[4]->contents_view();
             page->SetFastResize(true);
             self->AnimateGlanceCard(
                 true, base::BindOnce(
                           [](base::WeakPtr<MultiPageController> self,
                              KrGlanceState expected) {
-                            if (!self)
+                            if (!self) {
                               return;
+                            }
                             (void)self->owner_->session_.Defer(base::BindOnce(
                                 &MultiPageController::FinishGlanceOpen, self,
                                 expected));
@@ -2712,8 +2953,9 @@ void MultiPageController::ScheduleGlancePresentation(
 void MultiPageController::FinishGlanceOpen(KrGlanceState expected) {
   if (glance_.generation != expected.generation ||
       glance_.child != expected.child || glance_.phase != KR_GLANCE_OPEN ||
-      !containers_[4])
+      !containers_[4]) {
     return;
+  }
   auto* card = containers_[4].get();
   card->SetTransform(gfx::Transform());
   card->layer()->SetOpacity(1);
@@ -2722,13 +2964,15 @@ void MultiPageController::FinishGlanceOpen(KrGlanceState expected) {
   // final geometry once after motion; animation ticks never lay out the page.
   card->contents_view()->holder()->InvalidateLayout();
   card->InvalidateLayout();
-  if (auto* widget = card->GetWidget())
+  if (auto* widget = card->GetWidget()) {
     widget->LayoutRootViewIfNecessary();
+  }
 }
 
 void MultiPageController::CancelGlanceGenie() {
-  if (auto genie = std::move(glance_genie_))
+  if (auto genie = std::move(glance_genie_)) {
     genie->Finish();
+  }
 }
 
 void MultiPageController::AnimateGlanceCard(bool opening,
@@ -2741,14 +2985,16 @@ void MultiPageController::AnimateGlanceCard(bool opening,
       card->SetTransform(gfx::Transform());
       card->layer()->SetOpacity(1);
     }
-    if (glance_backdrop_)
+    if (glance_backdrop_) {
       glance_backdrop_->layer()->SetOpacity(1);
+    }
   }
   if (!card || metrics_.glance_genie_source_scale_x <= 0 ||
       !RichGlanceMotion(*card) || !card->IsDrawn() || !card->GetWidget() ||
       !card->GetWidget()->IsVisible() || card->GetWidget()->IsMinimized()) {
-    if (complete)
+    if (complete) {
       std::move(complete).Run();
+    }
     return;
   }
   if (!card->layer()) {
@@ -2756,15 +3002,17 @@ void MultiPageController::AnimateGlanceCard(bool opening,
     card->layer()->SetFillsBoundsOpaquely(false);
   }
   auto* animator = card->layer()->GetAnimator();
-  if (opening)
+  if (opening) {
     animator->StopAnimating();
-  else
+  } else {
     animator->AbortAllAnimations();
+  }
   card->SetTransform(gfx::Transform());
   const auto bounds = surface_bounds_[4];
   if (bounds.IsEmpty()) {
-    if (complete)
+    if (complete) {
       std::move(complete).Run();
+    }
     return;
   }
   const auto duration = base::Milliseconds(
@@ -2772,8 +3020,9 @@ void MultiPageController::AnimateGlanceCard(bool opening,
   if (glance_backdrop_) {
     auto* backdrop_layer = glance_backdrop_->layer();
     backdrop_layer->GetAnimator()->StopAnimating();
-    if (opening)
+    if (opening) {
       backdrop_layer->SetOpacity(0);
+    }
     ui::ScopedLayerAnimationSettings shadow_settings(
         backdrop_layer->GetAnimator());
     shadow_settings.SetTransitionDuration(duration);
@@ -2797,8 +3046,9 @@ void MultiPageController::AnimateGlanceCard(bool opening,
               .duration = duration,
               .opening = opening});
   if (!glance_genie_) {
-    if (complete)
+    if (complete) {
       std::move(complete).Run();
+    }
     return;
   }
   // Completion queues model work, so nothing mutates inside an animation step.
@@ -2825,22 +3075,26 @@ bool MultiPageController::DeferGlanceDestruction(
   auto* model = owner_->browser_->GetTabStripModel();
   auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
   if (model->closing_all() || !tab || glance_.phase == KR_GLANCE_CLOSED ||
-      BrowserAdapter::Identity(*tab) != glance_.child || glance_close_ready_)
+      BrowserAdapter::Identity(*tab) != glance_.child || glance_close_ready_) {
     return false;
+  }
   if (ExclusiveAccessManager::From(&*owner_->browser_)
           ->fullscreen_controller()
-          ->IsTabFullscreen())
+          ->IsTabFullscreen()) {
     return false;
+  }
   if (glance_.phase == KR_GLANCE_OPEN) {
     RequestCloseGlance();
     return true;
   }
-  if (glance_close_animating_)
+  if (glance_close_animating_) {
     return true;
+  }
   if (!containers_[4] || !containers_[4]->GetVisible() ||
       !RichGlanceMotion(*containers_[4]) ||
-      metrics_.glance_genie_source_scale_x <= 0)
+      metrics_.glance_genie_source_scale_x <= 0) {
     return false;
+  }
   glance_close_animating_ = true;
   containers_[4]->contents_view()->SetFastResize(true);
   UpdateGlanceParent(nullptr, {}, true);
@@ -2851,8 +3105,9 @@ bool MultiPageController::DeferGlanceDestruction(
       base::BindOnce(
           [](base::WeakPtr<MultiPageController> self, KrGlanceState expected,
              base::WeakPtr<content::WebContents> contents) {
-            if (!self)
+            if (!self) {
               return;
+            }
             (void)self->owner_->session_.Defer(
                 base::BindOnce(&MultiPageController::FinishGlanceClose, self,
                                expected, contents));
@@ -2866,11 +3121,13 @@ void MultiPageController::FinishGlanceClose(
     base::WeakPtr<content::WebContents> contents) {
   if (glance_.phase != KR_GLANCE_CLOSING ||
       expected.generation != glance_.generation ||
-      expected.child != glance_.child || !contents)
+      expected.child != glance_.child || !contents) {
     return;
+  }
   auto* tab = Tab(expected.child);
-  if (!tab || tab->GetContents() != contents.get())
+  if (!tab || tab->GetContents() != contents.get()) {
     return;
+  }
   glance_close_ready_ = true;
   owner_->browser_->GetTabStripModel()->CloseWebContents(
       contents.get(), TabCloseTypes::CLOSE_USER_GESTURE);
@@ -2879,8 +3136,9 @@ void MultiPageController::FinishGlanceClose(
 void MultiPageController::UpdateGlanceParent(ContentsContainerView* parent,
                                              gfx::Size size,
                                              bool animate) {
-  if (dimmed_parent_ == parent && dimmed_size_ == size)
+  if (dimmed_parent_ == parent && dimmed_size_ == size) {
     return;
+  }
   if (dimmed_parent_ && dimmed_parent_ != parent) {
     dimmed_parent_->layer()->GetAnimator()->AbortAllAnimations();
     ui::ScopedLayerAnimationSettings settings(
@@ -2895,8 +3153,9 @@ void MultiPageController::UpdateGlanceParent(ContentsContainerView* parent,
   }
   dimmed_parent_ = parent;
   dimmed_size_ = size;
-  if (!parent)
+  if (!parent) {
     return;
+  }
   if (!parent->layer()) {
     parent->SetPaintToLayer();
     parent->layer()->SetFillsBoundsOpaquely(false);
@@ -2919,35 +3178,41 @@ void MultiPageController::UpdateGlanceParent(ContentsContainerView* parent,
 
 void MultiPageController::ThemeChanged() {
   OutlineChanged();
-  if (glance_controls_)
+  if (glance_controls_) {
     glance_controls_->UpdateTheme(*owner_->backdrop_);
+  }
   if (glance_backdrop_) {
     glance_backdrop_->ThemeChanged();
     ScheduleLayout();
   }
 }
 void MultiPageController::OutlineChanged() {
-  if (outline_)
+  if (outline_) {
     outline_->Update(owner_->backdrop_->pane_outline(), metrics_.outline_width,
                      view_->GetBackgroundRadii().upper_left());
+  }
 }
 KrResult MultiPageController::Command(const KrMultiPageCommand& command) {
-  if (!KR_HAS_FIELD(&command, KrMultiPageCommand, url))
+  if (!KR_HAS_FIELD(&command, KrMultiPageCommand, url)) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   switch (command.kind) {
     case KR_MULTI_PAGE_SET_SPLIT_LAYOUT: {
-      if (!HasSnapLayouts())
+      if (!HasSnapLayouts()) {
         return KR_ERR_UNSUPPORTED;
+      }
       const auto* group = GroupFor(command.tab);
-      if (!group)
+      if (!group) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       return EditGroup(
           group->id, {sizeof(KrSplitEdit), KR_SPLIT_SET_LAYOUT, group->revision,
                       command.tab, group->space, 0, command.layout, 0.5f});
     }
     case KR_MULTI_PAGE_CHOOSE_SPLIT_LAYOUT: {
-      if (!HasSnapLayouts())
+      if (!HasSnapLayouts()) {
         return KR_ERR_UNSUPPORTED;
+      }
       const auto* api = owner_->session_.api();
       return api->show_split_chooser_for_layout(api->self, command.layout);
     }
@@ -2958,21 +3223,25 @@ KrResult MultiPageController::Command(const KrMultiPageCommand& command) {
       }
       if (!command.members || command.member_count < 2 ||
           command.member_count > 4 ||
-          command.member_size < offsetof(KrSplitMember, tab) + sizeof(KrTabId))
+          command.member_size <
+              offsetof(KrSplitMember, tab) + sizeof(KrTabId)) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       std::array<KrTabId, 4> ids{};
       const auto* bytes = reinterpret_cast<const std::byte*>(command.members);
       if (command.member_size >
           static_cast<size_t>(std::numeric_limits<std::ptrdiff_t>::max()) /
-              command.member_count)
+              command.member_count) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       for (size_t i = 0; i < command.member_count; ++i) {
         KrSplitMember member{};
         size_t size = 0;
         std::memcpy(&size, bytes + i * command.member_size, sizeof(size));
         if (size < offsetof(KrSplitMember, tab) + sizeof(KrTabId) ||
-            size > command.member_size)
+            size > command.member_size) {
           return KR_ERR_INVALID_ARGUMENT;
+        }
         std::memcpy(&member, bytes + i * command.member_size,
                     std::min(size, sizeof(member)));
         ids[i] = member.tab;
@@ -2981,34 +3250,40 @@ KrResult MultiPageController::Command(const KrMultiPageCommand& command) {
                          command.layout, command.tab);
     }
     case KR_MULTI_PAGE_EDIT_SPLIT:
-      if (!command.edit || !KR_HAS_FIELD(command.edit, KrSplitEdit, weight))
+      if (!command.edit || !KR_HAS_FIELD(command.edit, KrSplitEdit, weight)) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       return EditGroup(command.group, *command.edit);
     case KR_MULTI_PAGE_CLOSE_GLANCE:
-      if (glance_.phase == KR_GLANCE_CLOSED)
+      if (glance_.phase == KR_GLANCE_CLOSED) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       RequestCloseGlance();
       return KR_OK;
     case KR_MULTI_PAGE_EXPAND_GLANCE:
     case KR_MULTI_PAGE_SPLIT_GLANCE:
       if (glance_.phase != KR_GLANCE_OPEN ||
-          (command.revision && command.revision != glance_.generation))
+          (command.revision && command.revision != glance_.generation)) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       if (command.kind == KR_MULTI_PAGE_SPLIT_GLANCE) {
         const auto* group = GroupFor(glance_.parent);
-        if (group && group->count == 4)
+        if (group && group->count == 4) {
           return KR_ERR_INVALID_ARGUMENT;
+        }
       }
       PromoteGlance(command.kind == KR_MULTI_PAGE_SPLIT_GLANCE);
       return KR_OK;
     case KR_MULTI_PAGE_OPEN_GLANCE: {
       auto* tab = Tab(command.tab);
-      if (!tab || (!command.url.data && command.url.size))
+      if (!tab || (!command.url.data && command.url.size)) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       const GURL url(std::string_view(command.url.data ? command.url.data : "",
                                       command.url.size));
-      if (!url.SchemeIsHTTPOrHTTPS())
+      if (!url.SchemeIsHTTPOrHTTPS()) {
         return KR_ERR_INVALID_ARGUMENT;
+      }
       NavigateParams params(&*owner_->browser_, url, ui::PAGE_TRANSITION_LINK);
       params.source_contents = tab->GetContents();
       params.user_gesture = true;
@@ -3025,8 +3300,9 @@ bool MultiPageController::HandleKey(unsigned int key,
     ClearPaneDrag();
     return true;
   }
-  if (shift)
+  if (shift) {
     return false;
+  }
   if (glance_.phase != KR_GLANCE_CLOSED && !alt && control && key == 'O') {
     PromoteGlance(false);
     return true;
@@ -3035,38 +3311,41 @@ bool MultiPageController::HandleKey(unsigned int key,
     RequestCloseGlance();
     return true;
   }
-  if (!control || !alt ||
-      (key != 'G' && key != 'V' && key != 'H' && key != 'U'))
-    return false;
+  return false;
+}
+
+bool MultiPageController::ExecuteLayoutShortcut(KrSplitLayout layout,
+                                                bool unsplit) {
   auto* selected = owner_->browser_->GetActiveTabInterface();
-  if (!selected)
+  if (!selected) {
     return true;
+  }
   const auto active = glance_.phase == KR_GLANCE_CLOSED
                           ? BrowserAdapter::Identity(*selected)
                           : glance_.parent;
-  const auto layout = key == 'G'   ? KR_SPLIT_GRID
-                      : key == 'H' ? KR_SPLIT_ROWS
-                                   : KR_SPLIT_COLUMNS;
   if (auto* group = GroupFor(active)) {
-    (void)EditGroup(group->id,
-                    {sizeof(KrSplitEdit),
-                     key == 'U' ? KR_SPLIT_UNSPLIT : KR_SPLIT_SET_LAYOUT,
-                     group->revision, active, group->space, 0, layout, 0.5f});
+    (void)EditGroup(
+        group->id,
+        {sizeof(KrSplitEdit), unsplit ? KR_SPLIT_UNSPLIT : KR_SPLIT_SET_LAYOUT,
+         group->revision, active, group->space, 0, layout, 0.5f});
     return true;
   }
-  if (key == 'U')
+  if (unsplit) {
     return true;
+  }
   auto* tab = Tab(active);
   auto* model = owner_->browser_->GetTabStripModel();
-  if (!tab)
+  if (!tab) {
     return true;
+  }
   const int start = model->GetIndexOfTab(tab);
   for (int offset = 1; offset < model->count(); ++offset) {
     auto* next = model->GetTabAtIndex((start + offset) % model->count());
     if (IsTransientGlance(next->GetContents()) ||
         (WorkspaceForTab(next->GetContents()) != owner_->active_space_ &&
-         !EssentialForTab(next->GetContents())))
+         !EssentialForTab(next->GetContents()))) {
       continue;
+    }
     const std::array ids{active, BrowserAdapter::Identity(*next)};
     (void)CreateGroup(ids, layout, active);
     break;
@@ -3076,10 +3355,12 @@ bool MultiPageController::HandleKey(unsigned int key,
 
 bool MultiPageController::MoveGroup(KrTabId id, KrSpaceId space) {
   auto* group = GroupFor(id);
-  if (!group)
+  if (!group) {
     return false;
-  if (group->space == space)
+  }
+  if (group->space == space) {
     return true;
+  }
   const auto* api = owner_->session_.api();
   auto input = group->Record();
   Group next;
@@ -3093,8 +3374,9 @@ bool MultiPageController::MoveGroup(KrTabId id, KrSpaceId space) {
                          0,
                          group->layout,
                          0.5f};
-  if (api->reduce_split(api->self, &input, &edit, &output) != KR_OK)
+  if (api->reduce_split(api->self, &input, &edit, &output) != KR_OK) {
     return true;  // handled without partially moving host tabs
+  }
   next.Adopt(output);
   const base::AutoReset<bool> editing(&editing_group_, true);
   const auto previous = *group;
@@ -3110,27 +3392,31 @@ bool MultiPageController::MoveGroup(KrTabId id, KrSpaceId space) {
   group = &groups_.at(next.id);
   Publish(*group);
   Persist(*group);
-  if (auto* selected = owner_->browser_->GetActiveTabInterface())
+  if (auto* selected = owner_->browser_->GetActiveTabInterface()) {
     (void)PrepareSelection(selected->GetContents());
+  }
   return true;
 }
 bool MultiPageController::PinGroup(KrTabId id, bool pinned) {
   const auto* group = GroupFor(id);
-  if (!group)
+  if (!group) {
     return false;
+  }
   const base::AutoReset<bool> editing(&editing_group_, true);
   const auto members = *group;
   auto* model = owner_->browser_->GetTabStripModel();
   for (size_t i = 0; i < members.count; ++i) {
-    if (auto* tab = Tab(members.members[i].tab))
+    if (auto* tab = Tab(members.members[i].tab)) {
       model->SetTabPinned(model->GetIndexOfTab(tab), pinned);
+    }
   }
   return true;
 }
 bool MultiPageController::DetachMember(KrTabId id) {
   const auto* group = GroupFor(id);
-  if (!group)
+  if (!group) {
     return false;
+  }
   return EditGroup(group->id,
                    {sizeof(KrSplitEdit), KR_SPLIT_DETACH, group->revision, id,
                     group->space, 0, group->layout, 0.5f}) == KR_OK;
@@ -3144,8 +3430,9 @@ void MultiPageController::RestoreGroups() {
   auto* model = owner_->browser_->GetTabStripModel();
   for (int index = 0; index < model->count(); ++index) {
     auto* tab = model->GetTabAtIndex(index);
-    if (const auto state = SplitSessionForTab(tab->GetContents()))
+    if (const auto state = SplitSessionForTab(tab->GetContents())) {
       saved[state->group].emplace_back(BrowserAdapter::Identity(*tab), *state);
+    }
   }
   const auto* api = owner_->session_.api();
   for (const auto& [id, entries] : saved) {
@@ -3154,8 +3441,9 @@ void MultiPageController::RestoreGroups() {
     next_group_ = std::max(
         next_group_,
         id == std::numeric_limits<KrSplitGroupId>::max() ? id : id + 1);
-    if (groups_.contains(id) || entries.empty())
+    if (groups_.contains(id) || entries.empty()) {
       continue;
+    }
     const auto& first = entries.front().second;
     bool valid = entries.size() == first.count &&
                  (first.layout <= KR_SPLIT_GRID || HasSnapLayouts());
@@ -3181,8 +3469,9 @@ void MultiPageController::RestoreGroups() {
       space = tab_space;
       members[state.index] = {sizeof(KrSplitMember), tab_id};
     }
-    if (!valid)
+    if (!valid) {
       continue;  // all members remain ordinary live tabs
+    }
     Group restored;
     restored.count = 4;
     auto output = restored.Record();
@@ -3192,8 +3481,9 @@ void MultiPageController::RestoreGroups() {
       if (std::ranges::any_of(members,
                               [active_id](const KrSplitMember& member) {
                                 return member.tab == active_id;
-                              }))
+                              })) {
         selected = active_id;
+      }
     }
     const KrSplitCreateRequest create{sizeof(KrSplitCreateRequest),
                                       id,
@@ -3203,31 +3493,38 @@ void MultiPageController::RestoreGroups() {
                                       sizeof(KrSplitMember),
                                       selected,
                                       static_cast<KrSplitLayout>(first.layout)};
-    if (api->make_split(api->self, &create, &output) != KR_OK)
+    if (api->make_split(api->self, &create, &output) != KR_OK) {
       continue;
+    }
     restored.Adopt(output);
-    for (size_t i = 0; i < 3; ++i)
+    for (size_t i = 0; i < 3; ++i) {
       restored.weights[i].value = first.weights[i];
+    }
     groups_.insert_or_assign(id, restored);
-    for (size_t i = 0; i < restored.count; ++i)
+    for (size_t i = 0; i < restored.count; ++i) {
       membership_.insert_or_assign(restored.members[i].tab, id);
+    }
     Publish(groups_.at(id));
-    if (id < std::numeric_limits<KrSplitGroupId>::max())
+    if (id < std::numeric_limits<KrSplitGroupId>::max()) {
       next_group_ = std::max(next_group_, id + 1);
+    }
   }
-  if (auto* selected = owner_->browser_->GetActiveTabInterface())
+  if (auto* selected = owner_->browser_->GetActiveTabInterface()) {
     (void)PrepareSelection(selected->GetContents());
+  }
 }
 
 void MultiPageController::ScheduleRestore() {
-  if (restore_scheduled_)
+  if (restore_scheduled_) {
     return;
+  }
   restore_scheduled_ = true;
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(
                      [](base::WeakPtr<MultiPageController> self) {
-                       if (!self)
+                       if (!self) {
                          return;
+                       }
                        self->restore_scheduled_ = false;
                        self->RestoreGroups();
                      },
@@ -3251,14 +3548,16 @@ bool DeferGlanceDestruction(content::WebContents* contents) {
   return controller && controller->DeferGlanceDestruction(contents);
 }
 void MultiPageBeforeUnloadResult(content::WebContents* contents, bool proceed) {
-  if (auto* controller = ControllerFor(contents))
+  if (auto* controller = ControllerFor(contents)) {
     controller->BeforeUnloadResult(contents, proceed);
+  }
 }
 void ReleaseMultiPageMemberForNativeSplit(tabs::TabInterface* tab) {
   auto* controller = tab ? ControllerFor(tab->GetContents()) : nullptr;
-  if (controller)
+  if (controller) {
     (void)controller->DetachMember(
         base::checked_cast<KrTabId>(tab->GetHandle().raw_value()));
+  }
 }
 MultiPageVisibilityChange MultiPageSelectionVisibility(
     tabs::TabInterface* current,
@@ -3271,16 +3570,19 @@ bool RedirectNativeSplit(tabs::TabInterface* pivot,
                          tabs::TabInterface* other,
                          bool stacked) {
   if (!pivot || !other || pivot == other ||
-      !base::FeatureList::IsEnabled(kKryptonMultiPage))
+      !base::FeatureList::IsEnabled(kKryptonMultiPage)) {
     return false;
+  }
   auto* browser = pivot->GetBrowserWindowInterface();
-  if (!browser || other->GetBrowserWindowInterface() != browser)
+  if (!browser || other->GetBrowserWindowInterface() != browser) {
     return false;
+  }
   // Native drops encode the requested side through tab-strip insertion order.
   // Preserve that order when creating a new Krypton pair.
   auto* model = browser->GetTabStripModel();
-  if (model->GetIndexOfTab(other) < model->GetIndexOfTab(pivot))
+  if (model->GetIndexOfTab(other) < model->GetIndexOfTab(pivot)) {
     std::swap(pivot, other);
+  }
   auto* view =
       browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
   return view && view->krypton_ui() &&
@@ -3298,8 +3600,9 @@ bool MultiPageSplitFull(tabs::TabInterface* tab) {
   return group && group->count >= 4;
 }
 bool ShowMultiPageSplitChooser(BrowserWindowInterface* browser) {
-  if (!browser || !base::FeatureList::IsEnabled(kKryptonMultiPage))
+  if (!browser || !base::FeatureList::IsEnabled(kKryptonMultiPage)) {
     return false;
+  }
   auto* view = BrowserView::GetBrowserViewForBrowser(browser);
   return view && view->krypton_ui() && view->krypton_ui()->ShowSplitChooser();
 }
@@ -3309,12 +3612,13 @@ void SetMultiPageSplitLayout(content::WebContents* source, uint32_t layout) {
   auto* view =
       browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
   auto* adapter = view ? view->krypton_ui() : nullptr;
-  if (adapter && adapter->SnapLayoutsEnabled())
+  if (adapter && adapter->SnapLayoutsEnabled()) {
     (void)adapter->MultiPageCommand(
         {.struct_size = sizeof(KrMultiPageCommand),
          .kind = KR_MULTI_PAGE_SET_SPLIT_LAYOUT,
          .tab = base::checked_cast<KrTabId>(tab->GetHandle().raw_value()),
          .layout = static_cast<KrSplitLayout>(layout)});
+  }
 }
 bool PinMultiPageGroup(tabs::TabInterface* tab, bool pinned) {
   auto* controller = tab ? ControllerFor(tab->GetContents()) : nullptr;

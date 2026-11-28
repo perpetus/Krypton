@@ -9,6 +9,9 @@
 
 namespace krypton::privacy {
 namespace {
+// Keep the incomplete agent unavailable in the 0.22.5.1 release.
+constexpr bool kAgentAvailableInRelease = false;
+
 constexpr std::array<std::string_view, kFeatureCount> kPrefs{
     "krypton.privacy_features.widevine",
     "krypton.privacy_features.live_caption",
@@ -22,58 +25,64 @@ constexpr std::array<std::string_view, kFeatureCount> kPrefs{
     "krypton.privacy_features.autoplay_list",
     "krypton.privacy_features.cast",
     "krypton.privacy_features.web_push",
-    "krypton.privacy_features.screen_ai"};
-std::optional<StartupSnapshot>& Snapshot() {
+    "krypton.privacy_features.screen_ai",
+    "krypton.privacy_features.ai_agent"};
+std::optional<StartupSnapshot> &Snapshot() {
   static std::optional<StartupSnapshot> snapshot;
   return snapshot;
 }
-}  // namespace
+} // namespace
 std::string_view PrefName(Id id) {
+  if (!kAgentAvailableInRelease && id == Id::kAiAgent) {
+    return {};
+  }
   const auto index = static_cast<unsigned>(id);
   return index && index <= kPrefs.size() ? kPrefs[index - 1]
                                          : std::string_view{};
 }
-void RegisterLocalState(PrefRegistrySimple* registry) {
-  for (const auto name : kPrefs)
+void RegisterLocalState(PrefRegistrySimple *registry) {
+  for (const auto name : kPrefs) {
     registry->RegisterBooleanPref(name, false);
+  }
 }
-bool IsEnabled(const PrefService& prefs, Id id) {
+bool IsEnabled(const PrefService &prefs, Id id) {
   const auto name = PrefName(id);
-  const auto* pref = name.empty() ? nullptr : prefs.FindPreference(name);
+  const auto *pref = name.empty() ? nullptr : prefs.FindPreference(name);
   return pref && pref->GetValue()->is_bool() && prefs.GetBoolean(name);
 }
-StartupSnapshot::StartupSnapshot(const PrefService& prefs) {
-  for (unsigned i = 0; i < values_.size(); ++i)
+StartupSnapshot::StartupSnapshot(const PrefService &prefs) {
+  for (unsigned i = 0; i < values_.size(); ++i) {
     values_[i] = privacy::IsEnabled(prefs, static_cast<Id>(i + 1));
+  }
 }
 bool StartupSnapshot::IsEnabled(Id id) const {
   const auto index = static_cast<unsigned>(id);
   return index && index <= values_.size() && values_[index - 1];
 }
-void CaptureStartupSnapshot(const PrefService& prefs) {
-  if (!Snapshot())
+void CaptureStartupSnapshot(const PrefService &prefs) {
+  if (!Snapshot()) {
     Snapshot().emplace(prefs);
+  }
 }
-bool IsStartupEnabled(Id id) {
-  return Snapshot() && Snapshot()->IsEnabled(id);
-}
+bool IsStartupEnabled(Id id) { return Snapshot() && Snapshot()->IsEnabled(id); }
 bool ComponentAllowed(std::string_view id, bool helium_allowed) {
   return ComponentAllowed(id, helium_allowed, IsStartupEnabled(Id::kWidevine),
                           IsStartupEnabled(Id::kLiveCaption),
                           IsStartupEnabled(Id::kAutoplayList));
 }
-bool ComponentAllowed(std::string_view id,
-                      bool helium_allowed,
-                      bool widevine_enabled,
-                      bool live_caption_enabled,
+bool ComponentAllowed(std::string_view id, bool helium_allowed,
+                      bool widevine_enabled, bool live_caption_enabled,
                       bool autoplay_enabled) {
-  if (id == "laoigpblnllgcgjnjnllmfolckpjlhki")
+  if (id == "laoigpblnllgcgjnjnllmfolckpjlhki") {
     return autoplay_enabled;
-  if (id == "oimompecagnajdejgnnjijobebaeigek")
+  }
+  if (id == "oimompecagnajdejgnnjijobebaeigek") {
     return widevine_enabled;
+  }
   if (std::ranges::find(kLiveCaptionComponents, id) !=
-      kLiveCaptionComponents.end())
+      kLiveCaptionComponents.end()) {
     return live_caption_enabled;
+  }
   return helium_allowed;
 }
 bool UsesUpstreamComponentServer(bool helium_consent) {
@@ -81,11 +90,10 @@ bool UsesUpstreamComponentServer(bool helium_consent) {
       helium_consent, IsStartupEnabled(Id::kWidevine),
       IsStartupEnabled(Id::kLiveCaption), IsStartupEnabled(Id::kAutoplayList));
 }
-bool UsesUpstreamComponentServer(bool helium_consent,
-                                 bool widevine_enabled,
+bool UsesUpstreamComponentServer(bool helium_consent, bool widevine_enabled,
                                  bool live_caption_enabled,
                                  bool autoplay_enabled) {
   return helium_consent || widevine_enabled || live_caption_enabled ||
          autoplay_enabled;
 }
-}  // namespace krypton::privacy
+} // namespace krypton::privacy

@@ -1,0 +1,21 @@
+caption: Allow Krypton Agent to open specified HTTPS sites
+desc: |-
+  Specifies the HTTPS sites that Krypton Agent may open without navigation confirmation when the AI feature is enabled. Use a registrable domain to include its subdomains, or an HTTPS origin to specify one host and port.
+
+  Existing protections for sensitive data, consequential actions, and site boundaries still apply. An empty list requires the normal navigation review.
+owners:
+- file://chrome/browser/policy/OWNERS
+example_value:
+- example.com
+- https://docs.example.net
+supported_on:
+- chrome.win:158-
+features:
+  dynamic_refresh: true
+  per_profile: true
+type: list
+schema:
+  type: array
+  items:
+    type: string
+tags: []

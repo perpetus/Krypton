@@ -1,0 +1,156 @@
+# Krypton: Check agent navigation against the live browser-session grant.
+# This permits approved URLs while keeping redirects tied to the granted origin.
+--- a/chrome/browser/actor/actor_navigation_throttle.cc
++++ b/chrome/browser/actor/actor_navigation_throttle.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/logging.h"
+ #include "base/types/pass_key.h"
++#include "build/build_config.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_surface_handle.h"
+ #include "chrome/browser/actor/actor_task.h"
+@@ -20,7 +21,6 @@
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/navigation_throttle.h"
+ #include "content/public/browser/navigation_throttle_registry.h"
+-#include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "ui/base/page_transition_types.h"
+ 
+@@ -28,7 +28,31 @@
+ #include "base/android/device_info.h"
+ #endif
+ 
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/browser_prompt_gate.h"
++#endif
++
+ namespace actor {
++namespace {
++
++// Exclude history transfers, which can replay an earlier typed transition.
++bool IsUserUiNavigation(content::NavigationHandle& navigation) {
++  if (navigation.IsRendererInitiated()) {
++    return false;
++  }
++  const auto transition = navigation.GetPageTransition();
++  return !(transition & ::ui::PAGE_TRANSITION_FORWARD_BACK) &&
++         (::ui::PageTransitionCoreTypeIs(transition,
++                                         ::ui::PAGE_TRANSITION_TYPED) ||
++          ::ui::PageTransitionCoreTypeIs(transition,
++                                         ::ui::PAGE_TRANSITION_GENERATED) ||
++          ::ui::PageTransitionCoreTypeIs(transition,
++                                         ::ui::PAGE_TRANSITION_AUTO_BOOKMARK) ||
++          (transition & ::ui::PAGE_TRANSITION_HOME_PAGE) ||
++          (transition & ::ui::PAGE_TRANSITION_FROM_ADDRESS_BAR));
++}
++
++}  // namespace
+ 
+ // static
+ void ActorNavigationThrottle::MaybeCreateAndAdd(
+@@ -73,6 +97,17 @@
+     return;
+   }
+ 
++#if BUILDFLAG(IS_WIN)
++  if (task->source_info().type == TaskSourceInfo::Client::kKrypton &&
++      (IsUserUiNavigation(navigation_handle) ||
++       (!task->GetExecutionEngine().HasActionSequence() &&
++        (!navigation_handle.IsRendererInitiated() ||
++         navigation_handle.HasUserGesture())))) {
++    // Browser controls and user clicks outside a tool invocation own their
++    // navigation. The agent bridge handles their committed page changes.
++    return;
++  }
++#endif
+   registry.AddThrottle(std::make_unique<ActorNavigationThrottle>(
+       base::PassKey<ActorNavigationThrottle>(), registry, *task));
+ }
+@@ -216,21 +251,17 @@
+     return content::NavigationThrottle::CANCEL_AND_IGNORE;
+   }
+ 
++#if BUILDFLAG(IS_WIN)
+   if (task->source_info().type == TaskSourceInfo::Client::kKrypton &&
+       task->IsActingOnActorSurface(
+-          ActorSurfaceHandle::From(navigation_handle()->GetWebContents()))) {
+-    const auto& origin = navigation_handle()
+-                             ->GetWebContents()
+-                             ->GetPrimaryMainFrame()
+-                             ->GetLastCommittedOrigin();
+-    if (!navigation_url.SchemeIsHTTPOrHTTPS() ||
+-        navigation_url.has_username() || navigation_url.has_password() ||
+-        navigation_handle()->IsPost() ||
+-        url::Origin::Create(navigation_url) != origin) {
+-      LOG(WARNING) << "Krypton Agent denied navigation requiring confirmation";
+-      return content::NavigationThrottle::CANCEL_AND_IGNORE;
+-    }
+-  }
++          ActorSurfaceHandle::From(navigation_handle()->GetWebContents())) &&
++      !krypton_agent::AllowAgentNavigation(*navigation_handle(),
++                                           is_redirection)) {
++    LOG(WARNING) << "Krypton Agent denied navigation outside its permission";
++    return content::NavigationThrottle::CANCEL_AND_IGNORE;
++  }
++#endif
++
+   if (!is_redirection && !navigation_handle()->IsRendererInitiated()) {
+     journal.Log(navigation_url, task_id_, "NavThrottle",
+                 JournalDetailsBuilder()
+@@ -245,40 +276,6 @@
+     // background navigations (which do not carry these user UI transition
+     // qualifiers) to proceed without prompting.
+-    ::ui::PageTransition transition = navigation_handle()->GetPageTransition();
+-    // We explicitly list the transition types to intercept. We cannot use
+-    // !::ui::PageTransitionIsWebTriggerable(transition) here because that
+-    // would also include PAGE_TRANSITION_AUTO_TOPLEVEL (which is
+-    // browser-initiated). Since Actor's own programmatic navigations use
+-    // AUTO_TOPLEVEL, using !IsWebTriggerable would cause Actor's own
+-    // navigations to be intercepted and deferred!
+-    // TODO(crbug.com/500826418): Consider ignoring same-origin/same-site
+-    // navigations here since they are less disruptive to active tasks.
+-    bool is_user_ui_navigation =
+-        ::ui::PageTransitionCoreTypeIs(transition,
+-                                       ::ui::PAGE_TRANSITION_TYPED) ||
+-        ::ui::PageTransitionCoreTypeIs(transition,
+-                                       ::ui::PAGE_TRANSITION_GENERATED) ||
+-        ::ui::PageTransitionCoreTypeIs(transition,
+-                                       ::ui::PAGE_TRANSITION_AUTO_BOOKMARK) ||
+-        (transition & ::ui::PAGE_TRANSITION_HOME_PAGE);
+-
+-    // Omnibox navigations carry FROM_ADDRESS_BAR, but an accepted paste
+-    // commits as LINK and a keyword search as KEYWORD.
+-    if (transition & ::ui::PAGE_TRANSITION_FROM_ADDRESS_BAR) {
+-      is_user_ui_navigation = true;
+-    }
+-
+-    // Exclude session history navigations. A back/forward navigation replays
+-    // the core transition of the entry it restores, so returning to a page the
+-    // user originally typed arrives here as PAGE_TRANSITION_TYPED with the
+-    // FORWARD_BACK qualifier. Without this exclusion both the Actor's own
+-    // history tool (which calls GoBack() and GoForward()) and the user's
+-    // Back/Forward buttons would be confirmed.
+-    if (transition & ::ui::PAGE_TRANSITION_FORWARD_BACK) {
+-      is_user_ui_navigation = false;
+-    }
+-
+-    if (!is_user_ui_navigation) {
++    if (!IsUserUiNavigation(*navigation_handle())) {
+       return content::NavigationThrottle::PROCEED;
+     }
+ 
+--- a/chrome/browser/actor/BUILD.gn
++++ b/chrome/browser/actor/BUILD.gn
+@@ -364,6 +364,10 @@
+       "//chrome/browser/ui/tabs:tab_strip_model_observer",
+     ]
+   }
++  if (is_win) {
++    deps += [ "//chrome/browser/krypton_agent:prompt_gate" ]
++  }
++
+   if (!is_android) {
+     deps += [
+       "//chrome/browser/ui:browser_commands",

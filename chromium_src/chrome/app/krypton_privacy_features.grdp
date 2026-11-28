@@ -20,4 +20,9 @@
   <message name="IDS_KRYPTON_PRIVACY_SEARCH_SUGGEST_SHARED" desc="Data sent by online search suggestions">Sends what you type in the address bar to your default search engine before you press Enter. Requests also reveal your IP address and may include search engine cookies. Suggestion images can load from image providers named by your search engine.</message>
   <message name="IDS_KRYPTON_PRIVACY_SEARCH_SUGGEST_RISK" desc="Privacy risk of remote search suggestions">Moderate. Your search engine can receive incomplete searches and text you decide not to submit.</message>
   <message name="IDS_KRYPTON_PRIVACY_SEARCH_SUGGEST_OFF" desc="Behavior when remote suggestions are disabled">Online search suggestions are disabled. Local history, bookmarks and open tabs can still appear. Searches you submit still go to your search engine.</message>
+  <message name="IDS_KRYPTON_PRIVACY_AI_AGENT_TITLE" desc="Optional AI agent feature">AI agent</message>
+  <message name="IDS_KRYPTON_PRIVACY_AI_AGENT_SUMMARY" desc="Purpose of the optional AI agent">Lets an AI agent you choose read and act on the tab you share with it. Changes apply after restart.</message>
+  <message name="IDS_KRYPTON_PRIVACY_AI_AGENT_SHARED" desc="Data shared with the chosen AI agent">Filtered text and controls from the shared tab can be sent to the AI agent you choose. Its provider can receive that data and your prompts.</message>
+  <message name="IDS_KRYPTON_PRIVACY_AI_AGENT_RISK" desc="Privacy risk of optional AI access">Moderate. A page can try to influence an agent. Krypton limits the agent to the shared tab and approved sites and asks before consequential actions.</message>
+  <message name="IDS_KRYPTON_PRIVACY_AI_AGENT_OFF" desc="Behavior with optional AI access disabled">AI access to tabs is off. Krypton does not start an agent or send it page content.</message>
 </grit-part>

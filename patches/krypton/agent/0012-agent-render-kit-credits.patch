@@ -1,0 +1,25 @@
+Include the shipped render kit libraries in the credits action.
+
+--- a/components/resources/BUILD.gn
++++ b/components/resources/BUILD.gn
+@@ -164,6 +164,20 @@
+       "../webui/about/resources/about_credits.tmpl",
+       "../webui/about/resources/about_credits_entry.tmpl",
+       "../webui/about/resources/about_credits_reciprocal.tmpl",
++      "//third_party/krypton_agent_kit/README.chromium",
++      "//third_party/krypton_agent_kit/additional_readme_paths.json",
++      "//third_party/krypton_agent_kit/chart.js/LICENSE",
++      "//third_party/krypton_agent_kit/chart.js/README.chromium",
++      "//third_party/krypton_agent_kit/d3/LICENSE",
++      "//third_party/krypton_agent_kit/d3/README.chromium",
++      "//third_party/krypton_agent_kit/htm/LICENSE",
++      "//third_party/krypton_agent_kit/htm/README.chromium",
++      "//third_party/krypton_agent_kit/motion/LICENSE",
++      "//third_party/krypton_agent_kit/motion/README.chromium",
++      "//third_party/krypton_agent_kit/preact/LICENSE",
++      "//third_party/krypton_agent_kit/preact/README.chromium",
++      "//third_party/krypton_agent_kit/three/LICENSE",
++      "//third_party/krypton_agent_kit/three/README.chromium",
+       "//tools/licenses/spdx_writer.py",
+     ]
+ 

@@ -27,6 +27,10 @@ class DocumentStore : public base::RefCountedThreadSafe<DocumentStore> {
   explicit DocumentStore(base::FilePath root);
   void Request(DocumentKind kind, base::DictValue request, Reply reply);
   void CreateCapture(std::string png, Reply reply);
+  void TransferCapture(std::string source,
+                       std::string destination,
+                       std::string revision,
+                       Reply reply);
   void Export(DocumentKind kind,
               std::string id,
               std::string format,
@@ -39,6 +43,9 @@ class DocumentStore : public base::RefCountedThreadSafe<DocumentStore> {
   ~DocumentStore();
   base::DictValue Run(DocumentKind kind, base::DictValue request);
   base::DictValue SaveCapture(std::string png);
+  base::DictValue MoveCapture(std::string source,
+                              std::string destination,
+                              std::string revision);
   base::DictValue WriteExport(DocumentKind kind,
                               std::string id,
                               std::string format,

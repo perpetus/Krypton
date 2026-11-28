@@ -1,0 +1,18 @@
+Name: simple-icons
+URL: https://registry.npmjs.org/simple-icons/-/simple-icons-16.38.1.tgz
+Version: 16.38.1
+License: CC0-1.0
+License File: LICENSE.md
+Shipped: yes
+Security Critical: no
+Update Mechanism: Manual
+
+Description:
+Simple Icons SVG geometry for brand identification in offline Agent renders.
+See DISCLAIMER.md and the upstream simple-icons.json for per-brand terms.
+
+Local Modifications:
+Store the upstream slug, hex and SVG path in alphabetic ES module chunks.
+Use tools/krypton/vendor_render_icons.py with the exact npm tarballs. Tarball,
+license, disclaimer and metadata SHA-256 hashes are in
+../icon-source-sha256.json and runtime file hashes are in ../sha256.json.

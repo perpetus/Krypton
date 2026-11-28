@@ -3,7 +3,8 @@
 #ifndef CHROME_RENDERER_KRYPTON_BOOST_PICKER_H_
 #define CHROME_RENDERER_KRYPTON_BOOST_PICKER_H_
 // Runs only after an explicit user request, in Chromium's private internal
-// isolated world. It never focuses a DOM element or changes page content.
+// isolated world. The temporary outline is a page-visible DOM element.
+// Only trusted input can select an element; the picker does not move DOM focus.
 inline constexpr char kKryptonBoostPicker[] = R"JS(
 (() => {
   globalThis.__kryptonBoostPicker?.();
@@ -46,21 +47,27 @@ inline constexpr char kKryptonBoostPicker[] = R"JS(
       return parts.join(' > ');
     };
     window.addEventListener('pointermove', event => {
+    if (!event.isTrusted) return;
       const target = document.elementFromPoint(event.clientX, event.clientY);
       if (!(target instanceof Element) || target === overlay) return;
       const rect = target.getBoundingClientRect();
       Object.assign(overlay.style, {display:'block', left:rect.left+'px', top:rect.top+'px', width:rect.width+'px', height:rect.height+'px'});
     }, options);
-    const suppress = event => { event.preventDefault(); event.stopImmediatePropagation(); };
+    const suppress = event => {
+    if (!event.isTrusted) return false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return true;
+  };
     for (const name of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick'])
       window.addEventListener(name, suppress, options);
     window.addEventListener('click', event => {
-      suppress(event);
+    if (!suppress(event)) return;
       const element = document.elementFromPoint(event.clientX, event.clientY);
       finish(element instanceof Element && element !== overlay ? selectorFor(element) : '');
     }, options);
-    window.addEventListener('contextmenu', event => { suppress(event); finish(''); }, options);
-    window.addEventListener('keydown', event => { suppress(event); if (event.key === 'Escape') finish(''); }, options);
+    window.addEventListener('contextmenu', event => { if (suppress(event)) finish(''); }, options);
+    window.addEventListener('keydown', event => { if (suppress(event) && event.key === 'Escape') finish(''); }, options);
     window.addEventListener('pagehide', () => finish(''), options);
   });
 })()

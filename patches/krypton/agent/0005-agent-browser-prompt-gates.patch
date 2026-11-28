@@ -1,0 +1,159 @@
+Krypton: Hand native requests back to the user during an agent task.
+
+Stop agent-originated file pickers, downloads, payment sheets, passkey
+requests and external-protocol launches before the native flow starts.
+The agent task pauses and the user may perform the step directly.
+
+--- a/chrome/browser/file_select_helper.cc
++++ b/chrome/browser/file_select_helper.cc
+@@ -23,6 +23,9 @@
+ #include "base/task/thread_pool.h"
+ #include "base/threading/hang_watcher.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/browser_prompt_gate.h"
++#endif
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/enterprise/connectors/common.h"
+ #include "chrome/browser/platform_util.h"
+@@ -655,6 +658,13 @@
+     content::RenderFrameHost* render_frame_host,
+     scoped_refptr<content::FileSelectListener> listener,
+     const FileChooserParams& params) {
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::PauseForBrowserPrompt(
++          content::WebContents::FromRenderFrameHost(render_frame_host))) {
++    listener->FileSelectionCanceled();
++    return;
++  }
++#endif
+   Profile* profile = Profile::FromBrowserContext(
+       render_frame_host->GetProcess()->GetBrowserContext());
+ 
+--- a/chrome/browser/download/chrome_download_manager_delegate.cc
++++ b/chrome/browser/download/chrome_download_manager_delegate.cc
+@@ -32,6 +32,9 @@
+ #include "base/task/thread_pool.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/browser_prompt_gate.h"
++#endif
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/download/download_core_service.h"
+ #include "chrome/browser/download/download_core_service_factory.h"
+@@ -2536,6 +2539,12 @@
+     return;
+   }
+ 
++#if BUILDFLAG(IS_WIN)
++  if (content_initiated && krypton_agent::PauseForBrowserPrompt(web_contents)) {
++    OnCheckDownloadAllowedFailed(std::move(check_download_allowed_cb));
++    return;
++  }
++#endif
+   // Check whether download is restricted for saved tab groups.
+   if (tab_groups::RestrictDownloadOnSyncedTabs() &&
+       TabGroupSyncTabState::FromWebContents(web_contents)) {
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -8,8 +8,6 @@
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+ #include "chrome/browser/ui/krypton_ui/multi_page_features.h"
+ #endif
+-#include "components/krypton_privacy_features/privacy_features.h"
+-
+ #include <algorithm>
+ #include <iterator>
+ #include <map>
+@@ -62,6 +60,10 @@
+ #include "build/android_buildflags.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
++#include "components/krypton_privacy_features/privacy_features.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/browser_prompt_gate.h"
++#endif
+ #include "build/config/chromebox_for_meetings/buildflags.h"  // PLATFORM_CFM
+ #include "chrome/browser/accessibility/caption_settings_dialog.h"
+ #include "chrome/browser/accessibility/page_colors_controller.h"
+@@ -7486,6 +7488,12 @@
+ std::unique_ptr<content::AuthenticatorRequestClientDelegate>
+ ChromeContentBrowserClient::GetWebAuthenticationRequestDelegate(
+     content::RenderFrameHost* render_frame_host) {
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::PauseForBrowserPrompt(
++          content::WebContents::FromRenderFrameHost(render_frame_host))) {
++    return nullptr;
++  }
++#endif
+   return AuthenticatorRequestScheduler::CreateRequestDelegate(
+       render_frame_host);
+ }
+@@ -7580,6 +7588,11 @@
+     const net::IsolationInfo& isolation_info,
+     mojo::PendingRemote<network::mojom::URLLoaderFactory>* out_factory) {
+   CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::PauseForBrowserPrompt(web_contents_getter.Run())) {
++    return true;
++  }
++#endif
+ 
+ #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+     BUILDFLAG(IS_WIN)
+--- a/chrome/browser/payments/chrome_payment_request_delegate.cc
++++ b/chrome/browser/payments/chrome_payment_request_delegate.cc
+@@ -11,7 +11,11 @@
+ #include "base/functional/bind.h"
+ #include "base/memory/ref_counted.h"
+ #include "base/metrics/histogram_functions.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/browser_prompt_gate.h"
++#endif
+ #include "chrome/browser/apps/app_service/app_service_proxy.h"
+ #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+ #include "chrome/browser/autofill/address_normalizer_factory.h"
+@@ -95,6 +99,14 @@
+ 
+ void ChromePaymentRequestDelegate::ShowDialog(
+     base::WeakPtr<PaymentRequest> request) {
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::PauseForBrowserPrompt(
++          content::WebContents::FromRenderFrameHost(GetRenderFrameHost()))) {
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(&PaymentRequest::OnUserCancelled, request));
++    return;
++  }
++#endif
+   CHECK_EQ(nullptr, shown_dialog_.get(), base::NotFatalUntil::M162);
+   CHECK_EQ(nullptr, spc_dialog_.get(), base::NotFatalUntil::M162);
+ 
+--- a/chrome/browser/download/BUILD.gn
++++ b/chrome/browser/download/BUILD.gn
+@@ -407,6 +407,10 @@
+   if (safe_browsing_mode != 0 && enterprise_cloud_content_analysis) {
+     deps += [ "//chrome/browser/enterprise/connectors/reporting" ]
+   }
++
++  if (is_win) {
++    deps += [ "//chrome/browser/krypton_agent:prompt_gate" ]
++  }
+ }
+ 
+ source_set("status_text_builder_utils") {
+--- a/chrome/browser/payments/BUILD.gn
++++ b/chrome/browser/payments/BUILD.gn
+@@ -63,6 +63,10 @@
+     deps += [
+       "//chrome/browser/payments/android:service_worker_payment_app_bridge",
+     ]
++  }
++
++  if (is_win) {
++    deps += [ "//chrome/browser/krypton_agent:prompt_gate" ]
+   }
+ }
+ 

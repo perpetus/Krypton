@@ -24,6 +24,7 @@
 #include "components/permissions/permission_request.h"
 #include "components/permissions/permission_uma_constants.h"
 #include "components/permissions/permission_util.h"
+#include "components/permissions/request_type.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
@@ -64,17 +65,21 @@ uint32_t Kind(ContentSettingsType type) {
   }
 }
 uint32_t Setting(const PageInfo::PermissionInfo& value) {
-  if (!value.setting)
+  if (!value.setting) {
     return KR_PERMISSION_DEFAULT;
-  if (const auto* setting = std::get_if<ContentSetting>(&*value.setting))
+  }
+  if (const auto* setting = std::get_if<ContentSetting>(&*value.setting)) {
     return static_cast<uint32_t>(*setting);
+  }
   const auto* info =
       content_settings::PermissionSettingsRegistry::GetInstance()->Get(
           value.type);
-  if (info && info->delegate().IsBlocked(*value.setting))
+  if (info && info->delegate().IsBlocked(*value.setting)) {
     return KR_PERMISSION_BLOCK;
-  if (info && info->delegate().IsAnyPermissionAllowed(*value.setting))
+  }
+  if (info && info->delegate().IsAnyPermissionAllowed(*value.setting)) {
     return KR_PERMISSION_ALLOW;
+  }
   return KR_PERMISSION_ASK;
 }
 uint32_t Choices(const PageInfo::PermissionInfo& value,
@@ -83,19 +88,23 @@ uint32_t Choices(const PageInfo::PermissionInfo& value,
       content_settings::PermissionSettingsRegistry::GetInstance()->Get(
           value.type);
   uint32_t choices = 1u << KR_PERMISSION_DEFAULT;
-  if (!info)
+  if (!info) {
     return choices;
+  }
   for (auto setting : {CONTENT_SETTING_ALLOW, CONTENT_SETTING_BLOCK,
                        CONTENT_SETTING_ASK, CONTENT_SETTING_SESSION_ONLY}) {
     if ((setting == CONTENT_SETTING_ALLOW && !ui.ShouldShowAllow(value.type)) ||
-        (setting == CONTENT_SETTING_ASK && !ui.ShouldShowAsk(value.type)))
+        (setting == CONTENT_SETTING_ASK && !ui.ShouldShowAsk(value.type))) {
       continue;
+    }
     if (setting == CONTENT_SETTING_SESSION_ONLY &&
-        !std::holds_alternative<ContentSetting>(value.default_setting))
+        !std::holds_alternative<ContentSetting>(value.default_setting)) {
       continue;
+    }
     const auto converted = info->delegate().ToPermissionSetting(setting);
-    if (info->delegate().IsValid(converted))
+    if (info->delegate().IsValid(converted)) {
       choices |= 1u << static_cast<uint32_t>(setting);
+    }
   }
   return choices;
 }
@@ -105,8 +114,9 @@ class NativePermissionPrompt final : public permissions::PermissionPrompt {
   NativePermissionPrompt(base::WeakPtr<SitePermissions> owner, uint64_t request)
       : owner_(std::move(owner)), request_(request) {}
   ~NativePermissionPrompt() override {
-    if (owner_)
+    if (owner_) {
       owner_->DismissPrompt(request_);
+    }
   }
   bool UpdateAnchor() override { return false; }
   TabSwitchingBehavior GetTabSwitchingBehavior() override {
@@ -158,11 +168,13 @@ void SitePermissions::Visibility(std::string origin, bool visible) {
 void SitePermissions::ApplyVisibility(std::string origin,
                                       bool visible,
                                       uint64_t request) {
-  if (request != visibility_request_)
+  if (request != visibility_request_) {
     return;
+  }
   if (!visible) {
-    if (origin.empty() || origin == origin_)
+    if (origin.empty() || origin == origin_) {
       Close(false);
+    }
     return;
   }
   auto* contents = browser_->GetTabStripModel()->GetActiveWebContents();
@@ -173,8 +185,9 @@ void SitePermissions::ApplyVisibility(std::string origin,
   const auto current =
       url::Origin::Create(contents->GetLastCommittedURL()).Serialize();
   if (origin.empty()) {
-    if (const auto* api = session_->api())
+    if (const auto* api = session_->api()) {
       api->show_site_permissions(api->self, Borrow(current));
+    }
     return;
   }
   if (origin != current) {
@@ -199,17 +212,21 @@ void SitePermissions::Close(bool dismiss_surface) {
   settings_observation_.Reset();
   Observe(nullptr);
   if (const auto* api = session_->api()) {
-    for (const auto& [id, value] : permissions_)
+    for (const auto& [id, value] : permissions_) {
       api->remove_site_permission(api->self, id);
-    if (dismiss_surface)
+    }
+    if (dismiss_surface) {
       if (KR_HAS_SLOT(api, KrShellUI, dismiss_site_permissions) &&
-          api->dismiss_site_permissions)
+          api->dismiss_site_permissions) {
         api->dismiss_site_permissions(api->self);
+      }
+    }
   }
   permissions_.clear();
   objects_.clear();
-  if (presenter_)
+  if (presenter_) {
     presenter_->OnUIClosing(nullptr);
+  }
   presenter_.reset();
   ui_delegate_.reset();
   origin_.clear();
@@ -218,8 +235,9 @@ void SitePermissions::Close(bool dismiss_surface) {
 void SitePermissions::SetPermissionInfo(const PermissionInfoList& values,
                                         ChosenObjectInfoList objects) {
   const auto* api = session_->api();
-  if (!api || !TargetValid())
+  if (!api || !TargetValid()) {
     return;
+  }
   objects_ = std::move(objects);
   base::flat_map<KrPermissionId, PageInfo::PermissionInfo> next;
   for (const auto& value : values) {
@@ -247,15 +265,18 @@ void SitePermissions::SetPermissionInfo(const PermissionInfoList& values,
     api->upsert_site_permission(api->self, &item);
     next.emplace(id, value);
   }
-  for (const auto& [id, value] : permissions_)
-    if (!next.contains(id))
+  for (const auto& [id, value] : permissions_) {
+    if (!next.contains(id)) {
       api->remove_site_permission(api->self, id);
+    }
+  }
   permissions_ = std::move(next);
 }
 KrResult SitePermissions::SetPermission(KrPermissionId id, uint32_t setting) {
   if (!TargetValid() || !permissions_.contains(id) ||
-      setting > KR_PERMISSION_SESSION)
+      setting > KR_PERMISSION_SESSION) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   return session_->Defer(base::BindOnce(&SitePermissions::Apply,
                                         weak_factory_.GetWeakPtr(), id, setting,
                                         generation_))
@@ -265,21 +286,25 @@ KrResult SitePermissions::SetPermission(KrPermissionId id, uint32_t setting) {
 void SitePermissions::Apply(KrPermissionId id,
                             uint32_t setting,
                             uint64_t generation) {
-  if (generation != generation_ || !TargetValid() || !presenter_)
+  if (generation != generation_ || !TargetValid() || !presenter_) {
     return;
+  }
   presenter_->UpdatePermissions();
   const auto found = permissions_.find(id);
-  if (found == permissions_.end())
+  if (found == permissions_.end()) {
     return;
+  }
   const auto value = found->second;
   if (value.source != content_settings::SettingSource::kUser ||
-      !(Choices(value, *ui_delegate_) & (1u << setting)))
+      !(Choices(value, *ui_delegate_) & (1u << setting))) {
     return;
+  }
   const auto* info =
       content_settings::PermissionSettingsRegistry::GetInstance()->Get(
           value.type);
-  if (!info)
+  if (!info) {
     return;
+  }
   const auto converted =
       setting == KR_PERMISSION_DEFAULT
           ? std::nullopt
@@ -290,8 +315,9 @@ void SitePermissions::Apply(KrPermissionId id,
   presenter_->UpdatePermissions();
 }
 KrResult SitePermissions::Reset(std::string origin) {
-  if (!TargetValid() || (!origin.empty() && origin != origin_))
+  if (!TargetValid() || (!origin.empty() && origin != origin_)) {
     return KR_ERR_INVALID_ARGUMENT;
+  }
   return session_->Defer(base::BindOnce(&SitePermissions::ApplyReset,
                                         weak_factory_.GetWeakPtr(), origin_,
                                         generation_))
@@ -300,47 +326,58 @@ KrResult SitePermissions::Reset(std::string origin) {
 }
 void SitePermissions::ApplyReset(std::string origin, uint64_t generation) {
   if (generation != generation_ || origin != origin_ || !TargetValid() ||
-      !presenter_)
+      !presenter_) {
     return;
+  }
   const auto values = permissions_;
   auto objects = std::move(objects_);
-  for (const auto& [id, value] : values)
-    if (value.source == content_settings::SettingSource::kUser && value.setting)
+  for (const auto& [id, value] : values) {
+    if (value.source == content_settings::SettingSource::kUser &&
+        value.setting) {
       Apply(id, KR_PERMISSION_DEFAULT, generation);
-  for (const auto& object : objects)
+    }
+  }
+  for (const auto& object : objects) {
     if (object->chooser_object->source ==
-        content_settings::SettingSource::kUser)
+        content_settings::SettingSource::kUser) {
       presenter_->OnSiteChosenObjectDeleted(
           *object->ui_info, base::Value(object->chooser_object->value.Clone()));
+    }
+  }
   presenter_->UpdatePermissions();
 }
 void SitePermissions::OnContentSettingChanged(
     const ContentSettingsPattern& primary,
     const ContentSettingsPattern& secondary,
     ContentSettingsTypeSet types) {
-  if (refresh_pending_ || !presenter_)
+  if (refresh_pending_ || !presenter_) {
     return;
+  }
   refresh_pending_ = session_->Defer(base::BindOnce(
       &SitePermissions::Refresh, weak_factory_.GetWeakPtr(), generation_));
 }
 void SitePermissions::Refresh(uint64_t generation) {
-  if (generation != generation_)
+  if (generation != generation_) {
     return;
+  }
   refresh_pending_ = false;
-  if (presenter_ && TargetValid())
+  if (presenter_ && TargetValid()) {
     presenter_->UpdatePermissions();
+  }
 }
 void SitePermissions::DidFinishNavigation(content::NavigationHandle* handle) {
   if (handle->IsInPrimaryMainFrame() && handle->HasCommitted() &&
-      !TargetValid())
+      !TargetValid()) {
     Close(true);
+  }
 }
 void SitePermissions::WebContentsDestroyed() {
   Close(true);
 }
 void SitePermissions::OnVisibilityChanged(content::Visibility visibility) {
-  if (visibility != content::Visibility::VISIBLE)
+  if (visibility != content::Visibility::VISIBLE) {
     Close(true);
+  }
 }
 
 std::unique_ptr<permissions::PermissionPrompt> SitePermissions::CreatePrompt(
@@ -350,11 +387,18 @@ std::unique_ptr<permissions::PermissionPrompt> SitePermissions::CreatePrompt(
   if (!api || !delegate || delegate->Requests().empty() ||
       browser_->GetTabStripModel()->GetActiveWebContents() != contents ||
       delegate->ShouldCurrentRequestUseQuietUI() ||
-      delegate->GetGeolocationPromptType().has_value() ||
       std::ranges::any_of(delegate->Requests(), [](const auto& request) {
         return request->IsEmbeddedPermissionElementInitiated();
-      }))
+      })) {
     return nullptr;
+  }
+  const auto& pending = delegate->Requests();
+  if (pending.size() == 1 &&
+      pending.front()->request_type() ==
+          permissions::RequestType::kGeolocation &&
+      delegate->GetGeolocationPromptType().has_value()) {
+    return nullptr;
+  }
   std::vector<std::string> labels;
   std::vector<KrPermissionRequest> requests;
   labels.reserve(delegate->Requests().size());
@@ -411,31 +455,37 @@ std::unique_ptr<permissions::PermissionPrompt> SitePermissions::CreatePrompt(
                                                   request);
 }
 void SitePermissions::DismissPrompt(uint64_t request) {
-  if (!request || request != prompt_)
+  if (!request || request != prompt_) {
     return;
+  }
   prompt_ = 0;
   prompt_delegate_.reset();
   prompt_contents_.reset();
-  if (const auto* api = session_->api())
+  if (const auto* api = session_->api()) {
     api->dismiss_permission_prompt(api->self, request);
+  }
 }
 void SitePermissions::Respond(uint64_t request, uint32_t decision) {
-  if (request == prompt_ && decision <= KR_PERMISSION_DISMISS)
+  if (request == prompt_ && decision <= KR_PERMISSION_DISMISS) {
     std::ignore = session_->Defer(
         base::BindOnce(&SitePermissions::ApplyResponse,
                        weak_factory_.GetWeakPtr(), request, decision));
+  }
 }
 void SitePermissions::ApplyResponse(uint64_t request, uint32_t decision) {
   if (request != prompt_ || !prompt_delegate_ || !prompt_contents_ ||
       browser_->GetTabStripModel()->GetActiveWebContents() !=
-          prompt_contents_.get())
+          prompt_contents_.get()) {
     return;
-  if (decision == KR_PERMISSION_ALLOW_ONCE && !prompt_allow_once_)
+  }
+  if (decision == KR_PERMISSION_ALLOW_ONCE && !prompt_allow_once_) {
     return;
+  }
   auto delegate = prompt_delegate_;
   DismissPrompt(request);
-  if (!delegate)
+  if (!delegate) {
     return;
+  }
   delegate->SetDecisionTime();
   switch (decision) {
     case KR_PERMISSION_ALLOW_ONCE:

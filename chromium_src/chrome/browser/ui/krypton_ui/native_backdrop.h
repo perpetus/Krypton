@@ -8,7 +8,9 @@
 #include <vector>
 
 #include "cc/paint/paint_flags.h"
+#include "third_party/skia/include/core/SkRRect.h"
 #include "krypton_ui/abi.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/background.h"
 
@@ -30,6 +32,12 @@ class NativeBackdrop final : public views::Background {
   // The frame shows the platform's system backdrop instead of the theme.
   [[nodiscard]] bool transparent() const { return transparent_; }
   [[nodiscard]] KrColor base() const { return base_; }
+  // The module's Agent panel, in BrowserView coordinates: this rounded area
+  // stays transparent so the panel's backdrop behind the browser's content
+  // shows through. An empty rectangle paints the whole frame. Returns
+  // whether it changed.
+  [[nodiscard]] bool SetHole(const gfx::RectF& rect, float radius);
+  [[nodiscard]] bool has_hole() const { return !hole_.isEmpty(); }
 
   [[nodiscard]] KrColor glance_button() const { return glance_button_; }
   [[nodiscard]] KrColor glance_button_hover() const {
@@ -59,6 +67,7 @@ class NativeBackdrop final : public views::Background {
   mutable gfx::Size cached_size_;
   mutable bool dirty_ = true;
   bool transparent_ = false;
+  SkRRect hole_ = SkRRect::MakeEmpty();
 };
 
 // Four small sibling layers cover the page's corner ears without masking any

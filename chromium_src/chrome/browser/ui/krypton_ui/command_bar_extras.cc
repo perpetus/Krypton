@@ -36,6 +36,32 @@
 #include "ui/views/widget/widget.h"
 
 namespace krypton_ui {
+
+void BrowserAdapter::ClearTemporaryTabs(KrSpaceId space) {
+  if (active_space_ != space) {
+    return;
+  }
+  auto weak = GetWeakPtr();
+  std::vector<base::WeakPtr<tabs::TabInterface>> targets;
+  for (auto* tab : *browser_->GetTabStripModel()) {
+    if (!tab->IsPinned() && !EssentialForTab(tab->GetContents()) &&
+        WorkspaceForTab(tab->GetContents()) == space) {
+      targets.push_back(tab->GetWeakPtr());
+    }
+  }
+  for (auto target : targets) {
+    if (!weak) {
+      return;
+    }
+    if (target && !target->IsPinned() &&
+        !EssentialForTab(target->GetContents()) &&
+        WorkspaceForTab(target->GetContents()) == space) {
+      browser_->GetTabStripModel()->CloseWebContents(
+          target->GetContents(), TabCloseTypes::CLOSE_USER_GESTURE);
+    }
+  }
+}
+
 void BrowserAdapter::RecordPinnedHome(tabs::TabInterface& tab) {
   auto* contents = tab.GetContents();
   const auto previous = PinnedHomeForTab(contents);
@@ -362,26 +388,7 @@ void BrowserAdapter::AppendExtraCommands(
   // Snapshot identities before closing; unload handling and recently-closed
   // sessions remain Chromium's. No archive or background cleanup is introduced.
   add("Clear Today Tabs", "close temporary unpinned space",
-      base::BindOnce(
-          [](base::WeakPtr<BrowserAdapter> owner, KrSpaceId space) {
-            if (!owner || owner->active_space_ != space)
-              return;
-            std::vector<base::WeakPtr<tabs::TabInterface>> targets;
-            for (auto* tab : *owner->browser_->GetTabStripModel())
-              if (!tab->IsPinned() && !EssentialForTab(tab->GetContents()) &&
-                  WorkspaceForTab(tab->GetContents()) == space)
-                targets.push_back(tab->GetWeakPtr());
-            for (auto target : targets) {
-              if (!owner)
-                return;
-              if (target && !target->IsPinned() &&
-                  !EssentialForTab(target->GetContents()) &&
-                  WorkspaceForTab(target->GetContents()) == space)
-                owner->browser_->GetTabStripModel()->CloseWebContents(
-                    target->GetContents(), TabCloseTypes::CLOSE_USER_GESTURE);
-            }
-          },
-          owner, space));
+      base::BindOnce(&BrowserAdapter::ClearTemporaryTabs, owner, space));
   add("Reset Space", "restore pinned original default urls",
       base::BindOnce(
           [](base::WeakPtr<BrowserAdapter> owner, KrSpaceId space) {

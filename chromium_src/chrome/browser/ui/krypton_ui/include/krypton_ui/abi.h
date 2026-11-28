@@ -61,7 +61,7 @@ extern "C" {
 /* True for a non-null record that includes the entire field. A callback
  * must also be non-null before it can be called. */
 #define KR_HAS_SLOT(table, type, slot) \
-  ((table) != NULL && \
+  ((table) != NULL &&                  \
    (table)->struct_size >= offsetof(type, slot) + sizeof((table)->slot))
 
 /* A payload follows the same complete-field rule as a callback table. */
@@ -129,13 +129,9 @@ enum KrTabFlags {
   KR_TAB_CRASHED = 1u << 5,
   KR_TAB_RECORDING = 1u << 6, /* camera or microphone in use */
   KR_TAB_CAPTURING = 1u << 7, /* screen or tab being shared */
-  KR_TAB_ATTENTION = 1u << 8,
-  KR_TAB_SLEEPING = 1u
-      << 9 /* discarded or not loaded; do not wake for preview */ /* wants
-                                                                     attention,
-                                                                     e.g. a
-                                                                     pending
-                                                                     dialog */
+  KR_TAB_ATTENTION = 1u << 8, /* wants attention, e.g. dialog */
+  KR_TAB_SLEEPING = 1u << 9,  /* discarded or not loaded; do not wake preview */
+  KR_TAB_AGENT_WORKING = 1u << 10 /* active agent task bound to this tab */
 };
 
 typedef struct KrTab {
@@ -433,6 +429,9 @@ enum KrLayoutFlags {
       << 15, /* no hide targets: both pinned */
   KR_LAYOUT_WORKSPACE_SWIPE = 1u
       << 16, /* horizontal touchpad swipe on sidebar */
+  /* With sleep_tab, middle-click sleeps pinned tabs and Essentials.
+   * Zero preserves close on middle-click. */
+  KR_LAYOUT_MIDDLE_CLICK_SLEEP = 1u << 17,
 };
 
 typedef struct KrLayoutPrefs {
@@ -729,7 +728,8 @@ enum KrSettingsSection {
   KR_SETTINGS_ACCESSIBILITY = 6,
   KR_SETTINGS_ABOUT = 7,
   KR_SETTINGS_WORKSPACES = 8,
-  KR_SETTINGS_CURRENT = 9 /* show_settings only: restore retained section */
+  KR_SETTINGS_CURRENT = 9, /* show_settings only: restore retained section */
+  KR_SETTINGS_KEYBOARD_SHORTCUTS = 10
 };
 enum KrColorScheme {
   KR_COLOR_SYSTEM = 0,
@@ -759,7 +759,10 @@ enum KrAppearanceFlags {
   KR_APPEARANCE_NEW_TAB_PAGE = 1u << 5,
   KR_APPEARANCE_SWITCHER_AWAKE_ONLY = 1u << 6,
   KR_APPEARANCE_FULL_COLOR_SLEEPING_TABS = 1u << 7,
-  KR_APPEARANCE_HIDE_SHADOWS = 1u << 8
+  KR_APPEARANCE_HIDE_SHADOWS = 1u << 8,
+  KR_APPEARANCE_NEW_TAB_AGENT_CHAT = 1u << 9,
+  /* Set by the host while AI is enabled. */
+  KR_APPEARANCE_AGENT_CHAT_AVAILABLE = 1u << 10
 };
 /* Chrome icon set. Records without icon_pack mean FLUENT. */
 enum KrIconPack {
@@ -1628,6 +1631,313 @@ typedef struct KrLocalModelsSnapshotV2 {
   bool checking;
 } KrLocalModelsSnapshotV2;
 
+/* ----------------------------------------------------------- agent -- */
+
+/* Optional Krypton Agent panel. The host owns every record and publishes
+ * changes incrementally; the module owns only presentation (open state, the
+ * provider and model picker selection, the history filter and its layout).
+ * Records are copied during each call. Ids are host-assigned, nonzero and
+ * stable for the life of the window. Removing an unknown id returns
+ * KR_ERR_INVALID_ARGUMENT. The transcript is host content that the host
+ * places in the bounds reported through set_agent_chat_bounds; every other
+ * control is native. */
+typedef uint64_t KrAgentProviderId;
+typedef uint64_t KrAgentRecordId;
+
+typedef enum KrAgentAvailability {
+  KR_AGENT_OFF = 0,        /* the AI agent privacy feature is off */
+  KR_AGENT_INSTALLING = 1, /* the component is downloading or verifying */
+  KR_AGENT_READY = 2,
+  KR_AGENT_UNAVAILABLE = 3 /* installation failed; error says why */
+} KrAgentAvailability;
+typedef enum KrAgentStatus {
+  KR_AGENT_IDLE = 0, /* no live session */
+  KR_AGENT_STARTING = 1,
+  KR_AGENT_RUNNING = 2,
+  KR_AGENT_WAITING = 3, /* waiting for the user, e.g. on a request */
+  KR_AGENT_STOPPED = 4,
+  KR_AGENT_FAILED = 5
+} KrAgentStatus;
+typedef enum KrAgentNavigationPermission {
+  KR_AGENT_NAVIGATION_UNAVAILABLE = 0,
+  KR_AGENT_NAVIGATION_ASK = 1,
+  KR_AGENT_NAVIGATION_ALLOW = 2,
+  KR_AGENT_NAVIGATION_BLOCK = 3
+} KrAgentNavigationPermission;
+enum KrAgentStateFlags {
+  KR_AGENT_HISTORY_ENABLED = 1u << 0,  /* this profile saves sessions */
+  KR_AGENT_CAN_START = 1u << 1,        /* the active tab can host a session */
+  KR_AGENT_TRANSCRIPT = 1u << 2,       /* a transcript is ready to place */
+  KR_AGENT_SAVED_TRANSCRIPT = 1u << 3, /* it shows a saved, read-only session */
+  KR_AGENT_COMPONENT_UPDATE = 1u << 4, /* "Update AI component" applies */
+  KR_AGENT_COMPONENT_VERIFYING = 1u << 5
+};
+/* Light and dark follow the window theme sent through set_window_theme. */
+typedef struct KrAgentState {
+  size_t struct_size;
+  uint32_t availability;      /* KrAgentAvailability */
+  uint32_t status;            /* KrAgentStatus */
+  uint32_t flags;             /* KrAgentStateFlags */
+  int32_t component_progress; /* 0-100 while downloading, otherwise -1 */
+  KrPrivacyFeatureId privacy_feature; /* the opt-in row; 0 when unknown */
+  KrAgentProviderId provider;         /* the live or shown session's instance */
+  KrAgentRecordId session;            /* the shown session record; 0 for none */
+  uint32_t archive_after_days;        /* 0 means never */
+  uint32_t delete_after_days;         /* 0 means never */
+  KrStr model;
+  KrStr title;  /* the shown session's title */
+  KrStr notice; /* in-session warning, e.g. a page with user content */
+  KrStr error;
+  KrStr component_version; /* installed version; empty when none */
+  KrStr user_content_warning;
+  uint32_t navigation_permission; /* KrAgentNavigationPermission */
+  KrTabId context_tab;            /* tab attached to the next message, or 0 */
+} KrAgentState;
+
+typedef enum KrAgentProviderTier {
+  KR_AGENT_TIER_BROWSER_ONLY = 0,
+  KR_AGENT_TIER_RESTRICTED = 1
+} KrAgentProviderTier;
+enum KrAgentProviderFlags {
+  KR_AGENT_PROVIDER_INSTALLED = 1u << 0,
+  KR_AGENT_PROVIDER_SIGNED_IN = 1u << 1,
+  KR_AGENT_PROVIDER_CAN_SIGN_IN = 1u << 2,
+  KR_AGENT_PROVIDER_SANDBOXED = 1u << 3,
+  KR_AGENT_PROVIDER_WEB_ACCESS = 1u << 4, /* provider-side web access */
+  KR_AGENT_PROVIDER_CONSENTED = 1u << 5,  /* one-time consent recorded */
+  KR_AGENT_PROVIDER_DEFAULT = 1u << 6
+};
+/* One level of a model's reasoning control (T3's reasoning option). */
+typedef struct KrAgentChoice {
+  size_t struct_size;
+  KrStr id;
+  KrStr name;
+  bool is_default;
+} KrAgentChoice;
+typedef struct KrAgentModel {
+  size_t struct_size;
+  KrStr id;
+  KrStr name;
+  bool is_default;
+  /* Appended: the model's reasoning levels, if it has a reasoning control.
+   * Elements are reasoning_size bytes apart. */
+  const KrAgentChoice* reasoning;
+  size_t reasoning_count;
+  size_t reasoning_size;
+} KrAgentModel;
+/* One T3 provider instance. A restricted instance, or one with provider-side
+ * web access, needs SET_CONSENT before its first START. */
+typedef struct KrAgentProvider {
+  size_t struct_size;
+  KrAgentProviderId id;
+  uint32_t tier;  /* KrAgentProviderTier */
+  uint32_t flags; /* KrAgentProviderFlags */
+  uint32_t order;
+  KrStr name;
+  KrStr detail; /* the tier's reason and its remaining local capabilities */
+  KrStr status; /* sign-in or availability text; empty when ready */
+  const KrAgentModel* models;
+  size_t model_count;
+  size_t model_size;
+  /* Appended: the provider's mark as T3 names it ("claude", "openai",
+   * "opencode", "cursor", "acp"); empty for none. */
+  KrStr icon;
+} KrAgentProvider;
+
+typedef enum KrAgentRequestKind {
+  KR_AGENT_REQUEST_ACTION = 0,        /* confirm an action on the page */
+  KR_AGENT_REQUEST_NAVIGATION = 1,    /* open a site that is not allowed yet */
+  KR_AGENT_REQUEST_HANDOFF = 2,       /* the agent hands control to the user */
+  KR_AGENT_REQUEST_FIRST_CONTEXT = 3, /* preview what the first turn shares */
+  KR_AGENT_REQUEST_SIGN_IN = 4        /* read a site with the user signed in */
+} KrAgentRequestKind;
+enum KrAgentRequestFlags {
+  KR_AGENT_REQUEST_USER_CONTENT = 1u << 0, /* the site has user content */
+  KR_AGENT_REQUEST_CAN_ALWAYS_ALLOW = 1u << 1,
+  KR_AGENT_REQUEST_HIGHLIGHTED = 1u << 2, /* the target is marked on the page */
+  KR_AGENT_REQUEST_CAN_ALLOW_IN_CHAT = 1u << 3
+};
+typedef enum KrAgentDecision {
+  KR_AGENT_DENY = 0,              /* also "Stop" for a handoff */
+  KR_AGENT_ALLOW_ONCE = 1,        /* also "Continue" for a handoff */
+  KR_AGENT_ALWAYS_ALLOW_SITE = 2, /* persistent navigation allowlist */
+  KR_AGENT_ALLOW_SITE_IN_CHAT =
+      3 /* sign-in grant for this site and chat only */
+} KrAgentDecision;
+/* Pending until the host removes it; the module reports one decision. */
+typedef struct KrAgentRequest {
+  size_t struct_size;
+  KrAgentRecordId id;
+  uint32_t kind;  /* KrAgentRequestKind */
+  uint32_t flags; /* KrAgentRequestFlags */
+  KrStr title;
+  KrStr detail;
+  KrStr target;  /* URL or origin, when the request has one */
+  KrStr preview; /* FIRST_CONTEXT: the filtered context to be shared */
+} KrAgentRequest;
+
+typedef enum KrAgentActivityState {
+  KR_AGENT_ACTIVITY_RUNNING = 0,
+  KR_AGENT_ACTIVITY_DONE = 1,
+  KR_AGENT_ACTIVITY_FAILED = 2,
+  KR_AGENT_ACTIVITY_DENIED = 3
+} KrAgentActivityState;
+/* What the browser ran for the shown session. A new id appends. */
+typedef struct KrAgentActivity {
+  size_t struct_size;
+  KrAgentRecordId id;
+  uint32_t state; /* KrAgentActivityState */
+  KrStr tool;
+  KrStr description;
+} KrAgentActivity;
+
+enum KrAgentSessionFlags {
+  KR_AGENT_SESSION_ARCHIVED = 1u << 0,
+  KR_AGENT_SESSION_RECOVERABLE = 1u << 1, /* Resume is possible */
+  KR_AGENT_SESSION_ACTIVE = 1u << 2
+};
+/* A saved session. `detail` is display text such as the provider and when it
+ * was last used; `updated` (Unix milliseconds) orders the lists. */
+typedef struct KrAgentSession {
+  size_t struct_size;
+  KrAgentRecordId id;
+  uint32_t flags; /* KrAgentSessionFlags */
+  KrAgentProviderId provider;
+  int64_t updated;
+  KrStr title;
+  KrStr detail;
+} KrAgentSession;
+
+typedef enum KrAgentSkillOrigin {
+  KR_AGENT_SKILL_BUILT_IN = 0,
+  KR_AGENT_SKILL_USER = 1,
+  KR_AGENT_SKILL_IMPORTED = 2
+} KrAgentSkillOrigin;
+enum KrAgentSkillFlags {
+  KR_AGENT_SKILL_EDITED = 1u << 0,       /* a user copy of a built-in */
+  KR_AGENT_SKILL_NEEDS_REVIEW = 1u << 1, /* imported or changed since review */
+  KR_AGENT_SKILL_PLUGIN = 1u << 2        /* instructions from a plugin */
+};
+typedef struct KrAgentSkill {
+  size_t struct_size;
+  KrAgentRecordId id;
+  uint32_t origin; /* KrAgentSkillOrigin */
+  uint32_t flags;  /* KrAgentSkillFlags */
+  KrStr name;
+  KrStr description;
+  KrStr instructions;
+  KrStr ignored; /* review text: components that were not imported */
+  const KrAgentProviderId* enabled; /* instances that use this skill */
+  size_t enabled_count;
+} KrAgentSkill;
+
+enum KrAgentSiteFlags {
+  KR_AGENT_SITE_VALID = 1u << 0, /* agent_site_flags only */
+  KR_AGENT_SITE_USER_CONTENT = 1u << 1
+};
+/* A site the agent can open without asking. */
+typedef struct KrAgentSite {
+  size_t struct_size;
+  KrAgentRecordId id;
+  uint32_t flags; /* KrAgentSiteFlags */
+  KrStr origin;
+} KrAgentSite;
+
+typedef enum KrAgentCommandKind {
+  KR_AGENT_COMMAND_START = 0, /* provider, model, text = prompt, flags */
+  KR_AGENT_COMMAND_SEND = 1,  /* text; model, if set, from this turn on */
+  KR_AGENT_COMMAND_STOP = 2,
+  KR_AGENT_COMMAND_NEW_SESSION = 3, /* closes the shown session */
+  KR_AGENT_COMMAND_SIGN_IN = 4,     /* provider */
+  KR_AGENT_COMMAND_REFRESH_PROVIDERS = 5,
+  KR_AGENT_COMMAND_SET_CONSENT = 6,     /* provider, value 1 allow, 0 revoke */
+  KR_AGENT_COMMAND_OPEN_SESSION = 7,    /* id; read-only */
+  KR_AGENT_COMMAND_RESUME_SESSION = 8,  /* id, provider, model, text, flags */
+  KR_AGENT_COMMAND_ARCHIVE_SESSION = 9, /* id, value 1 archive, 0 unarchive */
+  KR_AGENT_COMMAND_DELETE_SESSION = 10, /* id */
+  KR_AGENT_COMMAND_DELETE_HISTORY = 11, /* every saved session */
+  KR_AGENT_COMMAND_SET_HISTORY = 12,    /* value 1 save sessions, 0 off */
+  KR_AGENT_COMMAND_SET_ARCHIVE_AFTER = 13, /* value days, 0 never */
+  KR_AGENT_COMMAND_SET_DELETE_AFTER = 14,  /* value days, 0 never */
+  KR_AGENT_COMMAND_UPDATE_COMPONENT = 15,
+  /* id 0 creates; name, description, text = instructions, providers. */
+  KR_AGENT_COMMAND_SAVE_SKILL = 16,
+  KR_AGENT_COMMAND_SET_SKILL_PROVIDERS = 17, /* id, providers */
+  KR_AGENT_COMMAND_RESET_SKILL = 18,         /* id of an edited built-in */
+  KR_AGENT_COMMAND_REMOVE_SKILL = 19,        /* id */
+  KR_AGENT_COMMAND_APPROVE_SKILL = 20,       /* id, after its review */
+  KR_AGENT_COMMAND_IMPORT_SKILL = 21, /* value 0 folder, 1 .zip; host dialog */
+  KR_AGENT_COMMAND_ADD_SITE = 22,     /* text; flags KrAgentSiteFlags */
+  KR_AGENT_COMMAND_REMOVE_SITE = 23,  /* id */
+  /* value 1: the full-page New Tab chat, with no page beside it; 0: docked
+     beside the active page. Sent while visible, on open and on each change. */
+  KR_AGENT_COMMAND_SET_SURFACE = 24,
+  KR_AGENT_COMMAND_SET_NAVIGATION_PERMISSION = 25, /* value: permission */
+  KR_AGENT_COMMAND_SET_CONTEXT_TAB = 26 /* id: browser tab id, or 0 to clear */
+} KrAgentCommandKind;
+enum KrAgentStartFlags {
+  KR_AGENT_START_ALLOW_ACTIONS = 1u << 0,
+  KR_AGENT_START_ALLOW_RESEARCH = 1u << 1,
+  KR_AGENT_START_ALLOW_TAB_LIST = 1u << 2,
+  KR_AGENT_START_ALLOW_ORGANIZE = 1u << 3,
+  KR_AGENT_START_ALLOW_HISTORY = 1u << 4
+};
+/* Only from explicit user input. ADD_SITE sets KR_AGENT_SITE_USER_CONTENT
+ * after the module showed the user-content warning. */
+typedef struct KrAgentCommand {
+  size_t struct_size;
+  uint32_t kind;  /* KrAgentCommandKind */
+  uint32_t flags; /* KrAgentStartFlags or KrAgentSiteFlags */
+  KrAgentRecordId id;
+  KrAgentProviderId provider;
+  uint64_t value;
+  KrStr text;
+  KrStr model;
+  KrStr name;
+  KrStr description;
+  const KrAgentProviderId* providers;
+  size_t provider_count;
+  /* Appended. START, SEND, RESUME_SESSION: a KrAgentChoice id of the model's
+   * reasoning control; empty uses the model's default (SEND keeps the
+   * session's). */
+  KrStr reasoning;
+} KrAgentCommand;
+
+enum KrShortcutModifiers {
+  KR_SHORTCUT_CTRL = 1u << 0,
+  KR_SHORTCUT_ALT = 1u << 1,
+  KR_SHORTCUT_SHIFT = 1u << 2,
+  KR_SHORTCUT_META = 1u << 3
+};
+
+typedef struct KrShortcutChord {
+  uint32_t key;       /* Windows virtual-key code */
+  uint32_t modifiers; /* KrShortcutModifiers */
+} KrShortcutChord;
+
+typedef struct KrShortcutCommand {
+  size_t struct_size;
+  uint32_t id; /* Stable, nonzero for the same command across snapshots. */
+  KrStr group; /* Localized. Order groups and commands in display order. */
+  KrStr label; /* Localized. */
+  /* Human-readable bindings in the same format as menu accelerators.
+   * Empty current_binding means unassigned. */
+  const KrStr* default_bindings;
+  size_t default_binding_count;
+  KrStr current_binding;
+} KrShortcutCommand;
+
+typedef enum KrShortcutEditStatus {
+  KR_SHORTCUT_EDIT_OK = 0,
+  KR_SHORTCUT_EDIT_CONFLICT = 1,
+  KR_SHORTCUT_EDIT_REJECTED = 2
+} KrShortcutEditStatus;
+
+typedef struct KrShortcutEditResult {
+  uint32_t status;          /* KrShortcutEditStatus */
+  uint32_t conflicting_id;  /* Display name comes from the snapshot. */
+} KrShortcutEditResult;
+
 typedef struct KrBrowser {
   size_t struct_size;
   void* self;
@@ -1829,6 +2139,43 @@ typedef struct KrBrowser {
                                  uint32_t kind,
                                  uint32_t id,
                                  uint32_t command);
+  /* Returns false if the window cannot open its Agent chat. */
+  bool (*open_agent_chat)(void* self);
+  /* Optional Agent panel. Publish its records only while it is visible;
+   * false also detaches the transcript. */
+  void (*agent_panel_visibility_changed)(void* self, bool visible);
+  /* Reserved transcript bounds in browser-client DIPs, beside the native
+   * controls. An empty rectangle detaches the transcript. */
+  void (*set_agent_chat_bounds)(void* self, KrRect bounds);
+  KrResult (*agent_command)(void* self, const KrAgentCommand* command);
+  /* One KrAgentDecision for a published request. */
+  KrResult (*agent_request_response)(void* self,
+                                     KrAgentRecordId request,
+                                     uint32_t decision);
+  /* KrAgentSiteFlags for a site the user typed; synchronous and cheap. */
+  uint32_t (*agent_site_flags)(void* self, KrStr site);
+  /* Optional. The Agent panel's outer rectangle in browser-client DIPs and
+   * its corner radius. The module draws the panel's one backdrop behind the
+   * browser's content; the browser leaves this rounded area of its frame
+   * unpainted and transparent so that backdrop shows through its transcript
+   * and page area. An empty rectangle restores the frame. */
+  void (*set_agent_surface)(void* self, KrRect bounds, float corner_radius);
+  void (*sleep_tab)(void* self, KrTabId tab);
+  /* Request the current catalog through set_shortcuts. */
+  void (*request_shortcuts)(void* self);
+  /* replace_conflict is zero on first attempt. Otherwise replace only the
+   * specified command's binding, atomically, if it still conflicts. */
+  KrShortcutEditResult (*set_shortcut)(void* self,
+                                       uint32_t command,
+                                       KrShortcutChord chord,
+                                       uint32_t replace_conflict);
+  KrShortcutEditResult (*unassign_shortcut)(void* self, uint32_t command);
+  /* Zero resets all. Set/unassign/reset publish set_shortcuts on success;
+   * other binding changes also publish while the section is visible. */
+  KrShortcutEditResult (*reset_shortcut)(void* self, uint32_t command);
+  /* Idempotent and scoped to this UI attachment. The host must also clear
+   * suspension when the attachment is destroyed. */
+  void (*suspend_shortcuts)(void* self, bool suspended);
 } KrBrowser;
 
 /* Module side. Filled by kr_ui_create, read by the host. */
@@ -2095,6 +2442,34 @@ typedef struct KrShellUI {
   KrResult (*set_local_models)(void* self, const KrLocalModelsSnapshot* value);
   KrResult (*set_local_models_v2)(void* self,
                                   const KrLocalModelsSnapshotV2* value);
+  /* Optional Agent panel; see the agent records above. */
+  KrResult (*set_agent_state)(void* self, const KrAgentState* state);
+  KrResult (*upsert_agent_provider)(void* self,
+                                    const KrAgentProvider* provider);
+  KrResult (*remove_agent_provider)(void* self, KrAgentProviderId id);
+  KrResult (*upsert_agent_request)(void* self, const KrAgentRequest* request);
+  KrResult (*remove_agent_request)(void* self, KrAgentRecordId id);
+  KrResult (*upsert_agent_activity)(void* self,
+                                    const KrAgentActivity* activity);
+  /* Clears the activity list, e.g. for a new session. */
+  KrResult (*clear_agent_activity)(void* self);
+  KrResult (*upsert_agent_session)(void* self, const KrAgentSession* session);
+  KrResult (*remove_agent_session)(void* self, KrAgentRecordId id);
+  KrResult (*upsert_agent_skill)(void* self, const KrAgentSkill* skill);
+  KrResult (*remove_agent_skill)(void* self, KrAgentRecordId id);
+  KrResult (*upsert_agent_site)(void* self, const KrAgentSite* site);
+  KrResult (*remove_agent_site)(void* self, KrAgentRecordId id);
+  /* Opens or closes the panel; focus_composer moves keyboard focus to its
+   * prompt box after the panel renders. */
+  KrResult (*show_agent_panel)(void* self, bool visible, bool focus_composer);
+  /* Places text in the native composer with a render label. Does not send. */
+  KrResult (*suggest_agent_prompt)(void* self, KrStr text);
+  /* Snapshot arrays and their strings are borrowed only during the call.
+   * count zero clears the catalog. stride is sizeof(KrShortcutCommand). */
+  KrResult (*set_shortcuts)(void* self,
+                            const KrShortcutCommand* commands,
+                            size_t count,
+                            size_t stride);
 } KrShellUI;
 
 typedef struct KrCreateParams {

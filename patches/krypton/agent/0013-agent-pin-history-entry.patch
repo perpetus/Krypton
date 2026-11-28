@@ -1,0 +1,294 @@
+# Krypton: Keep an approved back or forward traversal pinned to its reviewed history entry.
+# Reject changed entries, POST replay and same-document traversal through this path.
+--- a/chrome/browser/actor/tools/history_tool_request.h
++++ b/chrome/browser/actor/tools/history_tool_request.h
+@@ -10,9 +10,17 @@
+ 
+ #include "chrome/browser/actor/actor_surface_handle.h"
+ #include "chrome/browser/actor/tools/tool_request.h"
++#include "url/gurl.h"
+ 
+ namespace actor {
+ class ToolRequestVisitorFunctor;
++
++// A destination reviewed by the Krypton bridge for a specific traversal.
++struct PinnedHistoryEntry {
++  int source_id;
++  int destination_id;
++  GURL url;
++};
+ 
+ // Invokes a history back traversal in a specified tab.
+ class HistoryBackToolRequest : public TabToolRequest {
+@@ -22,7 +30,9 @@
+   // `ToolRegistry` for lookup and routing via `GetToolDefinition()`.
+   static constexpr std::string_view kModelFacingName = "go_back";
+ 
+-  explicit HistoryBackToolRequest(ActorSurfaceHandle actor_surface_handle);
++  explicit HistoryBackToolRequest(
++      ActorSurfaceHandle actor_surface_handle,
++      std::optional<PinnedHistoryEntry> pinned_entry = std::nullopt);
+   ~HistoryBackToolRequest() override;
+ 
+   // Returns the `ToolId::kGoBack` tool schema definition.
+@@ -35,6 +45,10 @@
+                               ToolDelegate& tool_delegate) const override;
+   std::string_view Name() const override;
+   bool RequiresUrlCheckInCurrentTab() const override;
++  std::optional<url::Origin> AssociatedOriginGrant() const override;
++
++ private:
++  std::optional<PinnedHistoryEntry> pinned_entry_;
+ };
+ 
+ // Invokes a history forward traversal in a specified tab.
+@@ -45,7 +59,9 @@
+   // `ToolRegistry` for lookup and routing via `GetToolDefinition()`.
+   static constexpr std::string_view kModelFacingName = "go_forward";
+ 
+-  explicit HistoryForwardToolRequest(ActorSurfaceHandle actor_surface_handle);
++  explicit HistoryForwardToolRequest(
++      ActorSurfaceHandle actor_surface_handle,
++      std::optional<PinnedHistoryEntry> pinned_entry = std::nullopt);
+   ~HistoryForwardToolRequest() override;
+ 
+   // Returns the `ToolId::kGoForward` tool schema definition.
+@@ -58,6 +74,10 @@
+                               ToolDelegate& tool_delegate) const override;
+   std::string_view Name() const override;
+   bool RequiresUrlCheckInCurrentTab() const override;
++  std::optional<url::Origin> AssociatedOriginGrant() const override;
++
++ private:
++  std::optional<PinnedHistoryEntry> pinned_entry_;
+ };
+ 
+ // Invokes a page reload in a specified tab.
+--- a/chrome/browser/actor/tools/history_tool_request.cc
++++ b/chrome/browser/actor/tools/history_tool_request.cc
+@@ -7,6 +7,7 @@
+ #include <memory>
+ #include <optional>
+ #include <string_view>
++#include <utility>
+ 
+ #include "chrome/browser/actor/actor_surface.h"
+ #include "chrome/browser/actor/actor_surface_handle.h"
+@@ -41,7 +42,8 @@
+     TaskId task_id,
+     ToolDelegate& tool_delegate,
+     ActorSurfaceHandle actor_surface_handle,
+-    HistoryTool::Direction direction) {
++    HistoryTool::Direction direction,
++    std::optional<PinnedHistoryEntry> pinned_entry = std::nullopt) {
+   ActorSurface* actor_surface = actor_surface_handle.Get();
+ 
+   if (!actor_surface) {
+@@ -51,15 +53,17 @@
+   }
+ 
+   return {std::make_unique<HistoryTool>(task_id, tool_delegate, *actor_surface,
+-                                        direction),
++                                        direction, std::move(pinned_entry)),
+           MakeOkResult()};
+ }
+ 
+ }  // namespace
+ 
+ HistoryBackToolRequest::HistoryBackToolRequest(
+-    ActorSurfaceHandle actor_surface_handle)
+-    : TabToolRequest(actor_surface_handle) {}
++    ActorSurfaceHandle actor_surface_handle,
++    std::optional<PinnedHistoryEntry> pinned_entry)
++    : TabToolRequest(actor_surface_handle),
++      pinned_entry_(std::move(pinned_entry)) {}
+ 
+ HistoryBackToolRequest::~HistoryBackToolRequest() = default;
+ 
+@@ -74,7 +78,7 @@
+     TaskId task_id,
+     ToolDelegate& tool_delegate) const {
+   return CreateHistoryTool(task_id, tool_delegate, GetActorSurfaceHandle(),
+-                           HistoryTool::Direction::kBack);
++                           HistoryTool::Direction::kBack, pinned_entry_);
+ }
+ 
+ void HistoryBackToolRequest::Apply(ToolRequestVisitorFunctor& f) const {
+@@ -85,6 +89,14 @@
+   return kName;
+ }
+ 
++std::optional<url::Origin> HistoryBackToolRequest::AssociatedOriginGrant()
++    const {
++  if (!pinned_entry_) {
++    return std::nullopt;
++  }
++  return url::Origin::Create(pinned_entry_->url);
++}
++
+ bool HistoryBackToolRequest::RequiresUrlCheckInCurrentTab() const {
+   // A history tool is tab scoped but navigates *away* from the current URL --
+   // the destination URL is checked in HistoryTool::Validate().
+@@ -92,8 +104,10 @@
+ }
+ 
+ HistoryForwardToolRequest::HistoryForwardToolRequest(
+-    ActorSurfaceHandle actor_surface_handle)
+-    : TabToolRequest(actor_surface_handle) {}
++    ActorSurfaceHandle actor_surface_handle,
++    std::optional<PinnedHistoryEntry> pinned_entry)
++    : TabToolRequest(actor_surface_handle),
++      pinned_entry_(std::move(pinned_entry)) {}
+ 
+ HistoryForwardToolRequest::~HistoryForwardToolRequest() = default;
+ 
+@@ -108,7 +122,7 @@
+     TaskId task_id,
+     ToolDelegate& tool_delegate) const {
+   return CreateHistoryTool(task_id, tool_delegate, GetActorSurfaceHandle(),
+-                           HistoryTool::Direction::kForward);
++                           HistoryTool::Direction::kForward, pinned_entry_);
+ }
+ 
+ void HistoryForwardToolRequest::Apply(ToolRequestVisitorFunctor& f) const {
+@@ -117,6 +131,14 @@
+ 
+ std::string_view HistoryForwardToolRequest::Name() const {
+   return kName;
++}
++
++std::optional<url::Origin> HistoryForwardToolRequest::AssociatedOriginGrant()
++    const {
++  if (!pinned_entry_) {
++    return std::nullopt;
++  }
++  return url::Origin::Create(pinned_entry_->url);
+ }
+ 
+ bool HistoryForwardToolRequest::RequiresUrlCheckInCurrentTab() const {
+--- a/chrome/browser/actor/tools/history_tool.h
++++ b/chrome/browser/actor/tools/history_tool.h
+@@ -12,6 +12,7 @@
+ 
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/browser/actor/actor_surface_handle.h"
++#include "chrome/browser/actor/tools/history_tool_request.h"
+ #include "chrome/browser/actor/tools/tool.h"
+ #include "chrome/browser/actor/tools/tool_callbacks.h"
+ #include "chrome/browser/actor/tools/tool_request.h"
+@@ -41,7 +42,8 @@
+   HistoryTool(TaskId task_id,
+               ToolDelegate& tool_delegate,
+               ActorSurface& actor_surface,
+-              Direction direction);
++              Direction direction,
++              std::optional<PinnedHistoryEntry> pinned_entry = std::nullopt);
+   ~HistoryTool() override;
+ 
+   // actor::Tool
+@@ -71,9 +73,11 @@
+   bool IsInvokeInProgress() const;
+ 
+   int GetTargetOffset() const;
++  std::optional<int> PinnedEntryIndex() const;
+ 
+   // Whether the navigation is backwards or forwards in session history.
+   Direction direction_;
++  const std::optional<PinnedHistoryEntry> pinned_entry_;
+ 
+   // This class tracks all navigation handles created as a result of the history
+   // traversal in `pending_navigations_`. However, these navigations may or may
+--- a/chrome/browser/actor/tools/history_tool.cc
++++ b/chrome/browser/actor/tools/history_tool.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/actor/tools/history_tool.h"
++
++#include <utility>
+ 
+ #include "base/time/time.h"
+ #include "chrome/browser/actor/actor_surface.h"
+@@ -39,15 +41,50 @@
+ HistoryTool::HistoryTool(TaskId task_id,
+                          ToolDelegate& tool_delegate,
+                          ActorSurface& actor_surface,
+-                         Direction direction)
++                         Direction direction,
++                         std::optional<PinnedHistoryEntry> pinned_entry)
+     : Tool(task_id, tool_delegate),
+       WebContentsObserver(actor_surface.GetWebContents()),
+       direction_(direction),
++      pinned_entry_(std::move(pinned_entry)),
+       actor_surface_handle_(actor_surface.GetHandle()) {}
+ 
+ HistoryTool::~HistoryTool() = default;
+ 
++std::optional<int> HistoryTool::PinnedEntryIndex() const {
++  CHECK(pinned_entry_);
++  auto& controller = web_contents()->GetController();
++  const auto* current = controller.GetLastCommittedEntry();
++  const int index = controller.GetLastCommittedEntryIndex() + GetTargetOffset();
++  const auto* destination = controller.GetEntryAtIndex(index);
++  if (controller.GetPendingEntry() || !current || !destination ||
++      current->GetUniqueID() != pinned_entry_->source_id ||
++      destination->GetUniqueID() != pinned_entry_->destination_id ||
++      destination->GetURL() != pinned_entry_->url ||
++      destination->GetURL() != destination->GetVirtualURL() ||
++      !destination->GetURL().SchemeIsHTTPOrHTTPS() ||
++      destination->GetURL().has_username() ||
++      destination->GetURL().has_password() || destination->GetHasPostData() ||
++      destination->IsInitialEntry() ||
++      current->GetMainFrameDocumentSequenceNumber() ==
++          destination->GetMainFrameDocumentSequenceNumber()) {
++    return std::nullopt;
++  }
++  return index;
++}
++
+ void HistoryTool::Validate(ToolCallback callback) {
++  if (pinned_entry_) {
++    if (!PinnedEntryIndex()) {
++      PostResponseTask(
++          std::move(callback),
++          MakeResult(mojom::ActionResultCode::kHistoryNavigationEntryChanged));
++      return;
++    }
++    ValidateUrlIsAcceptableNavigationDestination(
++        pinned_entry_->url, tool_delegate(), std::move(callback));
++    return;
++  }
+   // Get the navigation entry that would be navigated to.
+   int offset = GetTargetOffset();
+   content::NavigationEntry* entry =
+@@ -80,6 +117,12 @@
+ 
+ mojom::ActionResultPtr HistoryTool::TimeOfUseValidation(
+     const optimization_guide::proto::AnnotatedPageContent* last_observation) {
++  if (pinned_entry_) {
++    return PinnedEntryIndex()
++               ? MakeOkResult()
++               : MakeResult(
++                     mojom::ActionResultCode::kHistoryNavigationEntryChanged);
++  }
+   NavigationController& controller = web_contents()->GetController();
+   mojom::ActionResultPtr result;
+ 
+@@ -120,7 +163,16 @@
+   // is manually dismissed by the user but we may want to provide automatic
+   // resolution here.
+ 
+-  if (direction_ == Direction::kBack) {
++  if (pinned_entry_) {
++    const auto index = PinnedEntryIndex();
++    if (!index) {
++      PostResponseTask(
++          std::move(invoke_callback_),
++          MakeResult(mojom::ActionResultCode::kHistoryNavigationEntryChanged));
++      return;
++    }
++    pending_navigations_ = web_contents()->GetController().GoToIndex(*index);
++  } else if (direction_ == Direction::kBack) {
+     pending_navigations_ = web_contents()->GetController().GoBack();
+   } else if (direction_ == Direction::kForward) {
+     pending_navigations_ = web_contents()->GetController().GoForward();

@@ -1,0 +1,11 @@
+Name: Krypton Agent render kit dependency inventory
+URL: https://github.com/perpetus/Krypton
+Version: 1
+License: See each library's README.chromium
+License File: NOT_SHIPPED
+Shipped: no
+Security Critical: no
+
+Description:
+This directory indexes the individual shipped libraries. Their metadata and
+licenses are listed in additional_readme_paths.json.

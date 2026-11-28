@@ -3,8 +3,8 @@
 # krypton_concurrent_links (windows-optimized-thinlto.patch) bounds the
 # shared ThinLTO link pool for memory use. chrome.dll links in its own
 # single-slot pool instead, so the limit applies to every other link and
-# never delays or counts the browser DLL. With the automatic setting (zero)
-# chrome.dll stays in the shared pool, as upstream. Linker worker threads
+# never delays or counts the browser DLL when multiple links are allowed.
+# For automatic or single-link builds, chrome.dll uses the shared pool. Linker worker threads
 # are unchanged (krypton_browser_link_jobs).
 
 --- a/build/toolchain/BUILD.gn
@@ -36,8 +36,8 @@
        ":krypton_chrome_dll_link_experiments",
      ]
  
-+    # Krypton: an explicit link-process limit does not apply to chrome.dll.
-+    if (use_thin_lto && krypton_concurrent_links > 0) {
++    # Krypton: give chrome.dll its own slot only for multi-link builds.
++    if (use_thin_lto && krypton_concurrent_links > 1) {
 +      pool =
 +          "//build/toolchain:krypton_chrome_dll_link_pool($default_toolchain)"
 +    }

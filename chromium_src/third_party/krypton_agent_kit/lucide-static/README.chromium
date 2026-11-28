@@ -1,0 +1,18 @@
+Name: lucide-static
+URL: https://registry.npmjs.org/lucide-static/-/lucide-static-1.81.0.tgz
+Version: 1.81.0
+License: ISC and MIT
+License File: LICENSE
+Shipped: yes
+Security Critical: no
+Update Mechanism: Manual
+
+Description:
+Lucide SVG geometry for weather and interface icons in offline Agent renders.
+The Lucide license includes the MIT notice for icons derived from Feather.
+
+Local Modifications:
+Wrap the upstream icon-nodes.json data in an ES module. Use
+tools/krypton/vendor_render_icons.py with the exact npm tarballs. Tarball and
+license SHA-256 hashes are in ../icon-source-sha256.json and the runtime file
+hash is in ../sha256.json.

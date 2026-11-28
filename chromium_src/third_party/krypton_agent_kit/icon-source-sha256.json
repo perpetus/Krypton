@@ -1,0 +1,12 @@
+{
+  "npm_tarballs": {
+    "lucide-static-1.81.0.tgz": "90c560f35032ea55a60beeedb51c09cf0cc1fa77cbcfcd541778a9105b362f48",
+    "simple-icons-16.38.1.tgz": "8ad81af0009aa0935df4411080feb4547b72e13458bbcf4d803b259b1f078804"
+  },
+  "unpacked_files": {
+    "lucide-static/LICENSE": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+    "simple-icons/DISCLAIMER.md": "f921095158b73e61e675ff99b327930fa95ad6f4cf667d414ffe8ae585205724",
+    "simple-icons/LICENSE.md": "9046848b63a5c92bff14e4accca80bd987e0623b74adf9226ce5198d312b79d5",
+    "simple-icons/simple-icons.json": "d497a757c22373c0ca1d0d5abf1e78c3ee3a5ee012027d4b2efdbe929f4a2626"
+  }
+}

@@ -382,6 +382,29 @@ void NativeBackdrop::Paint(gfx::Canvas* canvas, views::View* view) const {
     canvas->DrawRect(bounds, paint);
   if (grain_.getShader())
     canvas->DrawRect(bounds, grain_);
+  // The Agent panel's backdrop lies behind the browser's content; only a
+  // transparent frame lets it show.
+  if (!hole_.isEmpty() &&
+      FrameMaterialOf(view->GetWidget()) == FrameMaterial::kTransparent &&
+      view->GetWidget()->ShouldWindowContentsBeTransparent()) {
+    cc::PaintFlags clear;
+    clear.setAntiAlias(true);
+    clear.setBlendMode(SkBlendMode::kClear);
+    canvas->sk_canvas()->drawRRect(hole_, clear);
+  }
+}
+
+bool NativeBackdrop::SetHole(const gfx::RectF& rect, float radius) {
+  SkRRect hole = SkRRect::MakeEmpty();
+  if (!rect.IsEmpty() && std::isfinite(radius) && radius >= 0) {
+    hole = SkRRect::MakeRectXY(
+        SkRect::MakeXYWH(rect.x(), rect.y(), rect.width(), rect.height()),
+        radius, radius);
+  }
+  if (hole == hole_)
+    return false;
+  hole_ = hole;
+  return true;
 }
 
 }  // namespace krypton_ui

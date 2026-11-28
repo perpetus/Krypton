@@ -46,6 +46,8 @@ helium/ui/tabs.patch
 helium/ui/tab-icon.patch
 helium/ui/tab-strip-controls.patch
 helium/ui/disable-tab-group-editor-footer.patch
+helium/ui/drag-to-pin.patch
+helium/ui/pins-ui.patch
 
 # App menu
 helium/ui/app-menu-style.patch
@@ -61,6 +63,7 @@ helium/ui/frame-background.patch
 helium/ui/native-frame-materials.patch
 helium/ui/fix-caption-button-bounds.patch
 helium/ui/fix-windows-ui-position.patch
+helium/ui/fix-fractional-scale-gap.patch
 
 # Split view and the contents area around it
 helium/ui/remove-split-view-mini-toolbar.patch

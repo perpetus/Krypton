@@ -1,0 +1,48 @@
+# Krypton: pause agent control before a tab can open or auto-accept an extension install prompt.
+--- a/chrome/browser/extensions/BUILD.gn
++++ b/chrome/browser/extensions/BUILD.gn
+@@ -669,6 +669,7 @@
+   defines = []
+ 
+   if (is_win) {
++    deps += [ "//chrome/browser/krypton_agent:prompt_gate" ]
+     deps += [ "//chrome/browser/performance_manager/public/user_tuning" ]
+   }
+ 
+--- a/chrome/browser/extensions/extension_install_prompt.cc
++++ b/chrome/browser/extensions/extension_install_prompt.cc
+@@ -10,6 +10,7 @@
+ #include "base/functional/bind.h"
+ #include "base/location.h"
+ #include "base/task/single_thread_task_runner.h"
++#include "build/build_config.h"
+ #include "chrome/browser/extensions/extension_install_prompt_show_params.h"
+ #include "chrome/browser/extensions/extension_util.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -34,6 +35,10 @@
+ #include "ui/gfx/image/image_skia.h"
+ #include "ui/gfx/image/image_skia_rep.h"
+ 
++#if BUILDFLAG(IS_WIN)
++#include "chrome/browser/krypton_agent/browser_prompt_gate.h"
++#endif
++
+ static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+ 
+ using extensions::Extension;
+@@ -119,6 +124,15 @@
+     const ShowDialogCallback& show_dialog_callback) {
+   CHECK(ui_thread_checker_.CalledOnValidThread(), base::NotFatalUntil::M161);
+   CHECK(prompt_, base::NotFatalUntil::M161);
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::PauseForBrowserPrompt(
++          show_params_->GetParentWebContents())) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(std::move(done_callback),
++                                  DoneCallbackPayload(Result::ABORTED)));
++    return;
++  }
++#endif
+   CHECK_NE(InstallPromptData::UNSET_PROMPT_TYPE, prompt_->type());
+ 
+   extension_ = extension;

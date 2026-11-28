@@ -1,0 +1,145 @@
+Krypton: bind hidden actor research to an explicit storage partition and prompt gate.
+
+diff --git a/chrome/browser/actor/headless_web_contents_manager.h b/chrome/browser/actor/headless_web_contents_manager.h
+--- a/chrome/browser/actor/headless_web_contents_manager.h
++++ b/chrome/browser/actor/headless_web_contents_manager.h
+@@ -9,12 +9,14 @@
+ #include <vector>
+ 
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/scoped_refptr.h"
+ #include "base/observer_list.h"
+ #include "base/observer_list_types.h"
+ #include "content/public/browser/web_contents_delegate.h"
+ 
+ namespace content {
+ class BrowserContext;
++class SiteInstance;
+ class WebContents;
+ }  // namespace content
+ 
+@@ -42,6 +44,8 @@
+   // Creates a headless WebContents owned by this manager. The returned pointer
+   // stays valid until observers are notified of its destruction.
+   content::WebContents* Create();
++  content::WebContents* CreateHidden(
++      scoped_refptr<content::SiteInstance> site_instance);
+ 
+   // Notifies observers, then destroys `contents`. `contents` must be owned by
+   // this manager.
+diff --git a/chrome/browser/actor/headless_web_contents_manager.cc b/chrome/browser/actor/headless_web_contents_manager.cc
+--- a/chrome/browser/actor/headless_web_contents_manager.cc
++++ b/chrome/browser/actor/headless_web_contents_manager.cc
+@@ -8,6 +8,7 @@
+ #include <utility>
+ 
+ #include "base/check.h"
++#include "content/public/browser/site_instance.h"
+ #include "content/public/browser/web_contents.h"
+ 
+ namespace actor {
+@@ -28,6 +29,17 @@
+   content::WebContents::CreateParams params(browser_context_);
+   std::unique_ptr<content::WebContents> contents =
+       content::WebContents::Create(params);
++  contents->SetDelegate(this);
++  return contents_.emplace_back(std::move(contents)).get();
++}
++
++content::WebContents* HeadlessWebContentsManager::CreateHidden(
++    scoped_refptr<content::SiteInstance> site_instance) {
++  CHECK(site_instance);
++  content::WebContents::CreateParams params(browser_context_,
++                                            std::move(site_instance));
++  params.initially_hidden = true;
++  auto contents = content::WebContents::Create(params);
+   contents->SetDelegate(this);
+   return contents_.emplace_back(std::move(contents)).get();
+ }
+diff --git a/chrome/browser/actor/actor_surface_registry.h b/chrome/browser/actor/actor_surface_registry.h
+--- a/chrome/browser/actor/actor_surface_registry.h
++++ b/chrome/browser/actor/actor_surface_registry.h
+@@ -54,6 +54,8 @@
+   // Creates a headless WebContents owned by the headless manager and returns
+   // its surface.
+   ActorSurface* CreateHeadlessWebContents();
++  ActorSurface* CreateHiddenWebContents(
++      scoped_refptr<content::SiteInstance> site_instance);
+ 
+   // `contents` must be owned by the headless manager.
+   ActorSurface* CreateForHeadless(content::WebContents* contents);
+diff --git a/chrome/browser/actor/actor_surface_registry.cc b/chrome/browser/actor/actor_surface_registry.cc
+--- a/chrome/browser/actor/actor_surface_registry.cc
++++ b/chrome/browser/actor/actor_surface_registry.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/actor/actor_surface_registry.h"
+ 
+ #include <memory>
++#include <utility>
+ 
+ #include "base/check.h"
+ #include "base/check_op.h"
+@@ -12,6 +13,7 @@
+ #include "chrome/browser/actor/actor_surface_impl.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/actor/core/actor_features.h"
++#include "content/public/browser/site_instance.h"
+ #include "content/public/browser/web_contents.h"
+ 
+ namespace actor {
+@@ -102,6 +104,12 @@
+   return CreateForHeadless(headless_manager_->Create());
+ }
+ 
++ActorSurface* ActorSurfaceRegistry::CreateHiddenWebContents(
++    scoped_refptr<content::SiteInstance> site_instance) {
++  return CreateForHeadless(
++      headless_manager_->CreateHidden(std::move(site_instance)));
++}
++
+ ActorSurface* ActorSurfaceRegistry::CreateForHeadless(
+     content::WebContents* contents) {
+   CHECK(contents);
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -4288,6 +4288,11 @@
+     net::SSLCertRequestInfo* cert_request_info,
+     net::ClientCertIdentityList client_certs,
+     std::unique_ptr<content::ClientCertificateDelegate> delegate) {
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::IsHiddenResearch(web_contents)) {
++    return base::OnceClosure();
++  }
++#endif
+   prerender::NoStatePrefetchContents* no_state_prefetch_contents =
+       web_contents
+           ? prerender::ChromeNoStatePrefetchContentsDelegate::FromWebContents(
+@@ -5841,6 +5846,7 @@
+   if (krypton_agent::RestrictIsolatedNavigation(registry)) {
+     return;
+   }
++  krypton_agent::AddHiddenResearchThrottle(registry);
+ #endif
+   CreateAndAddChromeThrottlesForNavigation(registry);
+ }
+@@ -5851,6 +5857,7 @@
+   if (krypton_agent::RestrictIsolatedNavigation(registry)) {
+     return;
+   }
++  krypton_agent::AddHiddenResearchThrottle(registry);
+ #endif
+   CreateAndAddChromeThrottlesForCommitWithoutUrlLoader(registry);
+ }
+@@ -7556,6 +7563,11 @@
+     bool do_not_prompt_for_login,
+     content::GuestPageHolder* guest,
+     content::LoginDelegate::LoginAuthRequiredCallback auth_required_callback) {
++#if BUILDFLAG(IS_WIN)
++  if (krypton_agent::IsHiddenResearch(web_contents)) {
++    return nullptr;
++  }
++#endif
+ #if BUILDFLAG(IS_CHROMEOS)
+   // Negotiate challenge is handled via GSSAPI library, which can not receive
+   // external credentials. However, on ChromeOS we can suggest the user to

@@ -1,0 +1,13 @@
+Name: chart.js
+URL: https://registry.npmjs.org/chart.js/-/chart.js-4.6.2.tgz
+Version: 4.6.2
+License: MIT
+License File: LICENSE
+Shipped: yes
+Security Critical: yes
+Update Mechanism: Manual
+
+Description:
+Bundled for use inside Krypton's network-isolated agent renders.
+Local Modifications:
+None.

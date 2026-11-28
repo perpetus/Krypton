@@ -57,6 +57,9 @@ def _touched_files():
                 created.add(new[2:] if new.startswith('b/') else new)
             else:
                 wanted.add(old[2:] if old.startswith('a/') else old)
+    # Both split-view and persistent pins use an existing observer API;
+    # neither selected layer edits its declaration in this header.
+    wanted.add('chrome/browser/ui/tabs/tab_strip_model_observer.h')
     return wanted - created
 
 
@@ -229,7 +232,7 @@ def _defines(line, token):
     t = re.escape(token)
     return bool(re.search(
         rf'\b(?:class|struct|enum(?:\s+class)?|namespace)\s+{t}\b'
-        rf'|#define\s+{t}\b|\b{t}\s*(?:\[\])?\s*=[^=]|^\s*{t},?\s*(?://.*)?$'
+        rf'|#define\s+{t}\b|\b{t}\s*(?:\[\])?\s*=(?!=)|^\s*{t},?\s*(?://.*)?$'
         rf'|^\s*(?:(?:inline|static|constexpr|consteval|virtual)\s+)*'
         rf'[\w:<>,*&]+[\s*&]+{t}\s*\(|"{t}"', line))
 

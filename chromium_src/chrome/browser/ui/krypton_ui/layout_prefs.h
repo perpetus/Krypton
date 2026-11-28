@@ -4,6 +4,7 @@
 #ifndef CHROME_BROWSER_UI_KRYPTON_UI_LAYOUT_PREFS_H_
 #define CHROME_BROWSER_UI_KRYPTON_UI_LAYOUT_PREFS_H_
 
+class PrefRegistrySimple;
 class PrefService;
 struct KrLayoutPrefs;
 struct KrAppearancePrefs;
@@ -21,18 +22,26 @@ inline constexpr char kColorSchemePref[] = "krypton_ui.appearance.color_scheme";
 inline constexpr char kMenuMaterialPref[] =
     "krypton_ui.appearance.menu_material";
 inline constexpr char kAppearanceFlagsPref[] = "krypton_ui.appearance.flags";
+inline constexpr char kAgentChatNewTabOverridePref[] =
+    "krypton_ui.appearance.agent_chat_new_tab_overridden";
 inline constexpr char kIconPackPref[] = "krypton_ui.appearance.icon_pack";
 inline constexpr char kGlassModePref[] = "krypton_ui.appearance.glass_mode";
 inline constexpr char kLibraryMediaEnabledPref[] =
     "krypton_ui.library.media_enabled";
 
+inline constexpr char kShortcutOverridesPref[] =
+    "krypton_ui.shortcut_overrides";
+
+void RegisterShortcutLocalState(PrefRegistrySimple* registry);
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 void RegisterAppearanceProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 KrLayoutPrefs ReadLayoutPrefs(const PrefService& prefs);
 void WriteLayoutPrefs(PrefService& prefs, const KrLayoutPrefs& layout);
-KrAppearancePrefs ReadAppearancePrefs(const PrefService& prefs);
+KrAppearancePrefs ReadAppearancePrefs(const PrefService& prefs,
+                                      bool agent_enabled = false);
 bool WriteAppearancePrefs(PrefService& prefs,
-                          const KrAppearancePrefs* appearance);
+                          const KrAppearancePrefs* appearance,
+                          bool agent_enabled = false);
 
 }  // namespace krypton_ui
 

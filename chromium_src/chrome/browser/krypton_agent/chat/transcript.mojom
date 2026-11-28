@@ -1,0 +1,44 @@
+module krypton_agent.mojom;
+
+struct SourceCitation {
+  string id;
+  string title;
+  string site;
+  string display_url;
+  array<uint8> favicon_png;
+  bool cited;
+};
+
+// One entry of an assistant turn's work: thinking, a provider tool, an
+// approval or a notice. `offset` is where it sits in the message text, in
+// UTF-16 code units of the text streamed before it appeared.
+struct TranscriptItem {
+  string id;
+  string kind;
+  string status;
+  string title;
+  string detail;
+  string text;
+  string output;
+  uint32 offset;
+};
+
+interface Transcript {
+  Append(string id, string text);
+  Update(string id, string text);
+  Finish(string id);
+  SetTheme(bool dark);
+  SetSources(string id, array<SourceCitation> sources);
+  SetItem(string message_id, TranscriptItem item);
+  // A turn is running; the transcript shows its working indicator.
+  SetWorking(bool working);
+  ShowHtml(string message_id, string render_id, string title, uint32 width,
+           uint32 height);
+};
+
+interface TranscriptConnection {
+  Connect(pending_remote<Transcript> transcript);
+  OpenSource(string source_id);
+  OpenRender(string render_id);
+  SuggestPrompt(string render_id, string text);
+};

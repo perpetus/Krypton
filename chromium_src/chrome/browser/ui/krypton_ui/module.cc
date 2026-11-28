@@ -106,7 +106,7 @@ base::expected<KrShellUI, std::string> Module::Create(
                       : std::string_view("KryptonUI cannot host this profile.");
       !error.empty()) {
     if (KR_HAS_SLOT(&shell, KrShellUI, destroy) && shell.destroy &&
-        shell.self) {
+        KR_HAS_SLOT(&shell, KrShellUI, self) && shell.self) {
       shell.destroy(shell.self);
     }
     return base::unexpected(std::string(error));

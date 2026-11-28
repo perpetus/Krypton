@@ -1,0 +1,13 @@
+Name: Motion
+URL: https://motion.dev/
+Version: 14.14.0
+License: MIT
+License File: LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description:
+The framework-free browser build for interactive render animations.
+
+Local Modifications:
+None.

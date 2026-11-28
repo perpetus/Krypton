@@ -1,0 +1,121 @@
+Apply Krypton shortcut overrides to the live accelerator table and menus.
+
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -270,6 +270,7 @@
+     <messages fallback_to_english="true">
+       <!-- Access Code Cast specific strings -->
+       <part file="krypton_privacy_features.grdp" />
++      <part file="krypton_shortcuts.grdp" />
+       <part file="access_code_cast_strings.grdp" />
+ 
+       <!-- Actor specific strings -->
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -1726,6 +1726,9 @@
+ }
+ 
+ void RegisterLocalState(PrefRegistrySimple* registry) {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  krypton_ui::RegisterShortcutLocalState(registry);
++#endif
+   krypton::privacy::RegisterLocalState(registry);
+   // Call outs to individual subsystems that register Local State (browser-wide)
+   // prefs en masse. See RegisterProfilePrefs for per-profile prefs. Please
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -1422,6 +1422,9 @@
+   base::CallbackListSubscription paint_as_active_subscription_;
+ 
+   PrefChangeRegistrar registrar_;
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  PrefChangeRegistrar local_shortcut_registrar_;
++#endif
+ 
+   base::CallbackListSubscription vertical_tab_subscription_;
+ 
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -6,6 +6,8 @@
+ 
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+ #include "chrome/browser/ui/krypton_ui/browser_adapter.h"
++#include "chrome/browser/ui/krypton_ui/layout_prefs.h"
++#include "chrome/browser/ui/krypton_ui/shortcut_settings.h"
+ #include "chrome/browser/ui/krypton_ui/contents_layout.h"
+ #include "chrome/browser/ui/krypton_ui/multi_page_controller.h"
+ #include "chrome/browser/ui/krypton_ui/native_location_bar.h"
+@@ -1226,6 +1228,15 @@
+     global_error_observation_.Observe(global_error_service);
+   }
+ 
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* local_state = g_browser_process->local_state()) {
++    local_shortcut_registrar_.Init(local_state);
++    local_shortcut_registrar_.Add(
++        krypton_ui::kShortcutOverridesPref,
++        base::BindRepeating(&BrowserView::OnBrowserShortcutsChanged,
++                            base::Unretained(this)));
++  } else
++#endif
+   if (base::FeatureList::IsEnabled(features::kCustomizableBrowserShortcuts)) {
+     browser_shortcut_service_ =
+         browser_shortcuts::BrowserShortcutServiceFactory::GetForProfile(
+@@ -5670,6 +5681,9 @@
+ #if BUILDFLAG(ENABLE_KRYPTON_UI)
+ bool BrowserView::ExecuteCapturedAccelerator(const ui::Accelerator& accelerator,
+                                              int command_id) {
++  if (krypton_ui_ && krypton_ui_->ExecuteNativeShortcut(command_id)) {
++    return true;
++  }
+   if (!chrome::IsCommandEnabled(browser(), command_id)) {
+     return false;
+   }
+@@ -6218,6 +6232,13 @@
+       browser_->GetProfile()->GetOTRProfileID().IsCaptivePortal();
+ #endif
+   std::vector<AcceleratorMapping> accelerator_list(GetAcceleratorList());
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (auto* local_state = g_browser_process->local_state()) {
++    krypton_ui::ApplyShortcutOverrides(
++        accelerator_list, *local_state, *GetProfile()->GetPrefs(),
++        krypton_ui_ != nullptr);
++  } else
++#endif
+   if (browser_shortcut_service_ &&
+       base::FeatureList::IsEnabled(features::kCustomizableBrowserShortcuts)) {
+     std::erase_if(accelerator_list, [this](const AcceleratorMapping& entry) {
+@@ -6306,6 +6327,11 @@
+ 
+ void BrowserView::OnBrowserShortcutsChanged() {
+   ReloadAccelerators();
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_) {
++    krypton_ui_->ShortcutsChanged();
++  }
++#endif
+ }
+ 
+ void BrowserView::UpdatePlatformAccelerators() {
+@@ -6566,6 +6592,11 @@
+ bool BrowserView::FindCommandIdForAccelerator(
+     const ui::Accelerator& accelerator,
+     int* command_id) const {
++#if BUILDFLAG(ENABLE_KRYPTON_UI)
++  if (krypton_ui_ && krypton_ui_->shortcuts_suspended()) {
++    return false;
++  }
++#endif
+   auto iter = accelerator_table_.find(accelerator);
+   if (iter == accelerator_table_.end()) {
+     return false;
+--- a/chrome/app/generated_resources.grd.gritdeps
++++ b/chrome/app/generated_resources.grd.gritdeps
+@@ -11,6 +11,7 @@
+ chrome/app/glic_strings.grdp
+ chrome/app/gmc_strings.grdp
+ chrome/app/krypton_privacy_features.grdp
++chrome/app/krypton_shortcuts.grdp
+ chrome/app/media_live_preview_strings.grdp
+ chrome/app/media_router_strings.grdp
+ chrome/app/nearby_share_strings.grdp

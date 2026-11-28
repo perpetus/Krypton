@@ -1,0 +1,13 @@
+Name: three
+URL: https://registry.npmjs.org/three/-/three-0.187.0.tgz
+Version: 0.187.0
+License: MIT
+License File: LICENSE
+Shipped: yes
+Security Critical: yes
+Update Mechanism: Manual
+
+Description:
+Bundled for use inside Krypton's network-isolated agent renders.
+Local Modifications:
+None.

@@ -12,10 +12,10 @@
  #endif
  
  #include <algorithm>
-@@ -1404,6 +1405,20 @@
+@@ -1447,6 +1448,20 @@
+     return;
+   }
  
-   CHECK(contents);
-   CHECK_NE(GetIndexOfWebContents(contents), kNoTab);
 +#if BUILDFLAG(ENABLE_KRYPTON_UI)
 +  if (!closing_all_ && !browser_shutdown::HasShutdownStarted() &&
 +      IsTabClosable(GetTabForWebContents(contents)) &&

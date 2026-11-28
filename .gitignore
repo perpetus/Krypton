@@ -48,3 +48,7 @@ logs/
 !**/*NOTICE*.md
 !**/LICENSE.md
 !**/COPYING.md
+
+# The Agent kit reads these guides at build time.
+!chromium_src/chrome/browser/krypton_agent/chat/kit/guides/*.md
+!chromium_src/third_party/krypton_agent_kit/simple-icons/DISCLAIMER.md

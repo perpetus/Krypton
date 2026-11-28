@@ -12,6 +12,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
+#include "chrome/browser/krypton_agent/history_space.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/exit_type_service.h"
 #include "chrome/browser/sessions/session_restore.h"
@@ -525,15 +526,18 @@ void BrowserAdapter::EditWorkspace(uint32_t kind, Workspace value) {
   }
   auto& prefs = WindowPrefs();
   if (kind == KR_WORKSPACE_REMOVE) {
+    auto& profile = *browser_->GetProfile();
     // Tabs of another profile's Space cannot move to this profile's Default.
     if (const auto* space = FindSpace(value.id);
         space && !space->profile.empty() &&
-        SpacesInUse(*browser_->GetProfile()).contains(value.id)) {
+        SpacesInUse(profile).contains(value.id)) {
       NotifyPresented("Close this Space's tabs to remove it.");
       return;
     }
     // The synchronous pref notification migrates affected tabs in all windows.
-    std::ignore = RemoveWorkspace(prefs, value.id);
+    if (RemoveWorkspace(prefs, value.id)) {
+      krypton_agent::NotifySpaceRemoved(profile, value.id);
+    }
   } else if (kind == KR_WORKSPACE_UPSERT) {
     const bool create = !value.id;
     const auto id = SaveWorkspace(prefs, std::move(value));

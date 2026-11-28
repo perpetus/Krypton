@@ -149,6 +149,10 @@ void ContentsLayout::Layout(views::View* host) {
 
   contents_bounds_ = regions.page;
   auto* contents = views().multi_contents_view.get();
+  // With no page area (the full-page Agent chat) the page is hidden, not
+  // just sized to nothing: its views keep their last size and would paint
+  // the blank tab's background over the chat.
+  SetViewVisibility(contents, !contents_bounds_.IsEmpty());
   contents->SetShouldShowTopSeparator(false);
   contents->SetBackgroundRadii(
       gfx::RoundedCornersF(session_->geometry().corner_radius()));

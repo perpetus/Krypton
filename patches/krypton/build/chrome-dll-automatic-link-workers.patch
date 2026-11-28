@@ -1,0 +1,33 @@
+# Krypton: use all hardware threads for the final Windows browser DLL link.
+# Use the shared one-worker configuration on the instrumentation link.
+
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -624,6 +624,12 @@
+       "//build/config/compiler:thinlto_optimize_max",
+       ":krypton_chrome_dll_link_experiments",
+     ]
++    if (krypton_chrome_dll_cs_profile_file != "" && is_clang && use_lld &&
++        use_thin_lto) {
++      # LLD uses the last worker flags. Apply the override after the
++      # shared ThinLTO config and only to the browser DLL.
++      configs += [ "//build/config/win:krypton_chrome_dll_link_workers" ]
++    }
+ 
+     # Krypton: give chrome.dll its own slot only for multi-link builds.
+     if (use_thin_lto && krypton_concurrent_links > 1) {
+--- a/build/config/win/BUILD.gn
++++ b/build/config/win/BUILD.gn
+@@ -741,3 +741,12 @@
+     ]
+   }
+ }
++
++config("krypton_chrome_dll_link_workers") {
++  visibility = [ "//chrome:chrome_dll" ]
++  _cpu_count = exec_script("//build/toolchain/get_cpu_count.py", [], "value")
++  ldflags = [
++    "/opt:lldltojobs=all",
++    "/threads:$_cpu_count",
++  ]
++}

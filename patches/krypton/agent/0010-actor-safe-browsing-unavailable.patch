@@ -1,0 +1,33 @@
+# Krypton: Keep actor origin gating usable for Krypton tasks when Safe Browsing
+# is compiled out. Defer to the remaining predicates for these tasks.
+--- a/chrome/browser/actor/execution_engine.cc
++++ b/chrome/browser/actor/execution_engine.cc
+@@ -518,12 +518,17 @@
+ 
+ origin_gating::Decision BlockIfSafeBrowsingDisabled(
+     Profile* profile,
++    bool is_krypton_task,
+     origin_gating::GatingDecisionContext* context,
+     const GateableEvent& event) {
+   bool is_safe_browsing_enabled = false;
+ #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
+   is_safe_browsing_enabled =
+       safe_browsing::IsSafeBrowsingEnabled(*profile->GetPrefs());
++#else
++  if (is_krypton_task) {
++    return origin_gating::Decision::kNoDecision;
++  }
+ #endif
+   // We don't want to risk acting on dangerous sites, so we require
+   // SafeBrowsing.
+@@ -873,7 +878,9 @@
+                        ActorCustomPredicate::kSafetyChecksDisabled),
+        origin_gating::GateableEventSet::All()},
+       {CustomPredicate(
+-           base::BindRepeating(&BlockIfSafeBrowsingDisabled, task.GetProfile()),
++           base::BindRepeating(
++               &BlockIfSafeBrowsingDisabled, task.GetProfile(),
++               task.source_info().type == TaskSourceInfo::Client::kKrypton),
+            ActorCustomPredicate::kSafeBrowsing),
+        kRequestsAndPageActions},
+       {CustomPredicate(base::BindRepeating(&BlockDangerousMimeType),

@@ -1,0 +1,66 @@
+.kr-deck {
+  padding: var(--kr-space-3);
+  container: kr-deck / inline-size;
+  --kr-slide-padding: clamp(1rem, 4cqi, 2.5rem);
+  --kr-slide-title: clamp(1.5rem, 5cqi, 2.75rem);
+  --kr-slide-heading: clamp(1.25rem, 3.5cqi, 2rem);
+  --kr-slide-body: var(--kr-text-body);
+  --kr-slide-caption: var(--kr-text-small);
+}
+.kr-slide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--kr-space-3);
+  padding: var(--kr-slide-padding, 1rem);
+  font-size: var(--kr-slide-body, 1rem);
+  overflow-wrap: break-word;
+  background: var(--kr-panel);
+  border: 1px solid var(--kr-line);
+  border-radius: var(--kr-radius);
+}
+.kr-slide[hidden] { display: none; }
+.kr-slide :is(h1, h2, p, ul, ol, figure) { margin-block: 0; }
+.kr-slide h1 {
+  font-size: var(--kr-slide-title, var(--kr-text-title));
+  line-height: var(--kr-leading-display);
+  letter-spacing: var(--kr-tracking-display);
+}
+.kr-slide h2 {
+  font-size: var(--kr-slide-heading, var(--kr-text-heading));
+  line-height: var(--kr-leading-heading);
+}
+.kr-slide figcaption { font-size: var(--kr-slide-caption); color: var(--kr-muted); }
+.kr-slide-title, .kr-slide-metric { align-content: center; }
+.kr-slide-split { display: grid; gap: var(--kr-space-4); grid-template-columns: minmax(0, 1fr); }
+.kr-slide .kr-chart-plot { block-size: clamp(10rem, 28cqi, 18rem); }
+@container kr-deck (min-width: 38rem) {
+  .kr-slide { aspect-ratio: 16 / 9; }
+  .kr-slide-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container kr-deck (min-width: 43rem) {
+  .kr-slide h2 { letter-spacing: var(--kr-tracking-display); }
+}
+.kr-controls { margin-block-start: .75rem; }
+.kr-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; }
+.kr-overview[hidden] { display: none; }
+.kr-overview [aria-current=true] { border-color: var(--kr-accent); font-weight: 650; }
+.kr-deck:fullscreen {
+  align-content: center;
+  display: grid;
+  min-height: 100vh;
+  overflow: auto;
+  background: var(--kr-bg);
+}
+.kr-deck:fullscreen .kr-slide,
+.kr-deck:fullscreen .kr-controls,
+.kr-deck:fullscreen .kr-overview {
+  inline-size: min(100%, 145vh);
+  margin-inline: auto;
+}
+@media print {
+  @page { size: landscape; margin: .5cm; }
+  .kr-slide[hidden] { display: grid; }
+  .kr-slide { aspect-ratio: 16 / 9; break-after: page; break-inside: avoid; }
+  .kr-deck .kr-controls, .kr-deck .kr-overview { display: none; }
+}

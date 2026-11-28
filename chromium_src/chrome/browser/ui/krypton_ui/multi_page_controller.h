@@ -129,6 +129,7 @@ class MultiPageController {
                                                       bool complete,
                                                       KrSplitGroupId group,
                                                       uint64_t revision);
+  [[nodiscard]] bool ExecuteLayoutShortcut(KrSplitLayout layout, bool unsplit);
   [[nodiscard]] bool HandleKey(unsigned int key,
                                bool control,
                                bool alt,

@@ -37,12 +37,16 @@
 #include "components/omnibox/browser/autocomplete_controller.h"
 #include "components/omnibox/browser/autocomplete_match_type.h"
 #include "components/omnibox/browser/autocomplete_provider.h"
+#include "components/omnibox/browser/autocomplete_provider_client.h"
 #include "components/omnibox/browser/location_bar_model.h"
 #include "components/omnibox/browser/searchbox_utils.h"
+#include "components/search_engines/template_url.h"
+#include "components/strings/grit/components_strings.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/image_model.h"
 #include "ui/color/color_provider.h"
 #include "ui/display/screen.h"
@@ -566,11 +570,13 @@ void NativeLocationBar::PublishSuggestions() {
         return entry.rank < 0;
       });
       std::ranges::stable_sort(snapshot->commands, {}, &CommandBarEntry::rank);
-      if (snapshot->commands.size() > 4)
+      if (snapshot->commands.size() > 4) {
         snapshot->commands.resize(4);
+      }
     }
-    if (!only_commands && snapshot->commands.size() > 8)
+    if (!only_commands && snapshot->commands.size() > 8) {
       snapshot->commands.resize(8);
+    }
   }
   std::vector<std::string> contents;
   std::vector<std::string> descriptions;
@@ -617,8 +623,25 @@ void NativeLocationBar::PublishSuggestions() {
       continue;
     }
     match_sources.push_back(index);
-    const auto display =
-        match.GetMatchWithContentsAndDescriptionPossiblySwapped();
+    auto display = match.GetMatchWithContentsAndDescriptionPossiblySwapped();
+    if (!display.description.empty() && !match.from_keyword &&
+        !match.HasCustomDescription() &&
+        AutocompleteMatch::IsSearchType(match.type) &&
+        !match.IsContextualSearchSuggestion()) {
+      const auto* engine =
+          match.GetTemplateURL(controller_->autocomplete_controller()
+                                   ->autocomplete_provider_client()
+                                   ->GetTemplateURLService());
+      if (engine && !engine->is_ask_type() && engine->bang_id() <= 0 &&
+          engine->type() != TemplateURL::OMNIBOX_API_EXTENSION) {
+        auto name = engine->AdjustedShortNameForLocaleDirection();
+        if (display.description ==
+            l10n_util::GetStringFUTF16(IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION,
+                                       name)) {
+          display.description = std::move(name);
+        }
+      }
+    }
     contents.push_back(base::UTF16ToUTF8(display.contents));
     descriptions.push_back(base::UTF16ToUTF8(display.description));
     contents_classes.push_back(classes(display.contents_class));
@@ -678,10 +701,12 @@ void NativeLocationBar::PublishSuggestions() {
     snapshot->source_indices.push_back(std::numeric_limits<size_t>::max() -
                                        index);
     uint32_t flags = 0;
-    if (only_commands && index == 0)
+    if (only_commands && index == 0) {
       flags |= KR_SUGGESTION_DEFAULT | KR_SUGGESTION_SELECTED;
-    if (command.kind == KR_SUGGESTION_OPEN_TAB)
+    }
+    if (command.kind == KR_SUGGESTION_OPEN_TAB) {
       flags |= KR_SUGGESTION_TAB_SWITCH;
+    }
     KrImageId image = 0;
     if (images_ && !command.icon.IsEmpty()) {
       const auto acquired = images_.Run(command.icon);
@@ -697,8 +722,9 @@ void NativeLocationBar::PublishSuggestions() {
   };
   if (only_commands) {
     // Command mode keeps the provider's ranking.
-    for (size_t index = 0; index < snapshot->commands.size(); ++index)
+    for (size_t index = 0; index < snapshot->commands.size(); ++index) {
       add_command(index);
+    }
   } else {
     // Open tabs follow the default match, ahead of the remaining matches and
     // any launcher commands.
@@ -706,27 +732,48 @@ void NativeLocationBar::PublishSuggestions() {
       return snapshot->commands[index].kind == KR_SUGGESTION_OPEN_TAB;
     };
     size_t next = 0;
-    if (!match_items.empty())
+    if (!match_items.empty()) {
       add_match(next++);
-    for (size_t index = 0; index < snapshot->commands.size(); ++index)
-      if (is_tab(index))
+    }
+    for (size_t index = 0; index < snapshot->commands.size(); ++index) {
+      if (is_tab(index)) {
         add_command(index);
-    while (next < match_items.size())
+      }
+    }
+    while (next < match_items.size()) {
       add_match(next++);
-    for (size_t index = 0; index < snapshot->commands.size(); ++index)
-      if (!is_tab(index))
+    }
+    for (size_t index = 0; index < snapshot->commands.size(); ++index) {
+      if (!is_tab(index)) {
         add_command(index);
+      }
+    }
   }
+  const auto previous_generation = generation_;
   if (++generation_ == 0) {
     ++generation_;
   }
-  snapshots_.emplace(generation_, std::move(snapshot));
+
+  // The native popup reconciles results asynchronously. Keep a small number
+  // of recent generations for clicks already in flight, then release their
+  // image leases. Older generation IDs are rejected when acted on.
+  const auto generation = generation_;
+  snapshots_.emplace(generation, std::move(snapshot));
+  if (ui->set_suggestion_snapshot(ui->self, request_, generation, items.data(),
+                                  items.size(),
+                                  sizeof(KrSuggestion)) != KR_OK) {
+    snapshots_.erase(generation);
+    generation_ = previous_generation;
+    return;
+  }
+  constexpr size_t kRetainedSuggestionSnapshots = 8;
+  while (snapshots_.size() > kRetainedSuggestionSnapshots) {
+    snapshots_.erase(snapshots_.begin());
+  }
   visible_result_count_ = items.size();
   controller_->popup_state_manager()->SetPopupState(
       visible_result_count_ ? OmniboxPopupState::kClassic
                             : OmniboxPopupState::kNone);
-  ui->set_suggestion_snapshot(ui->self, request_, generation_, items.data(),
-                              items.size(), sizeof(KrSuggestion));
   PublishSelection();
 }
 
@@ -741,8 +788,9 @@ void NativeLocationBar::SelectSuggestion(uint32_t request,
   const size_t source = found->second->source_indices[index];
   const size_t command = std::numeric_limits<size_t>::max() - source;
   if (command < found->second->commands.size()) {
-    if (generation != generation_)
+    if (generation != generation_) {
       return;
+    }
     selected_command_ = index;
     PublishSelection();
     return;
@@ -804,20 +852,23 @@ bool NativeLocationBar::HandleKey(uint32_t key, uint32_t modifiers) {
       if (!selected_command_ && !CommandQuery()) {
         const auto found =
             std::ranges::find(indices, model->GetPopupSelection().line);
-        if (found != indices.end())
+        if (found != indices.end()) {
           index = static_cast<size_t>(found - indices.begin());
+        }
       }
       const bool previous =
           key == KR_ADDRESS_KEY_UP || key == KR_ADDRESS_KEY_PAGE_UP ||
           (key == KR_ADDRESS_KEY_TAB && (modifiers & KR_ADDRESS_KEY_SHIFT));
-      if (!indices.empty())
+      if (!indices.empty()) {
         index = previous ? (index + indices.size() - 1) % indices.size()
                          : (index + 1) % indices.size();
+      }
       SelectSuggestion(request_, generation_, index);
       return true;
     }
-    if (CommandQuery() || selected_command_)
+    if (CommandQuery() || selected_command_) {
       return false;
+    }
   }
   switch (key) {
     case KR_ADDRESS_KEY_UP:
@@ -875,8 +926,9 @@ base::OnceClosure NativeLocationBar::CaptureSuggestion(
   }
   if (source == 0) {
     if (const auto bang =
-            ExpandBangSearch(base::UTF16ToUTF8(editor_->GetText())))
+            ExpandBangSearch(base::UTF16ToUTF8(editor_->GetText()))) {
       return CaptureNavigation(*bang, disposition);
+    }
   }
   const bool control = std::exchange(accept_control_, false);
   auto snapshot = std::move(found->second);
@@ -919,11 +971,13 @@ base::OnceClosure NativeLocationBar::CaptureNavigation(
   if (!controller_ || !browser_->GetActiveTabInterface()) {
     return {};
   }
-  if (text.starts_with(">"))
+  if (text.starts_with(">")) {
     return {};
+  }
   const auto expanded = ExpandBangSearch(text);
-  if (expanded)
+  if (expanded) {
     text = *expanded;
+  }
   AutocompleteMatch match;
   controller_->edit_model()->ClassifyString(base::UTF8ToUTF16(text), &match,
                                             nullptr);

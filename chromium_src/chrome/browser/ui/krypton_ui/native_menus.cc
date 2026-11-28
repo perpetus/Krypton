@@ -2,10 +2,6 @@
 // Use of this source code is governed by the GPL-3.0 license in LICENSE.
 
 #include "chrome/browser/ui/krypton_ui/native_menus.h"
-#include "chrome/browser/ui/krypton_ui/dictation_controller.h"
-#include "chrome/browser/ui/krypton_ui/translation_menu_model.h"
-#include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/weak_document_ptr.h"
 
 #include <algorithm>
 #include <array>
@@ -29,15 +25,18 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/krypton_ui/action_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/browser_adapter.h"
+#include "chrome/browser/ui/krypton_ui/dictation_controller.h"
 #include "chrome/browser/ui/krypton_ui/document_store.h"
 #include "chrome/browser/ui/krypton_ui/layout_prefs.h"
 #include "chrome/browser/ui/krypton_ui/menu_glyphs.h"
 #include "chrome/browser/ui/krypton_ui/multi_page_menu.h"
 #include "chrome/browser/ui/krypton_ui/native_extensions.h"
+#include "chrome/browser/ui/krypton_ui/shortcut_settings.h"
 #include "chrome/browser/ui/krypton_ui/sidebar_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/site_customization.h"
 #include "chrome/browser/ui/krypton_ui/site_data_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/site_info_menu.h"
+#include "chrome/browser/ui/krypton_ui/translation_menu_model.h"
 #include "chrome/browser/ui/krypton_ui/window_session.h"
 #include "chrome/browser/ui/krypton_ui/workspace_menu.h"
 #include "chrome/browser/ui/krypton_ui/workspace_session.h"
@@ -52,6 +51,8 @@
 #include "chrome/grit/generated_resources.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/context_menu_params.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -62,6 +63,7 @@
 namespace krypton_ui {
 namespace {
 constexpr int kChangeTabIcon = 0x6d620000;
+constexpr int kSleepTab = 0x6d630000;
 constexpr int kRoutingMenu = 0x6d620001;
 constexpr int kBoostMenu = 0x6d620002;
 constexpr int kWorkspacesMenu = 0x6d620003;
@@ -162,15 +164,17 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
   }
 
   bool TargetValid() const {
-    if (kind == KR_MENU_SECURITY && model && !SiteInfoIsValid(*model))
+    if (kind == KR_MENU_SECURITY && model && !SiteInfoIsValid(*model)) {
       return false;
+    }
     if (!browser || (page_target && !page_model) || (submenu && !*submenu)) {
       return false;
     }
     if (translation_menu && (!tab || !document.AsRenderFrameHostIfValid() ||
                              document.AsRenderFrameHostIfValid() !=
-                                 tab->GetContents()->GetPrimaryMainFrame()))
+                                 tab->GetContents()->GetPrimaryMainFrame())) {
       return false;
+    }
     if (tab_menu || active_scoped) {
       return tab && tab->GetBrowserWindowInterface() == browser.get() &&
              (!active_scoped ||
@@ -244,11 +248,15 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
     }
     auto* view = BrowserView::GetBrowserViewForBrowser(browser.get());
     auto* adapter = view ? view->krypton_ui() : nullptr;
+    if (command == kSleepTab) {
+      return tab && adapter;
+    }
     if (command == kChangeTabIcon) {
       return tab && adapter && adapter->site_customization();
     }
-    if (command == kOrganizeTabMenu)
+    if (command == kOrganizeTabMenu) {
       return tab_menu && tab;
+    }
 
     if (command == kNewFolder || command == kNewFolderForTab ||
         command == kMoveToFolder || folder_targets.contains(command)) {
@@ -258,8 +266,9 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
     if (command == kNewWorkspace) {
       return adapter && !browser->GetProfile()->IsOffTheRecord();
     }
-    if (command == kNewNote || command == kNewEasel)
+    if (command == kNewNote || command == kNewEasel) {
       return adapter && adapter->CanCreateDocument();
+    }
     if (command == MultiPageMenuModel::kSubmenu) {
       return multi_page_menu && adapter && adapter->MultiPageEnabled();
     }
@@ -342,7 +351,9 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
       return false;
     }
     int browser_command = command;
-    if (tab_menu && command == TabStripModel::CommandAddToSplit) {
+    if (tab_menu && command == kSleepTab) {
+      browser_command = kShortcutSleepTab;
+    } else if (tab_menu && command == TabStripModel::CommandAddToSplit) {
       browser_command = IDC_NEW_SPLIT_TAB;
     } else if (tab_menu && command != IDC_BOOKMARK_THIS_TAB &&
                command != IDC_RESTORE_TAB &&
@@ -355,13 +366,25 @@ struct NativeMenus::Source final : public ui::SimpleMenuModel::Delegate {
            provider->GetAcceleratorForCommandId(browser_command, accelerator);
   }
   void ExecuteCommand(int command, int event_flags) override {
+    if (command == kSleepTab) {
+      if (TargetValid() && tab) {
+        if (auto* view = BrowserView::GetBrowserViewForBrowser(browser.get());
+            view && view->krypton_ui()) {
+          view->krypton_ui()->SleepTab(
+              base::checked_cast<KrTabId>(tab->GetHandle().raw_value()));
+        }
+      }
+      return;
+    }
     if (command == kNewNote || command == kNewEasel) {
-      if (!IsCommandIdEnabled(command))
+      if (!IsCommandIdEnabled(command)) {
         return;
+      }
       auto* view = BrowserView::GetBrowserViewForBrowser(browser.get());
-      if (auto* adapter = view ? view->krypton_ui() : nullptr)
+      if (auto* adapter = view ? view->krypton_ui() : nullptr) {
         adapter->NewDocument(command == kNewNote ? DocumentKind::kNote
                                                  : DocumentKind::kEasel);
+      }
       return;
     }
     if (command == kNewFolder || command == kNewFolderForTab ||
@@ -588,8 +611,9 @@ base::expected<void, std::string> NativeMenus::Present(
   if (!source->TargetValid()) {
     return base::unexpected("The menu target is gone.");
   }
-  if (tab)
+  if (tab) {
     source->page_url = tab->GetContents()->GetLastCommittedURL();
+  }
   MenuModelSnapshot::GlyphTable glyphs = &BrowserCommandGlyph;
   base::span<const int> root_commands;
   // Static: the source keeps these spans for later republishing.
@@ -620,12 +644,14 @@ base::expected<void, std::string> NativeMenus::Present(
   } else if (kind == KR_MENU_ACTION &&
              (target == kTranslateAction || target == kDictationAction)) {
     source->model = context_menu_.Run(kind, target, tab);
-    if (!source->model)
+    if (!source->model) {
       return base::unexpected("The requested page tool is unavailable.");
+    }
     source->translation_panel = target == kTranslateAction;
     source->translation_menu = true;
-    if (auto* frame = tab->GetContents()->GetPrimaryMainFrame())
+    if (auto* frame = tab->GetContents()->GetPrimaryMainFrame()) {
       source->document = frame->GetWeakDocumentPtr();
+    }
     glyphs = source->translation_panel ? &TranslationMenuGlyph : nullptr;
   } else if (kind == KR_MENU_ACTION && NativeExtensions::Handles(target)) {
     source->model = extension_menu_.Run(target);
@@ -738,6 +764,7 @@ base::expected<void, std::string> NativeMenus::Present(
         }
       }
     }
+    model->AddItemWithStringId(kSleepTab, IDS_KRYPTON_SHORTCUT_SLEEP_TAB);
     source->tab_organize->AddItem(kChangeTabIcon, u"Change icon\u2026");
     model->AddSubMenu(kOrganizeTabMenu, u"Organize tab",
                       source->tab_organize.get());
@@ -909,11 +936,13 @@ base::OnceClosure NativeMenus::CaptureCommand(uint32_t request,
     return base::BindOnce(
         [](base::WeakPtr<NativeMenus> owner, uint32_t request,
            base::OnceClosure execute) {
-          if (!owner)
+          if (!owner) {
             return;
+          }
           const auto found = owner->sources_.find(request);
-          if (found != owner->sources_.end() && found->second->TargetValid())
+          if (found != owner->sources_.end() && found->second->TargetValid()) {
             std::move(execute).Run();
+          }
         },
         weak_factory_.GetWeakPtr(), request, std::move(execute));
   }
@@ -950,11 +979,14 @@ void NativeMenus::Invalidated(uint32_t request) {
 }
 void NativeMenus::RefreshTranslationMenus() {
   std::vector<uint32_t> requests;
-  for (const auto& [request, source] : sources_)
-    if (source->translation_menu)
+  for (const auto& [request, source] : sources_) {
+    if (source->translation_menu) {
       requests.push_back(request);
-  for (const auto request : requests)
+    }
+  }
+  for (const auto request : requests) {
     Republish(request);
+  }
 }
 
 void NativeMenus::CloseAll() {

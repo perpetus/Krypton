@@ -903,6 +903,8 @@ bool RequestSiteInfo(content::WebContents* contents) {
       bounds.set_height(0);
     }
     const auto* api = adapter->session().api();
+    if (!api)
+      return false;
     api->request_context_menu(
         api->self, KR_MENU_SECURITY, 0,
         {static_cast<float>(bounds.x()), static_cast<float>(bounds.y()),

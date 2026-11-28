@@ -1,0 +1,213 @@
+# Krypton: Limit tab actions to their original origin and deny new windows and downloads.
+# Make find use a renderer text match without painting or scrolling.
+--- a/chrome/browser/actor/actor_navigation_throttle.cc
++++ b/chrome/browser/actor/actor_navigation_throttle.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/actor/actor_navigation_throttle.h"
+ 
++#include "base/logging.h"
+ #include "base/types/pass_key.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_surface_handle.h"
+@@ -19,6 +20,7 @@
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/navigation_throttle.h"
+ #include "content/public/browser/navigation_throttle_registry.h"
++#include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "ui/base/page_transition_types.h"
+ 
+@@ -214,6 +216,21 @@
+     return content::NavigationThrottle::CANCEL_AND_IGNORE;
+   }
+ 
++  if (task->source_info().type == TaskSourceInfo::Client::kKrypton &&
++      task->IsActingOnActorSurface(
++          ActorSurfaceHandle::From(navigation_handle()->GetWebContents()))) {
++    const auto& origin = navigation_handle()
++                             ->GetWebContents()
++                             ->GetPrimaryMainFrame()
++                             ->GetLastCommittedOrigin();
++    if (!navigation_url.SchemeIsHTTPOrHTTPS() ||
++        navigation_url.has_username() || navigation_url.has_password() ||
++        navigation_handle()->IsPost() ||
++        url::Origin::Create(navigation_url) != origin) {
++      LOG(WARNING) << "Krypton Agent denied navigation requiring confirmation";
++      return content::NavigationThrottle::CANCEL_AND_IGNORE;
++    }
++  }
+   if (!is_redirection && !navigation_handle()->IsRendererInitiated()) {
+     journal.Log(navigation_url, task_id_, "NavThrottle",
+                 JournalDetailsBuilder()
+--- a/chrome/browser/actor/tools/find_and_highlight_tool.cc
++++ b/chrome/browser/actor/tools/find_and_highlight_tool.cc
+@@ -10,10 +10,13 @@
+ #include "base/functional/bind.h"
+ #include "base/notimplemented.h"
+ #include "base/strings/strcat.h"
++#include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_surface.h"
+ #include "chrome/browser/actor/actor_task.h"
+ #include "chrome/browser/actor/tab_annotation_manager.h"
+ #include "chrome/browser/actor/tools/tool_callbacks.h"
++#include "chrome/browser/actor/tools/tool_delegate.h"
++#include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/actor.mojom.h"
+ #include "chrome/common/actor/action_result.h"
+ #include "components/actor/public/mojom/actor_types.mojom.h"
+@@ -58,10 +61,16 @@
+       TabAnnotationManager::GetOrCreateForWebContents(web_contents);
+   CHECK(annotation_manager);
+ 
+-  annotation_manager->HighlightText(
+-      query_,
++  auto complete =
+       base::BindOnce(&FindAndHighlightTool::OnHighlightFinished,
+-                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++                     weak_ptr_factory_.GetWeakPtr(), std::move(callback));
++  auto* service = ActorKeyedService::Get(&tool_delegate().GetProfile());
++  const auto* task = service ? service->GetTask(task_id()) : nullptr;
++  if (task && task->source_info().type == TaskSourceInfo::Client::kKrypton) {
++    annotation_manager->FindText(query_, std::move(complete));
++    return;
++  }
++  annotation_manager->HighlightText(query_, std::move(complete));
+ }
+ 
+ void FindAndHighlightTool::OnHighlightFinished(ToolCallback callback,
+--- a/chrome/browser/actor/tab_annotation_manager.h
++++ b/chrome/browser/actor/tab_annotation_manager.h
+@@ -41,6 +41,7 @@
+   // removed before creating a new highlight. `callback` is called with true
+   // if the text was found and attached, or false if attachment failed.
+   void HighlightText(const std::string& query, HighlightCallback callback);
++  void FindText(const std::string& query, HighlightCallback callback);
+ 
+   // Clears any active highlight on the tab.
+   void ClearHighlight();
+@@ -62,6 +63,9 @@
+ 
+   explicit TabAnnotationManager(content::WebContents* web_contents);
+ 
++  void FindOrHighlight(const std::string& query,
++                       blink::mojom::AnnotationType type,
++                       HighlightCallback callback);
+   void Reset();
+   void OnAgentDisconnected();
+ 
+@@ -72,6 +76,7 @@
+   mojo::Remote<blink::mojom::AnnotationAgent> annotation_agent_;
+   mojo::Receiver<blink::mojom::AnnotationAgentHost> agent_host_receiver_{this};
+   HighlightCallback pending_highlight_callback_;
++  bool match_only_ = false;
+ 
+   base::WeakPtrFactory<TabAnnotationManager> weak_ptr_factory_{this};
+ };
+--- a/chrome/browser/actor/tab_annotation_manager.cc
++++ b/chrome/browser/actor/tab_annotation_manager.cc
+@@ -27,6 +27,19 @@
+ 
+ void TabAnnotationManager::HighlightText(const std::string& query,
+                                          HighlightCallback callback) {
++  FindOrHighlight(query, blink::mojom::AnnotationType::kGlic,
++                  std::move(callback));
++}
++
++void TabAnnotationManager::FindText(const std::string& query,
++                                    HighlightCallback callback) {
++  FindOrHighlight(query, blink::mojom::AnnotationType::kTextFinder,
++                  std::move(callback));
++}
++
++void TabAnnotationManager::FindOrHighlight(const std::string& query,
++                                           blink::mojom::AnnotationType type,
++                                           HighlightCallback callback) {
+   if (query.empty()) {
+     std::move(callback).Run(false);
+     return;
+@@ -43,6 +56,7 @@
+ 
+   Reset();
+   CHECK(!pending_highlight_callback_);
++  match_only_ = type == blink::mojom::AnnotationType::kTextFinder;
+   pending_highlight_callback_ = std::move(callback);
+ 
+   auto selector = blink::mojom::Selector::NewSerializedSelector(
+@@ -52,8 +66,7 @@
+ 
+   annotation_container_->CreateAgent(
+       agent_host_receiver_.BindNewPipeAndPassRemote(),
+-      annotation_agent_.BindNewPipeAndPassReceiver(),
+-      blink::mojom::AnnotationType::kGlic, std::move(selector),
++      annotation_agent_.BindNewPipeAndPassReceiver(), type, std::move(selector),
+       /*search_range_start_node_id=*/std::nullopt);
+ 
+   annotation_agent_.set_disconnect_handler(base::BindOnce(
+@@ -82,6 +95,14 @@
+     return;
+   }
+ 
++  if (match_only_) {
++    auto complete = std::move(pending_highlight_callback_);
++    Reset();
++    if (complete) {
++      std::move(complete).Run(true);
++    }
++    return;
++  }
+   if (annotation_agent_.is_bound()) {
+     annotation_agent_->ScrollIntoView(/*applies_focus=*/true);
+   }
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -579,6 +579,7 @@
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_keyed_service_factory.h"
++#include "chrome/browser/actor/actor_task.h"
+ #include "chrome/browser/child_module/child_module_manager.h"
+ #include "chrome/browser/devtools/chrome_devtools_manager_delegate.h"
+ #include "chrome/browser/digital_credentials/digital_identity_provider_desktop.h"
+@@ -4548,6 +4549,17 @@
+   Profile* profile =
+       Profile::FromBrowserContext(web_contents->GetBrowserContext());
+   DCHECK(profile);
++#if !BUILDFLAG(IS_ANDROID)
++  if (auto* service = actor::ActorKeyedService::Get(profile)) {
++    const auto* task = service->GetActingActorTaskForWebContents(web_contents);
++    if (task &&
++        task->source_info().type == actor::TaskSourceInfo::Client::kKrypton) {
++      LOG(WARNING) << "Krypton Agent denied opening a new window or tab";
++      return false;
++    }
++  }
++#endif
++
+   *no_javascript_access = false;
+ 
+   // A privileged WebContents (see //chrome's PrivilegedWebContents) must not
+--- a/chrome/browser/download/chrome_download_manager_delegate.cc
++++ b/chrome/browser/download/chrome_download_manager_delegate.cc
+@@ -407,6 +407,21 @@
+                       std::optional<url::Origin> request_initiator,
+                       bool from_download_cross_origin_redirect,
+                       CanDownloadCallback can_download_cb) {
++#if !BUILDFLAG(IS_ANDROID)
++  if (auto* contents = web_contents_getter.Run()) {
++    if (auto* service =
++            actor::ActorKeyedService::Get(contents->GetBrowserContext())) {
++      const auto* task = service->GetActingActorTaskForWebContents(contents);
++      if (task &&
++          task->source_info().type == actor::TaskSourceInfo::Client::kKrypton) {
++        LOG(WARNING)
++            << "Krypton Agent denied a download requiring confirmation";
++        std::move(can_download_cb).Run(true, false);
++        return;
++      }
++    }
++  }
++#endif
+   DownloadRequestLimiter* limiter =
+       g_browser_process->download_request_limiter();
+   if (limiter) {

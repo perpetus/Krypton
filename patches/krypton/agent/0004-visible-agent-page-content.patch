@@ -1,0 +1,30 @@
+# Krypton: Let the scoped agent reader omit invisible subtrees before exporting actionable content.
+--- a/third_party/blink/public/mojom/content_extraction/ai_page_content.mojom
++++ b/third_party/blink/public/mojom/content_extraction/ai_page_content.mojom
+@@ -771,6 +771,9 @@
+ 
+   // Whether to include data for detected OTP (one-time pin) fields.
+   bool include_otps_for_redaction = false;
++
++  // Omit transparent and aria-hidden subtrees from interactive page readings.
++  bool visible_content_only = false;
+ };
+ 
+ // Result containing extracted image bytes and associated metadata. Supports
+--- a/third_party/blink/renderer/modules/content_extraction/ai_page_content_agent.cc
++++ b/third_party/blink/renderer/modules/content_extraction/ai_page_content_agent.cc
+@@ -2953,6 +2953,14 @@
+                                       html_names::kAriaHiddenAttr)) {
+       child_recursion_data.is_aria_hidden = true;
+     }
++    if (options_->visible_content_only &&
++        (child_recursion_data.is_aria_hidden ||
++         !child->HasNonZeroEffectiveOpacity() ||
++         (child->IsText() && child->Style()
++                                 .VisitedDependentColor(GetCSSPropertyColor())
++                                 .IsFullyTransparent()))) {
++      continue;
++    }
+     const auto* child_box = DynamicTo<LayoutBox>(child);
+     const bool child_is_fixed_to_view = child_box && child_box->IsFixedToView();
+     child_recursion_data.is_in_fixed_pos_subtree =

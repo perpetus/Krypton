@@ -14,6 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observation.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/ui/krypton_ui/menu_model_snapshot.h"
 #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
 #include "chrome/browser/ui/views/frame/app_menu_button_observer.h"
@@ -190,7 +191,9 @@ class NativeToolbar final : public views::AccessiblePaneView,
   base::flat_map<actions::ActionId, std::unique_ptr<PageAction>> page_actions_;
   std::vector<actions::ActionId> popped_out_;
   std::vector<actions::ActionId> active_;
+  void ExpirePendingAnchors();
   std::vector<PendingAnchor> pending_anchors_;
+  base::OneShotTimer anchor_timeout_;
   uint32_t menu_request_ = 0;
   bool menu_open_ = false;
   bool dev_tools_ = false;

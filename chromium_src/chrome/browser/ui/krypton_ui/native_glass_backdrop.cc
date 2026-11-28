@@ -64,15 +64,21 @@ class GlassFrame : public base::RefCountedThreadSafe<GlassFrame>,
   // busy: copying, or submitted until the module releases it.
   bool registered = false, signaled = false, busy = false;
 
-  void WatchRelease(base::OnceClosure callback) {
-    // Keep the image and its native handles alive even if the browser closes
-    // or a new geometry supersedes this frame. No UI wait or polling is used.
+  bool WatchRelease(base::OnceClosure callback) {
+    if (watcher_.IsWatching())
+      return true;
+    if (!watcher_.StartWatchingOnce(release_event.Get(), this))
+      return false;
+    if (FAILED(released->SetEventOnCompletion(value, release_event.Get()))) {
+      watcher_.StopWatching();
+      return false;
+    }
     on_release_ = std::move(callback);
-    keep_alive_ = this;
-    if (FAILED(released->SetEventOnCompletion(value, release_event.Get())) ||
-        !watcher_.StartWatchingOnce(release_event.Get(), this))
-      LOG(ERROR) << "Glass release fence could not be watched";
+    return true;
   }
+  // Only a frame actually used by the shell needs to survive retirement.
+  void RetainUntilReleased() { keep_alive_ = this; }
+  void CancelRetention() { keep_alive_.reset(); }
   void OnObjectSignaled(HANDLE) override {
     auto keep_alive = std::move(keep_alive_);
     if (on_release_)
@@ -448,22 +454,30 @@ class NativeGlassBackdrop::Impl : public ui::CompositorObserver {
     const KrGlassBackdropFrame submission{sizeof(KrGlassBackdropFrame),
                                           frame->resource.id, frame->revision,
                                           frame->value, frame->value};
-    // Import is asynchronous. Its completion repeats the current request,
-    // which retries this submission without a timer or Store reconciliation.
-    if (api->submit_glass_backdrop(api->self, &submission) != KR_OK)
+    if (!frame->WatchRelease(base::BindOnce(
+            [](base::WeakPtr<Impl> self, GlassFrame* frame) {
+              frame->busy = false;
+              if (!self || self->frame_.get() != frame)
+                return;
+              ++self->released_;
+              // The texture is free again; copy only if the page changed.
+              self->Capture();
+            },
+            weak_factory_.GetWeakPtr(), base::Unretained(frame.get())))) {
+      LOG(ERROR) << "Glass release fence could not be watched";
+      Retire();
       return;
+    }
+    frame->RetainUntilReleased();
     frame->signaled = false;
+    // Import can be pending. The watch can handle the later retry, but a
+    // submission rejected by the shell cannot signal this release fence.
+    if (api->submit_glass_backdrop(api->self, &submission) != KR_OK) {
+      frame->signaled = true;
+      frame->CancelRetention();
+      return;
+    }
     ++submitted_;
-    frame->WatchRelease(base::BindOnce(
-        [](base::WeakPtr<Impl> self, scoped_refptr<GlassFrame> frame) {
-          frame->busy = false;
-          if (!self || self->frame_ != frame)
-            return;
-          ++self->released_;
-          // The texture is free again; copy only if the page changed.
-          self->Capture();
-        },
-        weak_factory_.GetWeakPtr(), frame));
   }
 
   const raw_ref<BrowserView> view_;
